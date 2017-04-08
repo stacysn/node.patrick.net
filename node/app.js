@@ -7,13 +7,7 @@ mysql     = require('mysql')
 set_state = require('./set_state')
 url       = require('url')
 
-var pool = mysql.createPool({
-    connectionLimit    : 40,
-    database           : 'whatdidyoubid',
-    multipleStatements : true,
-    password           : conf.db_password,
-    user               : conf.db_user
-})
+var pool = mysql.createPool(conf.db)
 
 if (cluster.isMaster) {
 
