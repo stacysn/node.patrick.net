@@ -12,7 +12,7 @@ var pool = mysql.createPool({
     database           : 'whatdidyoubid',
     multipleStatements : true,
     password           : conf.db_password,
-    user               : conf.user
+    user               : conf.db_user
 })
 
 if (cluster.isMaster) {
