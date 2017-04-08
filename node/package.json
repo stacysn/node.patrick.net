@@ -1,0 +1,14 @@
+{
+  "name": "whatdidyoubid.com",
+  "version": "1.0.0",
+  "description": "Site where house buyers can say what they bid, to prevent realtor fraud",
+  "main": "app.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "Patrick Killelea",
+  "license": "ISC",
+  "dependencies": {
+    "mysql": "^2.5.4"
+  }
+}

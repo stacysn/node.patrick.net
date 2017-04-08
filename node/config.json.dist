@@ -1,0 +1,8 @@
+{
+    "admin_email"  :  "",
+    "db_host"      :  "localhost",
+    "db_name"      :  "",
+    "db_password"  :  "",
+    "db_user"      :  "",
+    "nonce_secret" :  ""
+}
