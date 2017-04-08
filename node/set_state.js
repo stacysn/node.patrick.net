@@ -1,4 +1,3 @@
-mysql       = require('mysql')
 pagefactory = require('./pagefactory')
 
 exports.home = function (req, res, page, pool) {

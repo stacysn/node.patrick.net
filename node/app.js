@@ -1,4 +1,8 @@
-conf = require(process.argv[2])
+if (process.argv[2]) conf = require(process.argv[2])
+else {
+    console.log('please start the app with a config file, like this: "node app.js ./conf.json"')
+    process.exit(1)
+}
 
 cluster   = require('cluster')
 http      = require('http')
