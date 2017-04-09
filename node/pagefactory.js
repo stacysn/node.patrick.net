@@ -11,25 +11,39 @@ exports.render = function(s, page) {
 pages.home = function () {
 
     return html(
-        header(),
+        head(),
         body(
+            header(),
+            h1(),
             post(),
-            comment_list()
-            ),
-        footer()
+            comment_list(),
+            footer()
+        )
     )
 }
 
 function html(...args) {
-    return `<html>${ args.join('') }</html>`
+    return `<!DOCTYPE html><html lang="en">${ args.join('') }</html>`
+}
+
+function head() {
+    return `<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no" >
+<link href="/css/bootstrap.20160501.css" rel="stylesheet" >
+</head>`
 }
 
 function header() {
     return `header has date ${ new Date().toUTCString() }`
 }
 
+function h1() {
+    return `<h1>${ state.message }</h1>`
+}
+
 function body(...args) {
-    return `<body><p>${ state.body + args.join('') }</body>`
+    return `<body>${ state.body + args.join('') }</body>`
 }
 
 function post() {

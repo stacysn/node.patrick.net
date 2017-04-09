@@ -1,12 +1,14 @@
-pagefactory = require('./pagefactory')
+// set_state.js does all setting of state object
 
 exports.home = function (req, res, page, pool) {
 
-    console.log(req.headers.cookie)
+    console.log(req.headers.cookie, req.method)
 
     pool.getConnection(function(err, connection) {
 
         var state = {}
+
+        state.message = 'Hello World'
 
         //connection.query('select 22 + 77 as solution where name=?', ['Patrick'], first_query)
         connection.query('select 22 + 77 as solution', first_query)
