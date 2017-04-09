@@ -10,17 +10,16 @@ exports.render = function(s, page) {
 
 pages.home = function () {
 
-        return html(
-            head(),
-            body(
-                header(),
-                h1(),
-                post(),
-                comment_list(),
-                footer()
-            )
+    return html(
+        head(),
+        body(
+            header(),
+            h1(),
+            post(),
+            comment_list(),
+            footer()
         )
-    }
+    )
 }
 
 function html(...args) {
