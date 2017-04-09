@@ -1,7 +1,7 @@
 try {
     conf = require(process.argv[2])
 }
-catch (e) {
+catch(e) {
     console.log('Please start this app with a config file, like this: "node app.js ./conf.json"')
     process.exit(1)
 }
@@ -14,7 +14,7 @@ pagefactory = require('./pagefactory')
 set_state   = require('./set_state')
 url         = require('url')
 
-var pool = mysql.createPool(conf.db)
+pool = mysql.createPool(conf.db) // pool is global to all modules
 
 if (cluster.isMaster) {
 
@@ -33,7 +33,7 @@ if (cluster.isMaster) {
         var path = url.parse(req.url).path
         var page = path.split('/')[1].replace(/\W/g,'') || 'home'
 
-        if (typeof set_state[page] === 'function') set_state[page](req, res, page, pool)
+        if (typeof set_state[page] === 'function') set_state[page](req, res, page)
         else res.end()
     }
 }

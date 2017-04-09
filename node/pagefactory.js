@@ -1,7 +1,7 @@
-// The page factory never does IO. It simply assembles pages from state.
+// The page factory never does IO. It simply assembles a page from state, which will be overwritten on each call to render()
 
-state = {}
-pages = {}
+var state = {}
+var pages = {}
 
 exports.render = function(s, page) {
     state = s
@@ -10,16 +10,17 @@ exports.render = function(s, page) {
 
 pages.home = function () {
 
-    return html(
-        head(),
-        body(
-            header(),
-            h1(),
-            post(),
-            comment_list(),
-            footer()
+        return html(
+            head(),
+            body(
+                header(),
+                h1(),
+                post(),
+                comment_list(),
+                footer()
+            )
         )
-    )
+    }
 }
 
 function html(...args) {
