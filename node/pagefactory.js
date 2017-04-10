@@ -9,33 +9,65 @@ exports.render = function(s, page) {
 }
 
 pages.home = function () {
-
     return html(
         head(),
         body(
             header(),
+            tabs(),
             h1(),
-            post(),
-            comment_list(),
+            address_list(),
+            footer()
+        )
+    )
+}
+
+pages.address = function () {
+    return html(
+        head(),
+        body(
+            header(),
+            address(),
             footer()
         )
     )
 }
 
 function html(...args) {
-    return `<!DOCTYPE html><html lang="en">${ args.join('') }</html>`
+    return `<!DOCTYPE html>
+        <html lang="en">
+        ${ args.join('') }
+        <script async src="/js/jquery.min.js"></script>
+        </html>`
 }
 
 function head() {
     return `<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no" >
-<link href="/css/bootstrap.20160501.css" rel="stylesheet" >
-</head>`
+        <link href="/css/style.20170309.css" rel="stylesheet" type="text/css" />
+        <link rel="icon" href="/favicon.ico" />
+        <meta charset="utf-8" />
+        <meta name="description" content="real estate, offers, bids" />
+        <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no" />
+        <title>What Did You Bid?</title>
+        </head>`
 }
 
 function header() {
-    return `header has date ${ new Date().toUTCString() }`
+    return `<div class="headerbox" >
+        <a href="/" ><font color="ba114c"><h3 title="back to home page" >What Did You Bid?</h3></font></a> &nbsp;
+        <div style="float:right"><a href='/users/Patrick' ><img src='/images/patrick_4thgrade15.thumbnail.jpg' width='21' height='32' > Patrick</a></div><p>
+        <a href="/new_address" class="btn btn-success btn-sm" title="start writing about a new address" ><b>add new address</b></a>
+        ${ new Date().toUTCString() }
+        ${ state.body }
+        </div>`
+}
+
+function tabs() {
+    return `<ul class="nav nav-tabs">
+        <li class="active" > <a href="/?order=active"   title="most recent comments" >active</a></li>
+        <li                > <a href="/?order=comments" title="most comments"        >comments</a></li>
+        <li                > <a href="/?order=new"      title="newest"               >new</a></li>
+        <li                > <a href="/?order=private"  title="your private chats"   >private</a></li>
+        </ul>`
 }
 
 function h1() {
@@ -43,11 +75,23 @@ function h1() {
 }
 
 function body(...args) {
-    return `<body>${ state.body + args.join('') }</body>`
+    return `<body>
+        <div class="container" >
+        ${ args.join('') }
+        </div>
+        </body>`
 }
 
-function post() {
-    return '<p>post'
+function address_list() {
+    tmp = ''
+
+    for (i=0; i<3; i++) tmp = tmp + address()
+
+    return tmp
+}
+
+function address() {
+    return `<div class="address" ><a href="/address/number/slug">address</a></div>`
 }
 
 function comment_list() {
@@ -56,5 +100,22 @@ function comment_list() {
 comment_list.i = 0
 
 function footer() {
-    return '<p>foother'
+    return `
+        page 1 of 12 &nbsp; 
+        <a href='/?page=2&order=active'>next &raquo;
+        </a>
+        <p>
+        <center>
+        <a href='/'>home</a> &nbsp;
+        <a href='#'>top</a> &nbsp;
+        <a href="/users.php">users</a> &nbsp;
+        <a href="/about">about</a> &nbsp;
+        <a href='/1302130/2017-01-28-patnet-improvement-suggestions'>suggestions</a> &nbsp;
+        <a href='mailto:p@patrick.net?subject=%2F' >contact</a> &nbsp;
+        <br>
+        <a href='/topics'>topics</a> &nbsp;
+        <a href='/random'>random post</a> &nbsp;
+        <a href="/best.php">best comments</a> &nbsp;
+        <a href="/adhom_jail.php">comment jail</a> &nbsp;
+        `
 }
