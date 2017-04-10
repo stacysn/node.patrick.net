@@ -10,17 +10,25 @@ exports.run = function (req, res, page) {
     pool.getConnection(function(err, db) {
         if (err) throw err
 
+        // block entire countries like Russia because all comments from there are inevitably spam
         db.query('select country_name, country_evil from countries where inet_aton(?) >= country_start and inet_aton(?) <= country_end',
                  [req.headers['x-forwarded-for'], req.headers['x-forwarded-for']], function (error, results, fields) {
 
             if (error)                   { db.release(); throw error }
             if (results[0].country_evil) { send_html(404, 'Not Found', res, db); return } // just give a 404 to all evil countries
 
-            var state = {}
+            var state = {} // start accumulation of state
             state.page = page
             state.country_name = results[0].country_name
 
-            pages[page](req, res, state, db)
+            // block individual known spammer ip addresses
+            db.query('select count(*) as c from nukes where nuke_ip_address = ?', [req.headers['x-forwarded-for']], function (error, results, fields) {
+
+                if (error)        { db.release(); throw error }
+                if (results[0].c) { send_html(404, 'Not Found', res, db); return }
+
+                pages[page](req, res, state, db)
+            })
         })
     })
 }
