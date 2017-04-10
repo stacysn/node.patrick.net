@@ -1,3 +1,4 @@
-config.json
-html/uploads/
+*.swp
+conf.json
+html/images/
 node/node_modules/

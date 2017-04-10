@@ -17,7 +17,6 @@ url         = require('url')
 pool = mysql.createPool(conf.db) // pool is global to all modules
 
 if (cluster.isMaster) {
-
     for (var i = 0; i < require('os').cpus().length; i++) cluster.fork();
 
     cluster.on('exit', function(worker, code, signal) {
