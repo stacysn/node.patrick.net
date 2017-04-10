@@ -1,64 +1,46 @@
-// set_state.js does all setting of state object
-
 //console.log(req.headers.cookie, req.method)
 
-exports.home = function (req, res, page, db) {
+var pages = {}
 
-    var state = {}
-    state.message = 'Hello World'
+exports.run = function (req, res, page) {
 
-    //db.query('select 22 + 77 as solution where name=?', ['Patrick'], first_query)
-    db.query('select 22 + 77 as solution', first_query)
+    // if there is no such page, exit immediately without using any db resources
+    if (typeof pages[page] !== 'function') send_html(404, `No page like "${page}"`, res, null);
 
-    function first_query(error, results, fields) {
+    pool.getConnection(function(err, db) {
+        if (err) throw err
 
-        state.body = results[0].solution
+        db.query('select country_name, country_evil from countries where inet_aton(?) >= country_start and inet_aton(?) <= country_end',
+                 [req.headers['x-forwarded-for'], req.headers['x-forwarded-for']], function (error, results, fields) {
 
-        db.query('select 18 as solution', second_query)
-    }
+            if (error) throw error
 
-    function second_query(error, results, fields) {
+            if (results[0].country_evil) send_html(404, 'Not Found', res, db) // just give a 404 to all evil countries
 
-        state.body = state.body + results[0].solution
-
-        html = pagefactory.render(state, page)
-
-        send_response(html, res, db);
-    }
+            else (pages[page](req, res, page, db))
+        })
+    })
 }
 
-exports.address = function (req, res, page, db) {
+pages.home = function (req, res, page, db) {
 
     var state = {}
+    state.page = page
     state.message = 'Hello World'
 
-    //db.query('select 22 + 77 as solution where name=?', ['Patrick'], first_query)
-    db.query('select 22 + 77 as solution', first_query)
-
-    function first_query(error, results, fields) {
-
-        state.body = results[0].solution
-
-        db.query('select 18 as solution', second_query)
-    }
-
-    function second_query(error, results, fields) {
-
+    db.query('select 18 as solution', function (error, results, fields) {
         state.body = state.body + results[0].solution
 
-        html = pagefactory.render(state, page)
-
-        send_response(html, res, db);
-    }
+        send_html(200, pagefactory.render(state), res, db);
+    })
 }
 
-function send_response(html, res, db) {
-    res.writeHead(200, {
+function send_html(code, html, res, db) {
+    res.writeHead(code, {
         'Content-Type'   : 'text/html',
         'Content-Length' : html.length,
         'Expires'        : new Date().toUTCString()
     })
     res.end(html)
-
-    db.release()
+    if (db) db.release()
 }

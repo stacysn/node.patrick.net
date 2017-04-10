@@ -3,9 +3,9 @@
 var state = {}
 var pages = {}
 
-exports.render = function(s, page) {
+exports.render = function(s) {
     state = s
-    return pages[page]();
+    return pages[state.page]();
 }
 
 pages.home = function () {

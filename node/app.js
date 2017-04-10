@@ -32,11 +32,6 @@ if (cluster.isMaster) {
         var path = url.parse(req.url).path
         var page = path.split('/')[1].replace(/\W/g,'') || 'home'
 
-        if (typeof set_state[page] === 'function') {
-            pool.getConnection(function(err, db) {
-                set_state[page](req, res, page, db)
-            })
-        }
-        else res.end()
+        set_state.run(req, res, page)
     }
 }
