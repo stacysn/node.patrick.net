@@ -5,7 +5,7 @@ var pages = {}
 exports.run = function (req, res, page) {
 
     // if there is no such page, exit immediately without using any db resources
-    if (typeof pages[page] !== 'function') send_html(404, `No page like "${page}"`, res, null);
+    if (typeof pages[page] !== 'function') { send_html(404, `No page like "${page}"`, res, null); return }
 
     pool.getConnection(function(err, db) {
         if (err) throw err
@@ -13,24 +13,34 @@ exports.run = function (req, res, page) {
         db.query('select country_name, country_evil from countries where inet_aton(?) >= country_start and inet_aton(?) <= country_end',
                  [req.headers['x-forwarded-for'], req.headers['x-forwarded-for']], function (error, results, fields) {
 
-            if (error) throw error
+            if (error)                   { db.release(); throw error }
+            if (results[0].country_evil) { send_html(404, 'Not Found', res, db); return } // just give a 404 to all evil countries
 
-            if (results[0].country_evil) send_html(404, 'Not Found', res, db) // just give a 404 to all evil countries
+            var state = {}
+            state.page = page
+            state.country_name = results[0].country_name
 
-            else (pages[page](req, res, page, db))
+            pages[page](req, res, state, db)
         })
     })
 }
 
-pages.home = function (req, res, page, db) {
+pages.home = function (req, res, state, db) {
 
-    var state = {}
-    state.page = page
     state.message = 'Hello World'
 
     db.query('select 18 as solution', function (error, results, fields) {
         state.body = state.body + results[0].solution
+        send_html(200, pagefactory.render(state), res, db);
+    })
+}
 
+pages.address = function (req, res, state, db) {
+
+    state.message = 'An address page'
+
+    db.query('select 18 as solution', function (error, results, fields) {
+        state.body = state.body + results[0].solution
         send_html(200, pagefactory.render(state), res, db);
     })
 }
