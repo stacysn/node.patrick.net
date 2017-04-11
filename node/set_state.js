@@ -34,28 +34,26 @@ exports.run = function (req, res, page) {
 
 function set_user(req, res, state, db) { // update state with whether they are logged in or not
 
-    if (!req.headers.cookie) {
+    // cookie is like whatdidyoubid=1_432d32044878053db427a93fc352235d where 1 is user and 432d... is md5'd password
+
+    try {
+        var user_id      = req.headers.cookie.split('=')[1].split('_')[0]
+        var user_md5pass = req.headers.cookie.split('=')[1].split('_')[1]
+
+        db.query('select * from users where user_id = ? and user_md5pass = ?', [user_id, user_md5pass], function (error, results, fields) {
+
+            if (error) { db.release(); throw error }
+
+            if (0 == results.length) state.user = null
+            else                     state.user = results[0]
+
+            pages[state.page](req, res, state, db)
+        })
+    }
+    catch(e) { // req.headers.cookie dne, or some part of cookie was badly formed
+        console.log(e)
         state.user = null
         pages[state.page](req, res, state, db)
-    }
-    else {
-        console.log(req.headers.cookie)
-        pages[state.page](req, res, state, db)
-        /*
-        $login = $db->get_row("select * from users where user_id = $user_id");
-
-        $login = get_userrow($user_ID);
-
-        if (!$login) {
-            p_clearcookie();
-            die("No such user_ID in users table: $user_ID");
-        }
-
-        if ( $login->user_pass == $md5_pass ) // Note that users.user_pass is stored md5'd.
-            return true;
-        else
-            return false;
-        */
     }
 }
 
@@ -79,18 +77,46 @@ pages.address = function (req, res, state, db) {
     })
 }
 
-function send_html(code, html, res, db) {
+pages.login = function (req, res, state, db) {
     var user_id      = 1
-    var user_md5pass = '432d32044878053db427a93fc352235d'
+    var user_md5pass = 'd4fae4b45e689707e7dea506afc8c0e7'
     var cookie       = `whatdidyoubid=${user_id}_${user_md5pass}`
     var d            = new Date();
     var decade       = new Date(d.getFullYear()+10, d.getMonth(), d.getDate()).toUTCString()
 
+    redirect(cookie, decade, req.headers.referer, res, db)
+}
+
+pages.logout = function (req, res, state, db) {
+    var cookie       = `whatdidyoubid=_`
+    var d            = new Date();
+    var decade       = new Date(d.getFullYear()+10, d.getMonth(), d.getDate()).toUTCString()
+
+    redirect(cookie, decade, req.headers.referer, res, db)
+}
+
+function redirect(cookie, decade, redirect_to, res, db) {
+
+    var message = `Redirecting to ${ redirect_to }`
+
     var headers =  {
-        'Set-Cookie'     : `${cookie}; Expires=${decade}`,
+        'Set-Cookie'     : `${cookie}; Expires=${decade}; Path=/; secure`,
+        'Location'       : redirect_to,
+        'Content-Length' : message.length,
+        'Expires'        : new Date().toUTCString()
+    }
+
+    res.writeHead(303, headers)
+    res.end(message)
+    if (db) db.release()
+}
+
+function send_html(code, html, res, db) {
+
+    var headers =  {
         'Content-Type'   : 'text/html',
         'Content-Length' : html.length,
-        'Expires'        : d.toUTCString()
+        'Expires'        : new Date().toUTCString()
     }
 
     res.writeHead(code, headers)

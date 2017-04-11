@@ -4,6 +4,7 @@ var state = {}
 var pages = {}
 
 exports.render = function(s) {
+    console.log(s)
     state = s
     return pages[state.page]();
 }
@@ -54,11 +55,20 @@ function head() {
 function header() {
     return `<div class="headerbox" >
         <a href="/" ><font color="ba114c"><h3 title="back to home page" >What Did You Bid?</h3></font></a> &nbsp;
-        <div style="float:right"><a href='/users/Patrick' ><img src='/images/patrick_4thgrade15.thumbnail.jpg' width='21' height='32' > Patrick</a></div><p>
+        <div style="float:right">${ icon_or_login() }</div><p>
         <a href="/new_address" class="btn btn-success btn-sm" title="start writing about a new address" ><b>add new address</b></a>
         ${ new Date().toUTCString() }
-        ${ state.body }
         </div>`
+}
+
+function icon_or_login() {
+    if (state.user) {
+        return `<a href='/users/Patrick' ><img src='/images/patrick_4thgrade15.thumbnail.jpg' width='21' height='32' > ${state.user.user_screenname}</a>
+            <p><a href='/logout'>log out</a>`
+    }
+    else {
+        return `Please <a href='/login'>log in</a>`
+    }
 }
 
 function tabs() {
