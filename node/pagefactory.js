@@ -42,7 +42,7 @@ function html(...args) {
 
 function head() {
     return `<head>
-        <link href="/css/style.20170309.css" rel="stylesheet" type="text/css" />
+        <link href="/css/style_20170309.css" rel="stylesheet" type="text/css" />
         <link rel="icon" href="/favicon.ico" />
         <meta charset="utf-8" />
         <meta name="description" content="real estate, offers, bids" />
@@ -71,7 +71,7 @@ function tabs() {
 }
 
 function h1() {
-    return `<h1>${ state.message }</h1>`
+    return `<h1>Increase fair play for buyers and sellers</h1>`
 }
 
 function body(...args) {
