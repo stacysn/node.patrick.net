@@ -75,7 +75,7 @@ function icon_or_loginprompt() {
 }
 
 function icon() {
-    return `<div id='status' 
+    return `<div id='status' >
         <a href='/users/Patrick' ><img src='/images/patrick_4thgrade15.thumbnail.jpg' width='21' height='32' > ${state.user.user_screenname}</a>
         <p>
         <a HREF='#' onclick="$.get('/logout', function(data) { document.getElementById('status').innerHTML = data; });return false">logout</a>
@@ -83,7 +83,7 @@ function icon() {
 }
 
 function loginprompt() {
-    return `<div id='status' 
+    return `<div id='status' >
         <a HREF='#' onclick="$.get('/login', function(data) { document.getElementById('status').innerHTML = data; });return false">login</a>
         </div>`
 }
