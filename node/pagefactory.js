@@ -33,6 +33,14 @@ pages.address = function () {
     )
 }
 
+pages.login = function () {
+    return icon()
+}
+
+pages.logout = function () {
+    return loginprompt()
+}
+
 function html(...args) {
     return `<!DOCTYPE html>
         <html lang="en">
@@ -55,20 +63,29 @@ function head() {
 function header() {
     return `<div class="headerbox" >
         <a href="/" ><font color="ba114c"><h3 title="back to home page" >What Did You Bid?</h3></font></a> &nbsp;
-        <div style="float:right">${ icon_or_login() }</div><p>
+        <div style="float:right">${ icon_or_loginprompt() }</div><p>
         <a href="/new_address" class="btn btn-success btn-sm" title="start writing about a new address" ><b>add new address</b></a>
         ${ new Date().toUTCString() }
         </div>`
 }
 
-function icon_or_login() {
-    if (state.user) {
-        return `<a href='/users/Patrick' ><img src='/images/patrick_4thgrade15.thumbnail.jpg' width='21' height='32' > ${state.user.user_screenname}</a>
-            <p><a href='/logout'>log out</a>`
-    }
-    else {
-        return `Please <a href='/login'>log in</a>`
-    }
+function icon_or_loginprompt() {
+    if (state.user) return icon()
+    else            return loginprompt()
+}
+
+function icon() {
+    return `<div id='status' 
+        <a href='/users/Patrick' ><img src='/images/patrick_4thgrade15.thumbnail.jpg' width='21' height='32' > ${state.user.user_screenname}</a>
+        <p>
+        <a HREF='#' onclick="$.get('/logout', function(data) { document.getElementById('status').innerHTML = data; });return false">logout</a>
+        </div>`
+}
+
+function loginprompt() {
+    return `<div id='status' 
+        <a HREF='#' onclick="$.get('/login', function(data) { document.getElementById('status').innerHTML = data; });return false">login</a>
+        </div>`
 }
 
 function tabs() {

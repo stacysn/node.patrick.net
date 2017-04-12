@@ -78,13 +78,35 @@ pages.address = function (req, res, state, db) {
 }
 
 pages.login = function (req, res, state, db) {
+
+    // need to get these two from a login form
     var user_id      = 1
     var user_md5pass = 'd4fae4b45e689707e7dea506afc8c0e7'
+
     var cookie       = `whatdidyoubid=${user_id}_${user_md5pass}`
     var d            = new Date();
     var decade       = new Date(d.getFullYear()+10, d.getMonth(), d.getDate()).toUTCString()
 
-    redirect(cookie, decade, req.headers.referer, res, db)
+    db.query('select * from users where user_id = ? and user_md5pass = ?', [user_id, user_md5pass], function (error, results, fields) {
+
+        if (error) { db.release(); throw error }
+
+        if (0 == results.length) state.user = null
+        else                     state.user = results[0]
+
+        html = pagefactory.render(state);
+
+        var headers =  {
+            'Content-Length' : html.length,
+            'Content-Type'   : 'text/html',
+            'Expires'        : new Date().toUTCString(),
+            'Set-Cookie'     : `${cookie}; Expires=${decade}; Path=/; secure`,
+        }
+
+        res.writeHead(200, headers)
+        res.end(html)
+        if (db) db.release()
+    })
 }
 
 pages.logout = function (req, res, state, db) {
@@ -92,10 +114,22 @@ pages.logout = function (req, res, state, db) {
     var d            = new Date();
     var decade       = new Date(d.getFullYear()+10, d.getMonth(), d.getDate()).toUTCString()
 
-    redirect(cookie, decade, req.headers.referer, res, db)
+    state.user = null
+    html = pagefactory.render(state);
+
+    var headers =  {
+        'Content-Length' : html.length,
+        'Content-Type'   : 'text/html',
+        'Expires'        : new Date().toUTCString(),
+        'Set-Cookie'     : `${cookie}; Expires=${decade}; Path=/; secure`,
+    }
+
+    res.writeHead(200, headers)
+    res.end(html)
+    if (db) db.release()
 }
 
-function redirect(cookie, decade, redirect_to, res, db) {
+function redirect(redirect_to, res, db) {
 
     var message = `Redirecting to ${ redirect_to }`
 
