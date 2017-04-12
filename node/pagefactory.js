@@ -84,6 +84,7 @@ function icon() {
 
 function loginprompt() {
     return `<div id='status' >
+        ${ state.login_failed ? 'login failed' : '' }
         <form id='loginform' action='/login' >
             <fieldset id="inputs">
                 <input id="email"    type="text"     placeholder="email"    name="email"    required autofocus >   

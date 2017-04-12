@@ -87,7 +87,7 @@ pages.home = function (req, res, state, db) {
 
     db.query('select 18 as solution', function (error, results, fields) {
         state.body = state.body + results[0].solution
-        send_html(200, pagefactory.render(state), res, db);
+        send_html(200, pagefactory.render(state), res, db)
     })
 }
 
@@ -97,7 +97,7 @@ pages.address = function (req, res, state, db) {
 
     db.query('select 18 as solution', function (error, results, fields) {
         state.body = state.body + results[0].solution
-        send_html(200, pagefactory.render(state), res, db);
+        send_html(200, pagefactory.render(state), res, db)
     })
 }
 
@@ -106,12 +106,15 @@ pages.login = function (req, res, state, db) {
     var query = db.query('select * from users where user_email = ? and user_md5pass = ?', [state.post_data.email, md5(state.post_data.password)],
              function (error, results, fields) {
 
+        delete state.post_data // so login info never accidentally appears in state output
+
         if (error) { db.release(); throw error }
 
         if (0 == results.length) {
-            state.user       = null
-            var user_id      = ''
-            var user_md5pass = ''
+            state.user         = null
+            var user_id        = ''
+            var user_md5pass   = ''
+            state.login_failed = true
         }
         else {
             state.user       = results[0]
@@ -119,16 +122,16 @@ pages.login = function (req, res, state, db) {
             var user_md5pass = state.user.user_md5pass
         }
 
-        html = pagefactory.render(state);
+        html = pagefactory.render(state)
 
         var cookie       = `whatdidyoubid=${user_id}_${user_md5pass}`
-        var d            = new Date();
+        var d            = new Date()
         var decade       = new Date(d.getFullYear()+10, d.getMonth(), d.getDate()).toUTCString()
 
         var headers =  {
             'Content-Length' : html.length,
             'Content-Type'   : 'text/html',
-            'Expires'        : new Date().toUTCString(),
+            'Expires'        : d.toUTCString(),
             'Set-Cookie'     : `${cookie}; Expires=${decade}; Path=/; secure`,
         }
 
@@ -145,19 +148,18 @@ function md5(str) {
     return hash.digest('hex')
 }
 
-
 pages.logout = function (req, res, state, db) {
     var cookie       = `whatdidyoubid=_`
-    var d            = new Date();
+    var d            = new Date()
     var decade       = new Date(d.getFullYear()+10, d.getMonth(), d.getDate()).toUTCString()
 
     state.user = null
-    html = pagefactory.render(state);
+    html = pagefactory.render(state)
 
     var headers =  {
         'Content-Length' : html.length,
         'Content-Type'   : 'text/html',
-        'Expires'        : new Date().toUTCString(),
+        'Expires'        : d.toUTCString(),
         'Set-Cookie'     : `${cookie}; Expires=${decade}; Path=/; secure`,
     }
 
