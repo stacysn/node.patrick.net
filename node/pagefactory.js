@@ -14,8 +14,19 @@ pages.home = function () {
         body(
             header(),
             tabs(),
-            h1(),
+            tagline(),
             address_list(),
+            footer()
+        )
+    )
+}
+
+pages.addressform = function () {
+    return html(
+        head(),
+        body(
+            header(),
+            addressform(),
             footer()
         )
     )
@@ -63,8 +74,7 @@ function header() {
     return `<div class="headerbox" >
         <a href="/" ><font color="ba114c"><h3 title="back to home page" >What Did You Bid?</h3></font></a> &nbsp;
         <div style="float:right">${ icon_or_loginprompt() }</div><p>
-        <a href="/new_address" class="btn btn-success btn-sm" title="start writing about a new address" ><b>add new address</b></a>
-        ${ new Date().toUTCString() }
+        <a href="/addressform" class="btn btn-success btn-sm" title="start writing about a new address" ><b>add new address</b></a>
         </div>`
 }
 
@@ -87,7 +97,7 @@ function loginprompt() {
         ${ state.login_failed ? 'login failed' : '' }
         <form id='loginform' action='/login' >
             <fieldset id="inputs">
-                <input id="email"    type="text"     placeholder="email"    name="email"    required autofocus >   
+                <input id="email"    type="text"     placeholder="email"    name="email"    required >   
                 <input id="password" type="password" placeholder="password" name="password" required >
             </fieldset>
             <fieldset id="actions">
@@ -110,7 +120,20 @@ function tabs() {
         </ul>`
 }
 
-function h1() {
+function addressform() {
+    return `
+    <h1>add new address</h1>
+    <form id='loginform' action='/postaddress' >
+        <div class='form-group'><input name='address_num_street' type='text' class='form-control' placeholder='number and street only, like 123 Shady Lane' 
+                id='address_num_street' ></div>
+        <div class='form-group'> <input name='address_apt' type='text' class='form-control' placeholder='apartment number, if any' > </div>
+        <div class='form-group'> <input name='address_zip' type='text' class='form-control' placeholder='5 digit zip code' > </div>
+        <button type='submit' id='submit' class='btn btn-success btn-sm'>submit</button>
+    </form>
+    <script type="text/javascript">document.getElementById('address_num_street').focus();</script>`
+}
+
+function tagline() {
     return `<h1>Increase fair play for buyers and sellers</h1>`
 }
 
@@ -141,9 +164,6 @@ comment_list.i = 0
 
 function footer() {
     return `
-        page 1 of 12 &nbsp; 
-        <a href='/?page=2&order=active'>next &raquo;
-        </a>
         <p>
         <center>
         <a href='/'>home</a> &nbsp;
@@ -152,10 +172,6 @@ function footer() {
         <a href="/about">about</a> &nbsp;
         <a href='/1302130/2017-01-28-patnet-improvement-suggestions'>suggestions</a> &nbsp;
         <a href='mailto:p@patrick.net?subject=%2F' >contact</a> &nbsp;
-        <br>
-        <a href='/topics'>topics</a> &nbsp;
-        <a href='/random'>random post</a> &nbsp;
-        <a href="/best.php">best comments</a> &nbsp;
-        <a href="/adhom_jail.php">comment jail</a> &nbsp;
+        search box goes here
         `
 }

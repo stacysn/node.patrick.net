@@ -91,6 +91,11 @@ pages.home = function (req, res, state, db) {
     })
 }
 
+pages.addressform = function (req, res, state, db) {
+    state.message = 'Enter new address'
+    send_html(200, pagefactory.render(state), res, db)
+}
+
 pages.address = function (req, res, state, db) {
 
     state.message = 'An address page'
