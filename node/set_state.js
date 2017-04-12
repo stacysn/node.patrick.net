@@ -26,15 +26,40 @@ exports.run = function (req, res, page) {
                 if (error)        { db.release(); throw error }
                 if (results[0].c) { send_html(404, 'Not Found', res, db); return }
 
-                set_user(req, res, state, db)
+                collect_post_data(req, res, state, db)
             })
         })
     })
 }
 
+function collect_post_data(req, res, state, db) { // if there is any POST data, accumulate it and append it to req object
+
+    if (req.method == 'POST') {
+        var body = ''
+
+        req.on('data', function (data) {
+            body += data
+
+            if (body.length > 1e6) { // too much POST data, kill the connection
+                req.connection.destroy()
+                res.writeHead(413, {'Content-Type': 'text/plain'}).end()
+            }
+        })
+
+        req.on('end', function () {
+            var post_data = qs.parse(body)
+            state.post_data = post_data
+            set_user(req, res, state, db)
+        })
+    }
+    else {
+        set_user(req, res, state, db)
+    }
+}
+
 function set_user(req, res, state, db) { // update state with whether they are logged in or not
 
-    // cookie is like whatdidyoubid=1_432d32044878053db427a93fc352235d where 1 is user and 432d... is md5'd password
+    // cookie is like whatdidyoubid=1_432d32044278053db427a93fc352235d where 1 is user and 432d... is md5'd password
 
     try {
         var user_id      = req.headers.cookie.split('=')[1].split('_')[0]
@@ -50,8 +75,7 @@ function set_user(req, res, state, db) { // update state with whether they are l
             pages[state.page](req, res, state, db)
         })
     }
-    catch(e) { // req.headers.cookie dne, or some part of cookie was badly formed
-        console.log(e)
+    catch(e) { // no valid cookie
         state.user = null
         pages[state.page](req, res, state, db)
     }
@@ -79,10 +103,11 @@ pages.address = function (req, res, state, db) {
 
 pages.login = function (req, res, state, db) {
 
+    console.log(state)
+
     // need to get these two from a login form
     var user_id      = 1
     var user_md5pass = 'd4fae4b45e689707e7dea506afc8c0e7'
-
     var cookie       = `whatdidyoubid=${user_id}_${user_md5pass}`
     var d            = new Date();
     var decade       = new Date(d.getFullYear()+10, d.getMonth(), d.getDate()).toUTCString()

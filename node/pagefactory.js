@@ -4,7 +4,6 @@ var state = {}
 var pages = {}
 
 exports.render = function(s) {
-    console.log(s)
     state = s
     return pages[state.page]();
 }
@@ -76,15 +75,28 @@ function icon_or_loginprompt() {
 
 function icon() {
     return `<div id='status' >
-        <a href='/users/Patrick' ><img src='/images/patrick_4thgrade15.thumbnail.jpg' width='21' height='32' > ${state.user.user_screenname}</a>
+        <a href='/users/${state.user.user_screenname}' ><img src='${state.user.user_icon}'
+            width='${state.user.user_icon_width}' height='${state.user.user_icon_height}' > ${state.user.user_screenname}</a>
         <p>
-        <a HREF='#' onclick="$.get('/logout', function(data) { document.getElementById('status').innerHTML = data; });return false">logout</a>
+        <a HREF='#' onclick="$.get('/logout', function(data) { $('#status').html(data) });return false">logout</a>
         </div>`
 }
 
 function loginprompt() {
     return `<div id='status' >
-        <a HREF='#' onclick="$.get('/login', function(data) { document.getElementById('status').innerHTML = data; });return false">login</a>
+        <form id='loginform' action='/login' >
+            <fieldset id="inputs">
+                <input id="email"    type="text"     placeholder="email"    name="email"    required autofocus >   
+                <input id="password" type="password" placeholder="password" name="password" required >
+            </fieldset>
+            <fieldset id="actions">
+                <input type="submit" id="submit" value="log in"
+                    onclick="$.post('/login', $('#loginform').serialize()).done(function(data) { $('#status').html(data) });return false">
+                </script>
+
+                <a href="">forgot your password?</a> <a href="">register</a>
+            </fieldset>
+        </form>
         </div>`
 }
 

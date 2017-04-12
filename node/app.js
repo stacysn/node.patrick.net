@@ -11,10 +11,11 @@ http        = require('http')
 logline     = require('./logline')
 mysql       = require('mysql')
 pagefactory = require('./pagefactory')
+qs          = require('querystring')
 set_state   = require('./set_state')
 url         = require('url')
 
-pool = mysql.createPool(conf.db) // pool is global to all modules
+pool = mysql.createPool(conf.db)
 
 if (cluster.isMaster) {
     for (var i = 0; i < require('os').cpus().length; i++) cluster.fork();
