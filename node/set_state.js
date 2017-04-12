@@ -83,9 +83,16 @@ function set_user(req, res, state, db) { // update state with whether they are l
 
 pages.home = function (req, res, state, db) {
 
-    db.query('select 18 as solution', function (error, results, fields) {
-        state.body = state.body + results[0].solution
-        send_html(200, pagefactory.render(state), res, db)
+    var query = db.query('select * from addresses', function (error, results, fields) {
+        if (error) { db.release(); throw error }
+
+        if (0 == results.length) {
+            send_html(404, 'no addresses found', res, null);
+        }
+        else {
+            state.addresses = results
+            send_html(200, pagefactory.render(state), res, db)
+        }
     })
 }
 
@@ -96,8 +103,7 @@ pages.addressform = function (req, res, state, db) {
 
 pages.address = function (req, res, state, db) {
 
-    // get the address's database row number from the url like /address/47/slug-goes-here
-    var address_id = url.parse(req.url).path.split('/')[2].replace(/\D/g,'')
+    var address_id = url.parse(req.url).path.split('/')[2].replace(/\D/g,'') // get address' db row number from url, eg /address/47/slug-goes-here
 
     var query = db.query('select * from addresses where address_id = ?', [address_id], function (error, results, fields) {
         if (error) { db.release(); throw error }

@@ -146,16 +146,14 @@ function body(...args) {
 }
 
 function address_list() {
-    tmp = ''
 
-    //for (i=0; i<3; i++) tmp = tmp + address_summary()
+    var formatted = state.addresses.map( (item) => {
+        return `<div class="address" ><a href="/address/${item.address_id}/slug">${item.address_num_street}</a></div>`
+    })
 
-    return tmp
+    return formatted.join('')
 }
 
-function address_summary() {
-    return `<div class="address" ><a href="/address/${state.address.address_id}/slug">${state.address.address_num_street}</a></div>`
-}
 
 function address() {
     return `<h1><a href="/address/${state.address.address_id}/slug">${state.address.address_num_street}</a></h1>`
