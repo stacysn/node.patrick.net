@@ -123,7 +123,7 @@ function tabs() {
 function addressform() {
     return `
     <h1>add new address</h1>
-    <form id='loginform' action='/postaddress' >
+    <form action='/postaddress' method='post' >
         <div class='form-group'><input name='address_num_street' type='text' class='form-control' placeholder='number and street only, like 123 Shady Lane' 
                 id='address_num_street' ></div>
         <div class='form-group'> <input name='address_apt' type='text' class='form-control' placeholder='apartment number, if any' > </div>
@@ -168,7 +168,7 @@ function footer() {
         <center>
         <a href='/'>home</a> &nbsp;
         <a href='#'>top</a> &nbsp;
-        <a href="/users.php">users</a> &nbsp;
+        <a href="/users">users</a> &nbsp;
         <a href="/about">about</a> &nbsp;
         <a href='/1302130/2017-01-28-patnet-improvement-suggestions'>suggestions</a> &nbsp;
         <a href='mailto:p@patrick.net?subject=%2F' >contact</a> &nbsp;

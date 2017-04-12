@@ -173,12 +173,21 @@ pages.logout = function (req, res, state, db) {
     if (db) db.release()
 }
 
+pages.postaddress = function (req, res, state, db) {
+    console.log(state.post_data)
+
+    var query = db.query('insert into addresses set ? on duplicate key update address_id=last_insert_id(address_id)', state.post_data,
+                         function (error, results, fields) { // if duplicate address, results.insertId will still be set correctly to existing address_id
+        if (error) { db.release(); throw error }
+        redirect(`/address/${results.insertId}/slug`, res, db)
+    });
+}
+
 function redirect(redirect_to, res, db) {
 
     var message = `Redirecting to ${ redirect_to }`
 
     var headers =  {
-        'Set-Cookie'     : `${cookie}; Expires=${decade}; Path=/; secure`,
         'Location'       : redirect_to,
         'Content-Length' : message.length,
         'Expires'        : new Date().toUTCString()
