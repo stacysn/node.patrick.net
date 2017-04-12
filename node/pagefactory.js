@@ -148,13 +148,17 @@ function body(...args) {
 function address_list() {
     tmp = ''
 
-    for (i=0; i<3; i++) tmp = tmp + address()
+    //for (i=0; i<3; i++) tmp = tmp + address_summary()
 
     return tmp
 }
 
+function address_summary() {
+    return `<div class="address" ><a href="/address/${state.address.address_id}/slug">${state.address.address_num_street}</a></div>`
+}
+
 function address() {
-    return `<div class="address" ><a href="/address/number/slug">address</a></div>`
+    return `<h1><a href="/address/${state.address.address_id}/slug">${state.address.address_num_street}</a></h1>`
 }
 
 function comment_list() {
