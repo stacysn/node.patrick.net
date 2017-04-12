@@ -103,23 +103,27 @@ pages.address = function (req, res, state, db) {
 
 pages.login = function (req, res, state, db) {
 
-    console.log(state)
-
-    // need to get these two from a login form
-    var user_id      = 1
-    var user_md5pass = 'd4fae4b45e689707e7dea506afc8c0e7'
-    var cookie       = `whatdidyoubid=${user_id}_${user_md5pass}`
-    var d            = new Date();
-    var decade       = new Date(d.getFullYear()+10, d.getMonth(), d.getDate()).toUTCString()
-
-    db.query('select * from users where user_id = ? and user_md5pass = ?', [user_id, user_md5pass], function (error, results, fields) {
+    var query = db.query('select * from users where user_email = ? and user_md5pass = ?', [state.post_data.email, md5(state.post_data.password)],
+             function (error, results, fields) {
 
         if (error) { db.release(); throw error }
 
-        if (0 == results.length) state.user = null
-        else                     state.user = results[0]
+        if (0 == results.length) {
+            state.user       = null
+            var user_id      = ''
+            var user_md5pass = ''
+        }
+        else {
+            state.user       = results[0]
+            var user_id      = state.user.user_id
+            var user_md5pass = state.user.user_md5pass
+        }
 
         html = pagefactory.render(state);
+
+        var cookie       = `whatdidyoubid=${user_id}_${user_md5pass}`
+        var d            = new Date();
+        var decade       = new Date(d.getFullYear()+10, d.getMonth(), d.getDate()).toUTCString()
 
         var headers =  {
             'Content-Length' : html.length,
@@ -133,6 +137,14 @@ pages.login = function (req, res, state, db) {
         if (db) db.release()
     })
 }
+
+function md5(str) {
+    var crypto = require('crypto')
+    var hash = crypto.createHash('md5')
+    hash.update(str)
+    return hash.digest('hex')
+}
+
 
 pages.logout = function (req, res, state, db) {
     var cookie       = `whatdidyoubid=_`

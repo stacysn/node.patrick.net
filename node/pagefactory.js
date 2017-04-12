@@ -33,7 +33,7 @@ pages.address = function () {
 }
 
 pages.login = function () {
-    return icon()
+    return icon_or_loginprompt()
 }
 
 pages.logout = function () {
