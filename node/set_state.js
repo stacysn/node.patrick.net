@@ -65,7 +65,15 @@ pages.address = function (req, res, state, db) {
         }
         else {
             state.address = results[0]
-            send_html(200, pagefactory.render(state), res, db)
+
+            // now pick up the comment list for this address
+            var query = db.query('select * from comments where comment_address_id = ?', [address_id], function (error, results, fields) {
+                if (error) { db.release(); throw error }
+
+                if (results.length) state.comments = results // if none, we will handle that in comment_list()
+
+                send_html(200, pagefactory.render(state), res, db)
+            })
         }
     })
 }
@@ -155,13 +163,20 @@ pages.postcomment = function (req, res, state, db) {
     post_data = state.post_data
     Object.keys(post_data).map(key => { post_data[key] = strip_tags(post_data[key]) })
 
-    var query = db.query('insert into comments set ?', post_data, function (error, results, fields) {
-            if (error) { db.release(); throw error }
+    if (post_data.comment_content) {
+        var query = db.query('insert into comments set ?', post_data, function (error, results, fields) {
+                if (error) { db.release(); throw error }
 
-            state.comment = post_data
-            state.page    = 'comment' // format the post_data as a comment
-            send_html(200, pagefactory.render(state), res, db)
-        })
+                state.comment = post_data
+                state.page    = 'comment' // format the state.comment as a comment
+                send_html(200, pagefactory.render(state), res, db)
+            })
+    }
+    else { // empty comment, ignore
+        state.comment = post_data
+        state.page    = 'comment' // format the state.comment as a comment
+        send_html(200, pagefactory.render(state), res, db)
+    }
 }
 
 //////////////////////////////////////// end of pages; helper functions below ////////////////////////////////////////

@@ -49,6 +49,7 @@ pages.address = function () {
         body(
             header(),
             address(),
+            comment_list(),
             commentbox(),
             footer()
         )
@@ -157,7 +158,11 @@ function commentbox() {
         <input type='hidden' name='comment_address_id' value='${ state.address.address_id }' />
         <input type='hidden' name='comment_author'     value='${ state.user.user_id }' ><p>
         <button type='submit' class='btn btn-success btn-sm'
-        onclick="$.post('/postcomment', $('#commentform').serialize()).done(function(data) { $('#newcomment').append(data) });return false" >submit</button>
+            onclick="$.post('/postcomment', $('#commentform').serialize()).done(function(data) {
+                $('#newcomment').append(data)
+                document.getElementById('commentform').reset() // clear the textbox
+            })
+            return false" >submit</button>
     </form>`
 }
 
@@ -192,9 +197,17 @@ function address() {
 }
 
 function comment_list() {
-    return `<p id='${ arguments.callee.name + comment_list.i++ }' >comment_list `
+    if (state.comments) {
+        var formatted = state.comments.map( (item) => {
+            state.comment = item // so that comment() will pick up the right data
+            return comment()
+        })
+        state.comment = null
+
+        return formatted.join('')
+    }
+    else return '<p><b>No comments yet</b></p>';
 }
-comment_list.i = 0
 
 function footer() {
     return `
