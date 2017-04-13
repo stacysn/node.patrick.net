@@ -47,7 +47,8 @@ function collect_post_data(req, res, state, db) { // if there is any POST data, 
         })
 
         req.on('end', function () {
-            var post_data = qs.parse(body)
+            var post_data   = qs.parse(body)
+            Object.keys(post_data).map(function(key) { post_data[key] = post_data[key].trim() }) // trim all top level values, should all be strings
             state.post_data = post_data
             set_user(req, res, state, db)
         })
@@ -189,14 +190,15 @@ pages.logout = function (req, res, state, db) {
 pages.postaddress = function (req, res, state, db) {
 
     // do a bit of validation before inserting
-    if (!/\d\d\d\d\d/.test(state.post_data.address_zip)) { message('Please go back and enter a five-digit zip code', state, res, db); return }
+    if (!/\d+\s+\w+/.test(state.post_data.address_num_street)) { message('Please go back and enter a valid street address', state, res, db); return }
+    if (!/^\d\d\d\d\d$/.test(state.post_data.address_zip))     { message('Please go back and enter a five-digit zip code',  state, res, db); return }
 
     // if duplicate address, results.insertId will still be set correctly to existing address_id
     var query = db.query('insert into addresses set ? on duplicate key update address_id=last_insert_id(address_id)', state.post_data,
-                         function (error, results, fields) {
-        if (error) { db.release(); throw error }
-        redirect(`/address/${results.insertId}/slug`, res, db)
-    })
+        function (error, results, fields) {
+            if (error) { db.release(); throw error }
+            redirect(`/address/${results.insertId}/slug`, res, db)
+        })
 }
 
 function redirect(redirect_to, res, db) {
