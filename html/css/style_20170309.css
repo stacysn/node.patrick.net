@@ -19,6 +19,15 @@ img { max-width: 95%; height:auto; }
     padding:          4px;
 }
 
+.comment {
+    background-color: #f5f5f5;
+    border:           1px solid #ddd;
+    clear:            both;
+    margin:           4px;
+    overflow:         auto;
+    padding:          4px;
+}
+
 /*!
  * Bootstrap v3.3.2 (http://getbootstrap.com)
  * Copyright 2011-2015 Twitter, Inc.

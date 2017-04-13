@@ -49,6 +49,7 @@ pages.address = function () {
         body(
             header(),
             address(),
+            commentbox(),
             footer()
         )
     )
@@ -62,9 +63,14 @@ pages.logout = function () {
     return loginprompt()
 }
 
+pages.comment = function () {
+    return comment()
+}
+
+//////////////////////////////////////// end of pages; all html is below ////////////////////////////////////////
+
 function html(...args) {
-    return `<!DOCTYPE html>
-        <html lang="en">
+    return `<!DOCTYPE html><html lang="en">
         ${ args.join('') }
         <script async src="/js/jquery.min.js"></script>
         </html>`
@@ -72,20 +78,20 @@ function html(...args) {
 
 function head() {
     return `<head>
-        <link href="/css/style_20170309.css" rel="stylesheet" type="text/css" />
-        <link rel="icon" href="/favicon.ico" />
-        <meta charset="utf-8" />
-        <meta name="description" content="real estate, offers, bids" />
-        <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no" />
+        <link href='/css/style_20170309.css' rel='stylesheet' type='text/css' />
+        <link rel='icon' href='/favicon.ico' />
+        <meta charset='utf-8' />
+        <meta name='description' content='real estate, offers, bids' />
+        <meta name='viewport' content='width=device-width, initial-scale=1, shrink-to-fit=no' />
         <title>What Did You Bid?</title>
         </head>`
 }
 
 function header() {
-    return `<div class="headerbox" >
-        <a href="/" ><font color="ba114c"><h3 title="back to home page" >What Did You Bid?</h3></font></a> &nbsp;
-        <div style="float:right">${ icon_or_loginprompt() }</div><p>
-        <a href="/addressform" class="btn btn-success btn-sm" title="start writing about a new address" ><b>add new address</b></a>
+    return `<div class='headerbox' >
+        <a href='/' ><font color='ba114c'><h3 title='back to home page' >What Did You Bid?</h3></font></a> &nbsp;
+        <div style='float:right'>${ icon_or_loginprompt() }</div><p>
+        <a href='/addressform' class='btn btn-success btn-sm' title='start writing about a new address' ><b>add new address</b></a>
         </div>`
 }
 
@@ -106,7 +112,7 @@ function icon() {
 function loginprompt() {
     return `<div id='status' >
         ${ state.login_failed ? 'login failed' : '' }
-        <form id='loginform' action='/login' >
+        <form id='loginform' >
             <fieldset id="inputs">
                 <input id="email"    type="text"     placeholder="email"    name="email"    required >   
                 <input id="password" type="password" placeholder="password" name="password" required >
@@ -114,7 +120,6 @@ function loginprompt() {
             <fieldset id="actions">
                 <input type="submit" id="submit" value="log in"
                     onclick="$.post('/login', $('#loginform').serialize()).done(function(data) { $('#status').html(data) });return false">
-                </script>
 
                 <a href="">forgot your password?</a> <a href="">register</a>
             </fieldset>
@@ -144,8 +149,24 @@ function addressform() {
     <script type="text/javascript">document.getElementById('address_num_street').focus();</script>`
 }
 
+function commentbox() {
+    return `
+    <div  id='newcomment' ></div>
+    <form id='commentform' >
+        <textarea            name='comment_content'    class='form-control' rows='10' placeholder='write a comment...' ></textarea><p>
+        <input type='hidden' name='comment_address_id' value='${ state.address.address_id }' />
+        <input type='hidden' name='comment_author'     value='${ state.user.user_id }' ><p>
+        <button type='submit' class='btn btn-success btn-sm'
+        onclick="$.post('/postcomment', $('#commentform').serialize()).done(function(data) { $('#newcomment').append(data) });return false" >submit</button>
+    </form>`
+}
+
 function message() {
     return `<h1>${ state.message }</h1>`
+}
+
+function comment() {
+    return `<div class="comment" >${ state.comment.comment_content }</div>`
 }
 
 function body(...args) {

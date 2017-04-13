@@ -32,56 +32,6 @@ exports.run = function (req, res, page) {
     })
 }
 
-function collect_post_data(req, res, state, db) { // if there is any POST data, accumulate it and append it to req object
-
-    if (req.method == 'POST') {
-        var body = ''
-
-        req.on('data', function (data) {
-            body += data
-
-            if (body.length > 1e6) { // too much POST data, kill the connection
-                req.connection.destroy()
-                res.writeHead(413, {'Content-Type': 'text/plain'}).end()
-            }
-        })
-
-        req.on('end', function () {
-            var post_data   = qs.parse(body)
-            Object.keys(post_data).map(function(key) { post_data[key] = post_data[key].trim() }) // trim all top level values, should all be strings
-            state.post_data = post_data
-            set_user(req, res, state, db)
-        })
-    }
-    else {
-        set_user(req, res, state, db)
-    }
-}
-
-function set_user(req, res, state, db) { // update state with whether they are logged in or not
-
-    // cookie is like whatdidyoubid=1_432d32044278053db427a93fc352235d where 1 is user and 432d... is md5'd password
-
-    try {
-        var user_id      = req.headers.cookie.split('=')[1].split('_')[0]
-        var user_md5pass = req.headers.cookie.split('=')[1].split('_')[1]
-
-        db.query('select * from users where user_id = ? and user_md5pass = ?', [user_id, user_md5pass], function (error, results, fields) {
-
-            if (error) { db.release(); throw error }
-
-            if (0 == results.length) state.user = null
-            else                     state.user = results[0]
-
-            pages[state.page](req, res, state, db)
-        })
-    }
-    catch(e) { // no valid cookie
-        state.user = null
-        pages[state.page](req, res, state, db)
-    }
-}
-
 pages.home = function (req, res, state, db) {
 
     var query = db.query('select * from addresses', function (error, results, fields) {
@@ -122,10 +72,13 @@ pages.address = function (req, res, state, db) {
 
 pages.login = function (req, res, state, db) {
 
-    var query = db.query('select * from users where user_email = ? and user_md5pass = ?', [state.post_data.email, md5(state.post_data.password)],
-             function (error, results, fields) {
+    post_data = state.post_data
+    delete state.post_data // so login info never accidentally appears in state output
 
-        delete state.post_data // so login info never accidentally appears in state output
+    Object.keys(post_data).map(key => { post_data[key] = strip_tags(post_data[key]) })
+
+    var query = db.query('select * from users where user_email = ? and user_md5pass = ?', [post_data.email, md5(post_data.password)],
+             function (error, results, fields) {
 
         if (error) { db.release(); throw error }
 
@@ -160,13 +113,6 @@ pages.login = function (req, res, state, db) {
     })
 }
 
-function md5(str) {
-    var crypto = require('crypto')
-    var hash = crypto.createHash('md5')
-    hash.update(str)
-    return hash.digest('hex')
-}
-
 pages.logout = function (req, res, state, db) {
     var cookie       = `whatdidyoubid=_`
     var d            = new Date()
@@ -189,17 +135,36 @@ pages.logout = function (req, res, state, db) {
 
 pages.postaddress = function (req, res, state, db) {
 
+    post_data = state.post_data
+    Object.keys(post_data).map(key => { post_data[key] = strip_tags(post_data[key]) })
+
     // do a bit of validation before inserting
-    if (!/\d+\s+\w+/.test(state.post_data.address_num_street)) { message('Please go back and enter a valid street address', state, res, db); return }
-    if (!/^\d\d\d\d\d$/.test(state.post_data.address_zip))     { message('Please go back and enter a five-digit zip code',  state, res, db); return }
+    if (!/\d+\s+\w+/.test(post_data.address_num_street)) { message('Please go back and enter a valid street address', state, res, db); return }
+    if (!/^\d\d\d\d\d$/.test(post_data.address_zip))     { message('Please go back and enter a five-digit zip code',  state, res, db); return }
 
     // if duplicate address, results.insertId will still be set correctly to existing address_id
-    var query = db.query('insert into addresses set ? on duplicate key update address_id=last_insert_id(address_id)', state.post_data,
+    var query = db.query('insert into addresses set ? on duplicate key update address_id=last_insert_id(address_id)', post_data,
         function (error, results, fields) {
             if (error) { db.release(); throw error }
             redirect(`/address/${results.insertId}/slug`, res, db)
         })
 }
+
+pages.postcomment = function (req, res, state, db) {
+
+    post_data = state.post_data
+    Object.keys(post_data).map(key => { post_data[key] = strip_tags(post_data[key]) })
+
+    var query = db.query('insert into comments set ?', post_data, function (error, results, fields) {
+            if (error) { db.release(); throw error }
+
+            state.comment = post_data
+            state.page    = 'comment' // format the post_data as a comment
+            send_html(200, pagefactory.render(state), res, db)
+        })
+}
+
+//////////////////////////////////////// end of pages; helper functions below ////////////////////////////////////////
 
 function redirect(redirect_to, res, db) {
 
@@ -233,4 +198,65 @@ function send_html(code, html, res, db) {
     res.writeHead(code, headers)
     res.end(html)
     if (db) db.release()
+}
+
+function md5(str) {
+    var crypto = require('crypto')
+    var hash = crypto.createHash('md5')
+    hash.update(str)
+    return hash.digest('hex')
+}
+
+function collect_post_data(req, res, state, db) { // if there is any POST data, accumulate it and append it to req object
+
+    if (req.method == 'POST') {
+        var body = ''
+
+        req.on('data', function (data) {
+            body += data
+
+            if (body.length > 1e6) { // too much POST data, kill the connection
+                req.connection.destroy()
+                res.writeHead(413, {'Content-Type': 'text/plain'}).end()
+            }
+        })
+
+        req.on('end', function () {
+            var post_data   = qs.parse(body)
+            Object.keys(post_data).map(function(key) { post_data[key] = post_data[key].trim() }) // trim all top level values, should all be strings
+            state.post_data = post_data
+            set_user(req, res, state, db)
+        })
+    }
+    else {
+        set_user(req, res, state, db)
+    }
+}
+
+function strip_tags(s) {
+    return s.replace(/(<([^>]+)>)/g,'')
+}
+
+function set_user(req, res, state, db) { // update state with whether they are logged in or not
+
+    // cookie is like whatdidyoubid=1_432d32044278053db427a93fc352235d where 1 is user and 432d... is md5'd password
+
+    try {
+        var user_id      = req.headers.cookie.split('=')[1].split('_')[0]
+        var user_md5pass = req.headers.cookie.split('=')[1].split('_')[1]
+
+        db.query('select * from users where user_id = ? and user_md5pass = ?', [user_id, user_md5pass], function (error, results, fields) {
+
+            if (error) { db.release(); throw error }
+
+            if (0 == results.length) state.user = null
+            else                     state.user = results[0]
+
+            pages[state.page](req, res, state, db)
+        })
+    }
+    catch(e) { // no valid cookie
+        state.user = null
+        pages[state.page](req, res, state, db)
+    }
 }
