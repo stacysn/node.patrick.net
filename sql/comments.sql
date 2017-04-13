@@ -5,11 +5,13 @@ create table comments (
     comment_dislikes   bigint(20) unsigned not null default 0,
     comment_approved   bigint(20) unsigned not null default 1,
     comment_author     bigint(20) unsigned not null,
+    comment_author_ip  varchar(16)         not null,
     comment_address_id bigint(20) unsigned not null,
     comment_content    text                not null,
-    primary key                  (comment_id),
-    key comment_approved_index   (comment_approved),
-    key comment_address_id_index (comment_address_id),
-    key comment_author_index     (comment_author),
-    fulltext key comment_content_index (comment_content)
+    primary  key                          (comment_id),
+             key comment_address_id_index (comment_address_id),
+             key comment_approved_index   (comment_approved),
+             key comment_author_index     (comment_author),
+             key comment_author_ip_index  (comment_author_ip),
+    fulltext key comment_content_index    (comment_content)
 ) engine=myisam; # necessary for fulltext index

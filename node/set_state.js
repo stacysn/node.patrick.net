@@ -164,6 +164,8 @@ pages.postcomment = function (req, res, state, db) {
     post_data = state.post_data
     Object.keys(post_data).map(key => { post_data[key] = strip_tags(post_data[key]) })
 
+    post_data.comment_author_ip = req.headers['x-forwarded-for']
+
     if (post_data.comment_content) {
         var query = db.query('insert into comments set ?', post_data, function (error, results, fields) {
                 if (error) { db.release(); throw error }
