@@ -5,7 +5,7 @@ var pages = {}
 
 exports.render = function(s) {
     state = s
-    return pages[state.page]();
+    return pages[state.page]()
 }
 
 pages.home = function () {
@@ -14,8 +14,19 @@ pages.home = function () {
         body(
             header(),
             tabs(),
-            tagline(),
+            message(),
             address_list(),
+            footer()
+        )
+    )
+}
+
+pages.message = function () {
+    return html(
+        head(),
+        body(
+            header(),
+            message(),
             footer()
         )
     )
@@ -127,14 +138,14 @@ function addressform() {
         <div class='form-group'><input name='address_num_street' type='text' class='form-control' placeholder='number and street only, like 123 Shady Lane' 
                 id='address_num_street' ></div>
         <div class='form-group'> <input name='address_apt' type='text' class='form-control' placeholder='apartment number, if any' > </div>
-        <div class='form-group'> <input name='address_zip' type='text' class='form-control' placeholder='5 digit zip code' > </div>
+        <div class='form-group'> <input name='address_zip' type='text' class='form-control' placeholder='5 digit zip code' maxlength='5' > </div>
         <button type='submit' id='submit' class='btn btn-success btn-sm'>submit</button>
     </form>
     <script type="text/javascript">document.getElementById('address_num_street').focus();</script>`
 }
 
-function tagline() {
-    return `<h1>Increase fair play for buyers and sellers</h1>`
+function message() {
+    return `<h1>${ state.message }</h1>`
 }
 
 function body(...args) {
@@ -174,6 +185,5 @@ function footer() {
         <a href="/about">about</a> &nbsp;
         <a href='/1302130/2017-01-28-patnet-improvement-suggestions'>suggestions</a> &nbsp;
         <a href='mailto:p@patrick.net?subject=%2F' >contact</a> &nbsp;
-        search box goes here
-        `
+        search box goes here`
 }

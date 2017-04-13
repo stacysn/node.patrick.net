@@ -87,10 +87,11 @@ pages.home = function (req, res, state, db) {
         if (error) { db.release(); throw error }
 
         if (0 == results.length) {
-            send_html(404, 'no addresses found', res, null);
+            send_html(404, 'no addresses found', res, null)
         }
         else {
             state.addresses = results
+            state.message   = 'Increasing fair play for buyers and sellers'
             send_html(200, pagefactory.render(state), res, db)
         }
     })
@@ -109,7 +110,7 @@ pages.address = function (req, res, state, db) {
         if (error) { db.release(); throw error }
 
         if (0 == results.length) {
-            send_html(404, `No address with id "${address_id}"`, res, null);
+            send_html(404, `No address with id "${address_id}"`, res, null)
         }
         else {
             state.address = results[0]
@@ -186,13 +187,16 @@ pages.logout = function (req, res, state, db) {
 }
 
 pages.postaddress = function (req, res, state, db) {
-    console.log(state.post_data)
 
+    // do a bit of validation before inserting
+    if (!/\d\d\d\d\d/.test(state.post_data.address_zip)) { message('Please go back and enter a five-digit zip code', state, res, db); return }
+
+    // if duplicate address, results.insertId will still be set correctly to existing address_id
     var query = db.query('insert into addresses set ? on duplicate key update address_id=last_insert_id(address_id)', state.post_data,
-                         function (error, results, fields) { // if duplicate address, results.insertId will still be set correctly to existing address_id
+                         function (error, results, fields) {
         if (error) { db.release(); throw error }
         redirect(`/address/${results.insertId}/slug`, res, db)
-    });
+    })
 }
 
 function redirect(redirect_to, res, db) {
@@ -208,6 +212,12 @@ function redirect(redirect_to, res, db) {
     res.writeHead(303, headers)
     res.end(message)
     if (db) db.release()
+}
+
+function message(message, state, res, db) {
+    state.page    = 'message'
+    state.message = message
+    send_html(200, pagefactory.render(state), res, db)
 }
 
 function send_html(code, html, res, db) {
