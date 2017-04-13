@@ -67,12 +67,13 @@ pages.address = function (req, res, state, db) {
             state.address = results[0]
 
             // now pick up the comment list for this address
-            var query = db.query('select * from comments where comment_address_id = ?', [address_id], function (error, results, fields) {
-                if (error) { db.release(); throw error }
+            var query = db.query('select * from comments where comment_address_id = ? order by comment_created', [address_id],
+                function (error, results, fields) {
+                    if (error) { db.release(); throw error }
 
-                if (results.length) state.comments = results // if none, we will handle that in comment_list()
+                    if (results.length) state.comments = results // if none, we will handle that in comment_list()
 
-                send_html(200, pagefactory.render(state), res, db)
+                    send_html(200, pagefactory.render(state), res, db)
             })
         }
     })

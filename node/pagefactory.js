@@ -206,7 +206,6 @@ function comment_list() {
 
         return formatted.join('')
     }
-    else return '<p><b>No comments yet</b></p>';
 }
 
 function footer() {
