@@ -164,20 +164,32 @@ pages.postcomment = function (req, res, state, db) {
     post_data = state.post_data
     Object.keys(post_data).map(key => { post_data[key] = strip_tags(post_data[key]) })
 
-    post_data.comment_author_ip = req.headers['x-forwarded-for']
-
     if (post_data.comment_content) {
-        var query = db.query('insert into comments set ?', post_data, function (error, results, fields) {
+        post_data.comment_author_ip = req.headers['x-forwarded-for']
+
+        // rate limit by ip address
+        var query = db.query('select (now() - comment_created) as ago from comments where comment_author_ip = ? order by comment_created desc limit 1',
+            [post_data.comment_author_ip],
+            function (error, results, fields) {
                 if (error) { db.release(); throw error }
 
-                state.comment = post_data
-                state.page    = 'comment' // format the state.comment as a comment
-                send_html(200, pagefactory.render(state), res, db)
+                if (results.length && results[0].ago < 2) {
+                    state.comment = post_data
+                    state.comment.comment_content = 'You are posting comments too quickly! Please slow down.'
+                    send_html(200, pagefactory.render(state), res, db)
+                }
+                else {
+                    var query = db.query('insert into comments set ?', post_data, function (error, results, fields) {
+                        if (error) { db.release(); throw error }
+
+                        state.comment = post_data
+                        send_html(200, pagefactory.render(state), res, db)
+                    })
+                }
             })
     }
     else { // empty comment, ignore
         state.comment = post_data
-        state.page    = 'comment' // format the state.comment as a comment
         send_html(200, pagefactory.render(state), res, db)
     }
 }

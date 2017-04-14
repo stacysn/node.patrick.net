@@ -64,7 +64,7 @@ pages.logout = function () {
     return loginprompt()
 }
 
-pages.comment = function () {
+pages.postcomment = function () {
     return comment()
 }
 
