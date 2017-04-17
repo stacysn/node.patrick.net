@@ -68,6 +68,10 @@ pages.postcomment = function () {
     return comment()
 }
 
+pages.alert = function () {
+    return alert()
+}
+
 //////////////////////////////////////// end of pages; all html is below ////////////////////////////////////////
 
 function html(...args) {
@@ -156,7 +160,7 @@ function commentbox() {
     <form id='commentform' >
         <textarea            name='comment_content'    class='form-control' rows='10' placeholder='write a comment...' ></textarea><p>
         <input type='hidden' name='comment_address_id' value='${ state.address.address_id }' />
-        <input type='hidden' name='comment_author'     value='${ state.user.user_id }' ><p>
+        <input type='hidden' name='comment_author'     value='${ state.user ? state.user.user_id : 0 }' ><p>
         <button type='submit' class='btn btn-success btn-sm'
             onclick="$.post('/postcomment', $('#commentform').serialize()).done(function(data) {
                 $('#newcomment').append(data)
@@ -171,7 +175,7 @@ function message() {
 }
 
 function comment() {
-    return `<div class="comment" >${ state.comment.comment_content }</div>`
+    return `<div class="comment" >${ state.comment.comment_created } ${ state.comment.comment_content }</div>`
 }
 
 function body(...args) {
@@ -219,4 +223,8 @@ function footer() {
         <a href='/1302130/2017-01-28-patnet-improvement-suggestions'>suggestions</a> &nbsp;
         <a href='mailto:p@patrick.net?subject=%2F' >contact</a> &nbsp;
         search box goes here`
+}
+
+function alert() {
+    return `<script type='text/javascript'> alert('${ state.alert_content }'); </script>`
 }

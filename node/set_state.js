@@ -3,7 +3,7 @@ var locks = {}
 
 pool = mysql.createPool(conf.db)
 pool.on('release', function (db) {
-    console.log('Db connection %d released', db.threadId);
+    //console.log('Db connection %d released', db.threadId);
 
     // scan locks and delete the lock object which has db.threadId and any that are older than 2 seconds
     Object.keys(locks).map(ip => {
@@ -194,17 +194,24 @@ pages.postcomment = function (req, res, state, db) {
             function (error, results, fields) {
                 if (error) { db.release(); throw error }
 
-                if (results.length && results[0].ago < 2) {
-                    state.comment = post_data
-                    state.comment.comment_content = 'You are posting comments too quickly! Please slow down.'
+                if (results.length && results[0].ago < 2) { // this ip already commented less than two seconds ago
+                    state.page          = 'alert'
+                    state.alert_content = 'You are posting comments too quickly! Please slow down.'
                     send_html(200, pagefactory.render(state), res, db)
                 }
                 else {
                     var query = db.query('insert into comments set ?', post_data, function (error, results, fields) {
                         if (error) { db.release(); throw error }
 
-                        state.comment = post_data
-                        send_html(200, pagefactory.render(state), res, db)
+                        // now select the inserted row so that we pick up the comment_created time for displaying the comment
+                        var query = db.query('select * from comments where comment_id = ?', [results.insertId],
+                            function (error, results, fields) {
+                                if (error) { db.release(); throw error }
+
+                                if (results.length) state.comment = results[0]
+
+                                send_html(200, pagefactory.render(state), res, db)
+                        })
                     })
                 }
             })
