@@ -1,4 +1,16 @@
 var pages = {}
+var locks = {}
+
+pool = mysql.createPool(conf.db)
+pool.on('release', function (db) {
+    console.log('Db connection %d released', db.threadId);
+
+    // scan locks and delete the lock object which has db.threadId and any that are older than 2 seconds
+    Object.keys(locks).map(ip => {
+        if (locks[ip].threadId == db.threadId || locks[ip].ts < (Date.now() - 2000)) delete locks[ip]
+    })
+
+})
 
 exports.run = function (req, res, page) {
 
@@ -12,6 +24,15 @@ exports.run = function (req, res, page) {
         if (err) throw err
 
         var ip = req.headers['x-forwarded-for'] // we get the client ip from nginx's forwarding it
+
+        // query or set a database lock for this ip; each ip is allowed only one outstanding connection at a time
+        if (locks[ip]) { send_html(403, 'Rate Limit Exceeded', res, db); return }
+        else { // set the lock
+            locks[ip] = {
+                threadId : db.threadId,
+                ts       : Date.now()
+            }
+        }
 
         // block entire countries like Russia because all comments from there are inevitably spam
         db.query('select country_evil from countries where inet_aton(?) >= country_start and inet_aton(?) <= country_end', [ip, ip],

@@ -15,8 +15,6 @@ qs          = require('querystring')
 set_state   = require('./set_state')
 url         = require('url')
 
-pool = mysql.createPool(conf.db)
-
 if (cluster.isMaster) {
     for (var i = 0; i < require('os').cpus().length; i++) cluster.fork();
 
