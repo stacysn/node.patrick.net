@@ -188,9 +188,12 @@ function body(...args) {
 
 function address_list() {
 
-    var formatted = state.addresses.map( (item) => {
-        return `<div class="address" ><a href="/address/${item.address_id}/slug">${item.address_num_street}</a></div>`
-    })
+    if (state.addresses) {
+        var formatted = state.addresses.map( (item) => {
+            return `<div class="address" ><a href="/address/${item.address_id}/slug">${item.address_num_street}</a></div>`
+        })
+    }
+    else formatted = []
 
     return formatted.join('')
 }

@@ -23,7 +23,7 @@ exports.run = function (req, res, page) {
     pool.getConnection(function(err, db) {
         if (err) throw err
 
-        var ip = req.headers['x-forwarded-for'] // we get the client ip from nginx's forwarding it
+        var ip = req.headers['x-forwarded-for']
 
         // query or set a database lock for this ip; each ip is allowed only one outstanding connection at a time
         if (locks[ip]) { send_html(403, 'Rate Limit Exceeded', res, db); return }
@@ -58,14 +58,9 @@ pages.home = function (req, res, state, db) {
     var query = db.query('select * from addresses', function (error, results, fields) {
         if (error) { db.release(); throw error }
 
-        if (0 == results.length) {
-            send_html(404, 'no addresses found', res, null)
-        }
-        else {
-            state.addresses = results
-            state.message   = 'Increasing fair play for buyers and sellers'
-            send_html(200, pagefactory.render(state), res, db)
-        }
+        state.addresses = results
+        state.message   = 'Increasing fair play for buyers and sellers'
+        send_html(200, pagefactory.render(state), res, db)
     })
 }
 
