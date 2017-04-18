@@ -38,8 +38,8 @@ exports.run = function (req, res, page) {
         db.query('select country_evil from countries where inet_aton(?) >= country_start and inet_aton(?) <= country_end', [ip, ip],
                  function (error, results, fields) {
 
-            if (error)                   { db.release(); throw error }
-            if (results[0].country_evil) { send_html(404, 'Not Found', res, db); return } // just give a 404 to all evil countries
+            if (error)                                     { db.release(); throw error }
+            if (results.length && results[0].country_evil) { send_html(404, 'Not Found', res, db); return } // just give a 404 to all evil countries
 
             // block individual known spammer ip addresses
             db.query('select count(*) as c from nukes where nuke_ip_address = ?', [ip], function (error, results, fields) {
@@ -64,12 +64,11 @@ pages.home = function (req, res, state, db) {
     })
 }
 
-pages.addressform = function (req, res, state, db) {
-    state.message = 'Enter new address'
-    send_html(200, pagefactory.render(state), res, db)
-}
+pages.registerform = function (req, res, state, db) { send_html(200, pagefactory.render(state), res, db) }
 
-pages.address = function (req, res, state, db) {
+pages.addressform = function (req, res, state, db) { send_html(200, pagefactory.render(state), res, db) }
+
+pages.address = function (req, res, state, db) { // show a single address page
 
     var address_id = url.parse(req.url).path.split('/')[2].replace(/\D/g,'') // get address' db row number from url, eg /address/47/slug-goes-here
 
@@ -156,6 +155,46 @@ pages.logout = function (req, res, state, db) {
     if (db) db.release()
 }
 
+pages.registration = function (req, res, state, db) {
+
+    post_data = state.post_data
+    Object.keys(post_data).map(key => { post_data[key] = strip_tags(post_data[key]) })
+
+    if (/\W/.test(post_data.user_screenname)) {
+        message('Please go back and enter username consisting only of letters', state, res, db); return
+    }
+
+    if (!/^\w.*@.+\.\w+$/.test(post_data.user_email)) {
+        message('Please go back and enter a valid email address',  state, res, db); return
+    }
+
+    password               = md5(Date.now() + conf.nonce_secret).substring(0, 6)
+    post_data.user_md5pass = md5(password)
+
+    var query = db.query('insert into users set ?', post_data,
+        function (error, results, fields) {
+            if (error) {
+                if (/ER_DUP_ENTRY/.test(error.message)) message('It looks like that user is already registered', state, res, db)
+                else                                    message('Darn, something went wrong', state, res, db)
+                return
+            }
+
+            let mailOptions = {
+                from: conf.email_admin,
+                to: post_data.user_email,
+                subject: 'Wecome to whatdidyoubid.com',
+                text: 'Hello world', // plain text body
+                html: `Your password is ${ password }` // html body
+            }
+
+            transporter.sendMail(mailOptions, (error, info) => {
+                if (error) { db.release(); throw error }
+                console.log('Message %s sent: %s', info.messageId, info.response);
+                message('Please check your email for the login link', state, res, db)
+            })
+        })
+}
+
 pages.postaddress = function (req, res, state, db) {
 
     post_data = state.post_data
@@ -234,7 +273,7 @@ function redirect(redirect_to, res, db) {
 
 function message(message, state, res, db) {
     state.page    = 'message'
-    state.message = message
+    state.message =  message
     send_html(200, pagefactory.render(state), res, db)
 }
 

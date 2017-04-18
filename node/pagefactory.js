@@ -33,6 +33,17 @@ pages.message = function () {
     )
 }
 
+pages.registerform = function () {
+    return html(
+        head(),
+        body(
+            header(),
+            registerform(),
+            footer()
+        )
+    )
+}
+
 pages.addressform = function () {
     return html(
         head(),
@@ -118,27 +129,40 @@ function loginprompt() {
     return `<div id='status' >
         ${ state.login_failed ? 'login failed' : '' }
         <form id='loginform' >
-            <fieldset id="inputs">
-                <input id="email"    type="text"     placeholder="email"    name="email"    required >   
-                <input id="password" type="password" placeholder="password" name="password" required >
+            <fieldset id='inputs'>
+                <input id='email'    type='text'     placeholder='email'    name='email'    required >   
+                <input id='password' type='password' placeholder='password' name='password' required >
             </fieldset>
-            <fieldset id="actions">
-                <input type="submit" id="submit" value="log in"
+            <fieldset id='actions'>
+                <input type='submit' id='submit' value='log in'
                     onclick="$.post('/login', $('#loginform').serialize()).done(function(data) { $('#status').html(data) });return false">
 
-                <a href="">forgot your password?</a> <a href="">register</a>
+                <a href=''>forgot your password?</a> <a href='/registerform'>register</a>
             </fieldset>
         </form>
         </div>`
 }
 
 function tabs() {
-    return `<ul class="nav nav-tabs">
-        <li class="active" > <a href="/?order=active"   title="most recent comments" >active</a></li>
-        <li                > <a href="/?order=comments" title="most comments"        >comments</a></li>
-        <li                > <a href="/?order=new"      title="newest"               >new</a></li>
-        <li                > <a href="/?order=private"  title="your private chats"   >private</a></li>
+    return `<ul class='nav nav-tabs'>
+        <li class='active' > <a href='/?order=active'   title='most recent comments' >active</a></li>
+        <li                > <a href='/?order=comments' title='most comments'        >comments</a></li>
+        <li                > <a href='/?order=new'      title='newest'               >new</a></li>
+        <li                > <a href='/?order=private'  title='your private chats'   >private</a></li>
         </ul>`
+}
+
+function registerform() {
+    return `
+        <h1>register</h1>
+        <form action='/registration' method='post'>
+        <div >
+            <div class='form-group'><input type='text' name='user_screenname' placeholder='choose username' class='form-control' id='user_screenname' ></div>
+            <div class='form-group'><input type='text' name='user_email'      placeholder='email address'   class='form-control'                      ></div>
+        </div>
+        <button type='submit' id='submit' class='btn btn-success btn-sm'>submit</button>
+        </form>
+        <script type="text/javascript">document.getElementById('user_screenname').focus();</script>`
 }
 
 function addressform() {
