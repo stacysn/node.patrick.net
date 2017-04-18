@@ -190,7 +190,12 @@ function address_list() {
 
     if (state.addresses) {
         var formatted = state.addresses.map( (item) => {
-            return `<div class="address" ><a href="/address/${item.address_id}/slug">${item.address_num_street}</a></div>`
+            return `<div class="address" ><a href="/address/${item.address_id}/slug">
+            ${item.address_num_street},
+            ${item.zip_city}
+            ${item.zip_state}
+            ${item.zip_code}
+            </a></div>`
         })
     }
     else formatted = []
@@ -203,7 +208,12 @@ function new_address_button() {
 }
 
 function address() {
-    return `<h1><a href="/address/${state.address.address_id}/slug">${state.address.address_num_street}</a></h1>`
+    return `<h1><a href="/address/${state.address.address_id}/slug">
+    ${state.address.address_num_street},
+    ${state.address.zip_city}
+    ${state.address.zip_state}
+    ${state.address.zip_code}
+    </a></h1>`
 }
 
 function comment_list() {

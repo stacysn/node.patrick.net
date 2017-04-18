@@ -55,7 +55,7 @@ exports.run = function (req, res, page) {
 
 pages.home = function (req, res, state, db) {
 
-    var query = db.query('select * from addresses', function (error, results, fields) {
+    var query = db.query('select * from addresses, zips where address_zip=zip_code', function (error, results, fields) {
         if (error) { db.release(); throw error }
 
         state.addresses = results
@@ -73,12 +73,10 @@ pages.address = function (req, res, state, db) {
 
     var address_id = url.parse(req.url).path.split('/')[2].replace(/\D/g,'') // get address' db row number from url, eg /address/47/slug-goes-here
 
-    var query = db.query('select * from addresses where address_id = ?', [address_id], function (error, results, fields) {
+    var query = db.query('select * from addresses, zips where address_id=? and address_zip=zip_code', [address_id], function (error, results, fields) {
         if (error) { db.release(); throw error }
 
-        if (0 == results.length) {
-            send_html(404, `No address with id "${address_id}"`, res, null)
-        }
+        if (0 == results.length) send_html(404, `No address with id "${address_id}"`, res, null)
         else {
             state.address = results[0]
 
