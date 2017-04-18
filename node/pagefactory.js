@@ -16,6 +16,7 @@ pages.home = function () {
             tabs(),
             message(),
             address_list(),
+            new_address_button(),
             footer()
         )
     )
@@ -96,7 +97,6 @@ function header() {
     return `<div class='headerbox' >
         <a href='/' ><font color='ba114c'><h3 title='back to home page' >What Did You Bid?</h3></font></a> &nbsp;
         <div style='float:right'>${ icon_or_loginprompt() }</div><p>
-        <a href='/addressform' class='btn btn-success btn-sm' title='start writing about a new address' ><b>add new address</b></a>
         </div>`
 }
 
@@ -198,6 +198,9 @@ function address_list() {
     return formatted.join('')
 }
 
+function new_address_button() {
+    return '<a href="/addressform" class="btn btn-success btn-sm" title="start writing about a new address" ><b>add new address</b></a>'
+}
 
 function address() {
     return `<h1><a href="/address/${state.address.address_id}/slug">${state.address.address_num_street}</a></h1>`
