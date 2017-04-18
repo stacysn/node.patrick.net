@@ -28,7 +28,7 @@ if (cluster.isMaster) {
 
     function handler(req, res) {
 
-        var page = url.parse(req.url).path.split('/')[1].replace(/\W/g,'') || 'home'
+        var page = url.parse(req.url).pathname.split('/')[1].replace(/\W/g,'') || 'home'
 
         set_state.run(req, res, page)
     }
