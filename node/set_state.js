@@ -94,12 +94,14 @@ pages.address = function (req, res, state, db) { // show a single address page
 
 pages.login = function (req, res, state, db) {
 
-    post_data = state.post_data
-    delete state.post_data // so login info never accidentally appears in state output
+    if (state.post_data) login_data = state.post_data
+    else {
+        login_data    = url.parse(req.url, true).query
+        state.page    = 'home'
+        state.message = 'Welcome!'
+    }
 
-    Object.keys(post_data).map(key => { post_data[key] = strip_tags(post_data[key]) })
-
-    var query = db.query('select * from users where user_email = ? and user_md5pass = ?', [post_data.email, md5(post_data.password)],
+    var query = db.query('select * from users where user_email = ? and user_md5pass = ?', [login_data.email, md5(login_data.password)],
              function (error, results, fields) {
 
         if (error) { db.release(); throw error }
@@ -118,9 +120,9 @@ pages.login = function (req, res, state, db) {
 
         html = pagefactory.render(state)
 
-        var cookie       = `whatdidyoubid=${user_id}_${user_md5pass}`
-        var d            = new Date()
-        var decade       = new Date(d.getFullYear()+10, d.getMonth(), d.getDate()).toUTCString()
+        var cookie = `whatdidyoubid=${user_id}_${user_md5pass}`
+        var d      = new Date()
+        var decade = new Date(d.getFullYear()+10, d.getMonth(), d.getDate()).toUTCString()
 
         var headers =  {
             'Content-Length' : html.length,
@@ -179,12 +181,14 @@ pages.registration = function (req, res, state, db) {
                 return
             }
 
+            baseurl = (/localdev/.test(os.hostname())) ? 'http://dev.whatdidyoubid.com:8080' : 'https://whatdidyoubid.com' // for testing email
+
             let mailOptions = {
-                from: conf.email_admin,
+                from: conf.admin_email,
                 to: post_data.user_email,
                 subject: 'Wecome to whatdidyoubid.com',
-                text: 'Hello world', // plain text body
-                html: `Your password is ${ password }` // html body
+                html: `You can <a href='${ baseurl }/login?email=${ post_data.user_email }&password=${ password }'>click here</a>
+                to log in, or you can login with your email ${ post_data.user_email } and password, which is ${ password }`
             }
 
             transporter.sendMail(mailOptions, (error, info) => {
