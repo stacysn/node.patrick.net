@@ -17,19 +17,6 @@ qs          = require('querystring')
 set_state   = require('./set_state')
 url         = require('url')
 
-transporter = nodemailer.createTransport({
-    host:   conf.email_host,
-    port:   conf.email_port,
-    secure: false, // do not use TLS
-    auth: {
-        user: conf.email_user,
-        pass: conf.email_pass
-    },
-    tls: {
-        rejectUnauthorized: false // do not fail on invalid certs
-    }
-})
-
 if (cluster.isMaster) {
     for (var i = 0; i < require('os').cpus().length; i++) cluster.fork();
 

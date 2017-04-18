@@ -184,14 +184,14 @@ pages.registration = function (req, res, state, db) {
             baseurl = (/localdev/.test(os.hostname())) ? 'http://dev.whatdidyoubid.com:8080' : 'https://whatdidyoubid.com' // for testing email
 
             let mailOptions = {
-                from: conf.admin_email,
-                to: post_data.user_email,
+                from:    conf.admin_email,
+                to:      post_data.user_email,
                 subject: 'Wecome to whatdidyoubid.com',
-                html: `You can <a href='${ baseurl }/login?email=${ post_data.user_email }&password=${ password }'>click here</a>
-                to log in, or you can login with your email ${ post_data.user_email } and password, which is ${ password }`
+                html:    `You can <a href='${ baseurl }/login?email=${ post_data.user_email }&password=${ password }'>click here</a>
+                          to log in, or you can login with your email ${ post_data.user_email } and password, which is ${ password }`
             }
 
-            transporter.sendMail(mailOptions, (error, info) => {
+            get_transporter().sendMail(mailOptions, (error, info) => {
                 if (error) { db.release(); throw error }
                 console.log('Message %s sent: %s', info.messageId, info.response);
                 message('Please check your email for the login link', state, res, db)
@@ -353,4 +353,19 @@ function set_user(req, res, state, db) { // update state with whether they are l
         state.user = null
         pages[state.page](req, res, state, db)
     }
+}
+
+function get_transporter() {
+    return nodemailer.createTransport({
+        host:   conf.email_host,
+        port:   conf.email_port,
+        secure: false, // do not use TLS
+        auth: {
+            user: conf.email_user,
+            pass: conf.email_pass
+        },
+        tls: {
+            rejectUnauthorized: false // do not fail on invalid certs
+        }
+    })
 }
