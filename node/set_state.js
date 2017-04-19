@@ -2,19 +2,15 @@ var pages = {}
 var locks = {}
 
 pool = mysql.createPool(conf.db)
-pool.on('release', function (db) {
-    //console.log('Db connection %d released', db.threadId);
 
-    // scan locks and delete the lock object which has db.threadId and any that are older than 2 seconds
+pool.on('release', function (db) { // scan locks and delete the lock object which has db.threadId and any that are older than 2 seconds
     Object.keys(locks).map(ip => {
         if (locks[ip].threadId == db.threadId || locks[ip].ts < (Date.now() - 2000)) delete locks[ip]
     })
-
 })
 
 exports.run = function (req, res, page) {
 
-    // if there is no such page, exit immediately without using any db resources
     if (typeof pages[page] !== 'function') { send_html(404, `No page like "${req.url}"`, res, null); return }
 
     var state = {} // start accumulation of state
