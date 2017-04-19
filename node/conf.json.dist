@@ -1,11 +1,16 @@
 {
-    "admin_email"  :  "",
-    "nonce_secret" :  "",
+    "admin_email"  : "",
     "db"           : {
         "connectionLimit"    : 40,
-        "database"           : "",
+        "database"           : "whatdidyoubid",
         "multipleStatements" : true,
         "password"           : "",
         "user"               : ""
-    }
+    },
+    "http_port"    : 8081,
+    "nonce_secret" : "",
+    "email_host"   : "whatdidyoubid.com",
+    "email_port"   : 587,
+    "email_user"   : "",
+    "email_pass"   : ""
 }

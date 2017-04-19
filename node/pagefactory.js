@@ -44,6 +44,17 @@ pages.registerform = function () {
     )
 }
 
+pages.lostpwform = function () {
+    return html(
+        head(),
+        body(
+            header(),
+            lostpwform(),
+            footer()
+        )
+    )
+}
+
 pages.addressform = function () {
     return html(
         head(),
@@ -68,7 +79,7 @@ pages.address = function () {
     )
 }
 
-pages.get_login = function () {
+pages.key_login = function () {
     return pages.home()
 }
 
@@ -141,7 +152,7 @@ function loginprompt() {
                 <input type='submit' id='submit' value='log in'
                     onclick="$.post('/post_login', $('#loginform').serialize()).done(function(data) { $('#status').html(data) });return false">
 
-                <a href=''>forgot your password?</a> <a href='/registerform'>register</a>
+                <a href='/lostpwform'>forgot your password?</a> <a href='/registerform'>register</a>
             </fieldset>
         </form>
         </div>`
@@ -167,6 +178,18 @@ function registerform() {
         <button type='submit' id='submit' class='btn btn-success btn-sm'>submit</button>
         </form>
         <script type="text/javascript">document.getElementById('user_screenname').focus();</script>`
+}
+
+function lostpwform() {
+    var show = state.email ? `value='${ state.email }'` : `placeholder='email address'`
+
+    return `
+        <h1>reset password</h1>
+        <form action='/recoveryemail' method='post'>
+        <div class='form-group'><input type='text' name='user_email' ${ show } class='form-control' ></div>
+        <button type='submit' id='submit' class='btn btn-success btn-sm'>submit</button>
+        </form>
+        <script type="text/javascript">document.getElementById('user_email').focus();</script>`
 }
 
 function addressform() {

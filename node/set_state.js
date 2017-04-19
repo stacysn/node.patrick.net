@@ -66,6 +66,13 @@ pages.home = function (req, res, state, db) {
 
 pages.registerform = function (req, res, state, db) { send_html(200, pagefactory.render(state), res, db) }
 
+pages.lostpwform = function (req, res, state, db) {
+
+    state.email = url.parse(req.url, true).query.email
+
+    send_html(200, pagefactory.render(state), res, db)
+}
+
 pages.addressform = function (req, res, state, db) { send_html(200, pagefactory.render(state), res, db) }
 
 pages.address = function (req, res, state, db) { // show a single address page
@@ -92,17 +99,41 @@ pages.address = function (req, res, state, db) { // show a single address page
     })
 }
 
-pages.get_login = function (req, res, state, db) {
-    login_data = url.parse(req.url, true).query
-    state.message = 'Welcome!'
+pages.key_login = function (req, res, state, db) { // erase key so it cannot be used again, and set new password
 
-    login(req, res, state, db, login_data)
+    key           = url.parse(req.url, true).query.key
+    password      = md5(Date.now() + conf.nonce_secret).substring(0, 6)
+    state.message = `Your password is ${ password } and you are now logged in`
+
+    var query = db.query('select user_email from users where user_key = ?', [key],
+        function (error, results, fields) {
+
+            if (error) { db.release(); throw error }
+
+            if (results.length) email = results[0].user_email
+            else {
+                message(`Darn, that key has already been used. Please <a href='/lostpwform'>reset password</a>`, state, res, db)
+                return
+            }
+
+            var query = db.query('update users set user_key=null, user_md5pass=? where user_key=?', [md5(password), key],
+                function (error, results, fields) {
+
+                    if (error) {
+                        message('Darn, something went wrong', state, res, db)
+                        return
+                    }
+
+                    login(req, res, state, db, email, password)
+                })
+        })
 }
 
 pages.post_login = function (req, res, state, db) {
-    login_data = state.post_data
+    email    = state.post_data.email
+    password = state.post_data.password
 
-    login(req, res, state, db, login_data)
+    login(req, res, state, db, email, password)
 }
 
 pages.logout = function (req, res, state, db) {
@@ -127,45 +158,42 @@ pages.logout = function (req, res, state, db) {
 
 pages.registration = function (req, res, state, db) {
 
-    post_data = state.post_data
-    Object.keys(post_data).map(key => { post_data[key] = strip_tags(post_data[key]) })
+    Object.keys(state.post_data).map(key => { state.post_data[key] = strip_tags(state.post_data[key]) })
 
-    if (/\W/.test(post_data.user_screenname)) {
+    if (/\W/.test(state.post_data.user_screenname)) {
         message('Please go back and enter username consisting only of letters', state, res, db); return
     }
 
-    if (!/^\w.*@.+\.\w+$/.test(post_data.user_email)) {
+    if (!/^\w.*@.+\.\w+$/.test(state.post_data.user_email)) {
         message('Please go back and enter a valid email address',  state, res, db); return
     }
 
-    password               = md5(Date.now() + conf.nonce_secret).substring(0, 6)
-    post_data.user_md5pass = md5(password)
-
-    var query = db.query('insert into users set ?', post_data,
+    var query = db.query('insert into users set ?', state.post_data,
         function (error, results, fields) {
+
             if (error) {
-                if (/ER_DUP_ENTRY/.test(error.message)) message('That user is already registered', state, res, db)
-                else                                    message('Darn, something went wrong', state, res, db)
+                if (/ER_DUP_ENTRY/.test(error.message))
+                    message(`That user is already registered. <a href='/lostpwform?email=${ state.post_data.user_email }'>reset password</a>`, state, res, db)
+                else
+                    message('Darn, something went wrong', state, res, db)
+
                 return
             }
-
-            baseurl = (/localdev/.test(os.hostname())) ? 'http://dev.whatdidyoubid.com:8080' : 'https://whatdidyoubid.com' // for testing email
-
-            let mailOptions = {
-                from:    conf.admin_email,
-                to:      post_data.user_email,
-                subject: 'Wecome to whatdidyoubid.com',
-                html:    `You can <a href='${ baseurl }/get_login?email=${ post_data.user_email }&password=${ password }'>click here</a>
-                          to log in, or you can login with your email ${ post_data.user_email } and password, which is ${ password }`
-            }
-
-            get_transporter().sendMail(mailOptions, (error, info) => {
-                if (error) { db.release(); throw error }
-                console.log('Message %s sent: %s', info.messageId, info.response);
-                message('Please check your email for the login link', state, res, db)
-            })
+            send_login_link(req, res, state, db)
         })
 }
+
+pages.recoveryemail = function (req, res, state, db) {
+
+    Object.keys(state.post_data).map(key => { state.post_data[key] = strip_tags(state.post_data[key]) })
+
+    if (!/^\w.*@.+\.\w+$/.test(state.post_data.user_email)) {
+        message('Please go back and enter a valid email address',  state, res, db); return
+    }
+
+    send_login_link(req, res, state, db)
+}
+
 
 pages.postaddress = function (req, res, state, db) {
 
@@ -228,9 +256,9 @@ pages.postcomment = function (req, res, state, db) {
 
 //////////////////////////////////////// end of pages; helper functions below ////////////////////////////////////////
 
-function login(req, res, state, db, login_data) {
+function login(req, res, state, db, email, password) {
 
-    var query = db.query('select * from users where user_email = ? and user_md5pass = ?', [login_data.email, md5(login_data.password)],
+    var query = db.query('select * from users where user_email = ? and user_md5pass = ?', [email, md5(password)],
              function (error, results, fields) {
 
         if (error) { db.release(); throw error }
@@ -374,4 +402,38 @@ function get_transporter() {
             rejectUnauthorized: false // do not fail on invalid certs
         }
     })
+}
+
+function send_login_link(req, res, state, db) {
+
+    baseurl  = (/localdev/.test(os.hostname())) ? 'http://dev.whatdidyoubid.com:8080' : 'https://whatdidyoubid.com' // for testing email
+    key      = md5(Date.now() + conf.nonce_secret)
+    key_link = `${ baseurl }/key_login?key=${ key }`
+
+    var query = db.query('update users set user_key=? where user_email=?', [key, state.post_data.user_email],
+        function (error, results, fields) {
+
+            if (error) {
+                message('Darn, something went wrong', state, res, db)
+                return
+            }
+
+            if (results.changedRows) {
+
+                message('Please check your email for the login link', state, res, db)
+
+                let mailOptions = {
+                    from:    conf.admin_email,
+                    to:      state.post_data.user_email,
+                    subject: 'Your whatdidyoubid.com login info',
+                    html:    `Click here to log in and get your password: <a href='${ key_link }'>${ key_link }</a>`
+                }
+
+                get_transporter().sendMail(mailOptions, (error, info) => {
+                    if (error) { db.release(); throw error }
+                    console.log('Message %s sent: %s', info.messageId, info.response);
+                })
+            }
+            else message(`Could not find user with email ${ state.post_data.user_email }`, state, res, db)
+        })
 }
