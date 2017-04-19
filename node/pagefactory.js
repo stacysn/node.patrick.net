@@ -212,9 +212,9 @@ function commentbox() {
         <textarea            name='comment_content'    class='form-control' rows='10' placeholder='write a comment...' ></textarea><p>
         <input type='hidden' name='comment_address_id' value='${ state.address.address_id }' />
         <input type='hidden' name='comment_author'     value='${ state.user ? state.user.user_id : 0 }' ><p>
-        <button type='submit' class='btn btn-success btn-sm'
+        <button class='btn btn-success btn-sm'
             onclick="$.post('/postcomment', $('#commentform').serialize()).done(function(data) {
-                $('#newcomment').append(data)
+                if (data) $('#newcomment').append(data)
                 document.getElementById('commentform').reset() // clear the textbox
             })
             return false" >submit</button>

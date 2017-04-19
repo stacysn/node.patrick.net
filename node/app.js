@@ -29,9 +29,7 @@ if (cluster.isMaster) {
     http.createServer(handler).listen(conf.http_port)
 
     function handler(req, res) {
-
         var page = url.parse(req.url).pathname.split('/')[1] || 'home'
-
         set_state.run(req, res, page)
     }
 }

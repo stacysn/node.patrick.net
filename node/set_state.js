@@ -16,37 +16,7 @@ exports.run = function (req, res, page) {
     var state = {} // start accumulation of state
     state.page = page
 
-    pool.getConnection(function(err, db) {
-        if (err) throw err
-
-        var ip = req.headers['x-forwarded-for']
-
-        // query or set a database lock for this ip; each ip is allowed only one outstanding connection at a time
-        if (locks[ip]) { send_html(403, 'Rate Limit Exceeded', res, db); return }
-        else { // set the lock
-            locks[ip] = {
-                threadId : db.threadId,
-                ts       : Date.now()
-            }
-        }
-
-        // block entire countries like Russia because all comments from there are inevitably spam
-        db.query('select country_evil from countries where inet_aton(?) >= country_start and inet_aton(?) <= country_end', [ip, ip],
-                 function (error, results, fields) {
-
-            if (error)                                     { db.release(); throw error }
-            if (results.length && results[0].country_evil) { send_html(404, 'Not Found', res, db); return } // just give a 404 to all evil countries
-
-            // block individual known spammer ip addresses
-            db.query('select count(*) as c from nukes where nuke_ip_address = ?', [ip], function (error, results, fields) {
-
-                if (error)        { db.release(); throw error }
-                if (results[0].c) { send_html(404, 'Not Found', res, db); return }
-
-                collect_post_data(req, res, state, db)
-            })
-        })
-    })
+    connect_to_db(req, res, state)
 }
 
 pages.home = function (req, res, state, db) {
@@ -213,44 +183,81 @@ pages.postcomment = function (req, res, state, db) {
     post_data = state.post_data
     Object.keys(post_data).map(key => { post_data[key] = strip_tags(post_data[key]) })
 
-    if (post_data.comment_content) {
-        post_data.comment_author_ip = req.headers['x-forwarded-for']
+    if (!post_data.comment_content) {
+        send_html(200, '', res, db) 
+        return
+    }
 
-        // rate limit by ip address
-        var query = db.query('select (now() - comment_created) as ago from comments where comment_author_ip = ? order by comment_created desc limit 1',
-            [post_data.comment_author_ip],
-            function (error, results, fields) {
-                if (error) { db.release(); throw error }
+    post_data.comment_author_ip = state.ip
 
-                if (results.length && results[0].ago < 2) { // this ip already commented less than two seconds ago
-                    state.page          = 'alert'
-                    state.alert_content = 'You are posting comments too quickly! Please slow down.'
-                    send_html(200, pagefactory.render(state), res, db)
-                }
-                else {
-                    var query = db.query('insert into comments set ?', post_data, function (error, results, fields) {
-                        if (error) { db.release(); throw error }
+    // rate limit by ip address
+    var query = db.query('select (now() - comment_created) as ago from comments where comment_author_ip = ? order by comment_created desc limit 1',
+        [post_data.comment_author_ip],
+        function (error, results, fields) {
+            if (error) { db.release(); throw error }
 
-                        // now select the inserted row so that we pick up the comment_created time for displaying the comment
-                        var query = db.query('select * from comments where comment_id = ?', [results.insertId],
-                            function (error, results, fields) {
-                                if (error) { db.release(); throw error }
+            if (results.length && results[0].ago < 2) { // this ip already commented less than two seconds ago
+                state.page          = 'alert'
+                state.alert_content = 'You are posting comments too quickly! Please slow down.'
+                send_html(200, pagefactory.render(state), res, db)
+            }
+            else {
+                var query = db.query('insert into comments set ?', post_data, function (error, results, fields) {
+                    if (error) { db.release(); throw error }
 
-                                if (results.length) state.comment = results[0]
+                    // now select the inserted row so that we pick up the comment_created time for displaying the comment
+                    var query = db.query('select * from comments where comment_id = ?', [results.insertId],
+                        function (error, results, fields) {
+                            if (error) { db.release(); throw error }
 
-                                send_html(200, pagefactory.render(state), res, db)
-                        })
+                            if (results.length) state.comment = results[0]
+
+                            send_html(200, pagefactory.render(state), res, db)
                     })
-                }
-            })
-    }
-    else { // empty comment, ignore
-        state.comment = post_data
-        send_html(200, pagefactory.render(state), res, db)
-    }
+                })
+            }
+        })
 }
 
 //////////////////////////////////////// end of pages; helper functions below ////////////////////////////////////////
+
+function connect_to_db(req, res, state) {
+    pool.getConnection(function(err, db) {
+        if (err) throw err
+
+        state.ip = req.headers['x-forwarded-for']
+
+        // query or set a database lock for this ip; each ip is allowed only one outstanding connection at a time
+        if (locks[state.ip]) { send_html(403, 'Rate Limit Exceeded', res, db); return }
+        else { // set the lock
+            locks[state.ip] = {
+                threadId : db.threadId,
+                ts       : Date.now()
+            }
+        }
+
+        block_evil(req, res, state, db)
+    })
+}
+
+function block_evil(req, res, state, db) {
+    // block entire countries like Russia because all comments from there are inevitably spam
+    db.query('select country_evil from countries where inet_aton(?) >= country_start and inet_aton(?) <= country_end', [state.ip, state.ip],
+             function (error, results, fields) {
+
+        if (error)                                     { db.release(); throw error }
+        if (results.length && results[0].country_evil) { send_html(404, 'Not Found', res, db); return } // just give a 404 to all evil countries
+
+        // block individual known spammer ip addresses
+        db.query('select count(*) as c from nukes where nuke_ip_address = ?', [state.ip], function (error, results, fields) {
+
+            if (error)        { db.release(); throw error }
+            if (results[0].c) { send_html(404, 'Not Found', res, db); return }
+
+            collect_post_data(req, res, state, db)
+        })
+    })
+}
 
 function login(req, res, state, db, email, password) {
 
