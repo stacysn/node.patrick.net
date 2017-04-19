@@ -68,7 +68,11 @@ pages.address = function () {
     )
 }
 
-pages.login = function () {
+pages.get_login = function () {
+    return pages.home()
+}
+
+pages.post_login = function () {
     return icon_or_loginprompt()
 }
 
@@ -135,7 +139,7 @@ function loginprompt() {
             </fieldset>
             <fieldset id='actions'>
                 <input type='submit' id='submit' value='log in'
-                    onclick="$.post('/login', $('#loginform').serialize()).done(function(data) { $('#status').html(data) });return false">
+                    onclick="$.post('/post_login', $('#loginform').serialize()).done(function(data) { $('#status').html(data) });return false">
 
                 <a href=''>forgot your password?</a> <a href='/registerform'>register</a>
             </fieldset>

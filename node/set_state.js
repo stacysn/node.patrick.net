@@ -92,49 +92,17 @@ pages.address = function (req, res, state, db) { // show a single address page
     })
 }
 
-pages.login = function (req, res, state, db) {
+pages.get_login = function (req, res, state, db) {
+    login_data = url.parse(req.url, true).query
+    state.message = 'Welcome!'
 
-    if (state.post_data) login_data = state.post_data
-    else {
-        login_data    = url.parse(req.url, true).query
-        state.page    = 'home'
-        state.message = 'Welcome!'
-    }
+    login(req, res, state, db, login_data)
+}
 
-    var query = db.query('select * from users where user_email = ? and user_md5pass = ?', [login_data.email, md5(login_data.password)],
-             function (error, results, fields) {
+pages.post_login = function (req, res, state, db) {
+    login_data = state.post_data
 
-        if (error) { db.release(); throw error }
-
-        if (0 == results.length) {
-            state.user         = null
-            var user_id        = ''
-            var user_md5pass   = ''
-            state.login_failed = true
-        }
-        else {
-            state.user       = results[0]
-            var user_id      = state.user.user_id
-            var user_md5pass = state.user.user_md5pass
-        }
-
-        html = pagefactory.render(state)
-
-        var cookie = `whatdidyoubid=${user_id}_${user_md5pass}`
-        var d      = new Date()
-        var decade = new Date(d.getFullYear()+10, d.getMonth(), d.getDate()).toUTCString()
-
-        var headers =  {
-            'Content-Length' : html.length,
-            'Content-Type'   : 'text/html',
-            'Expires'        : d.toUTCString(),
-            'Set-Cookie'     : `${cookie}; Expires=${decade}; Path=/; secure`,
-        }
-
-        res.writeHead(200, headers)
-        res.end(html)
-        if (db) db.release()
-    })
+    login(req, res, state, db, login_data)
 }
 
 pages.logout = function (req, res, state, db) {
@@ -176,7 +144,7 @@ pages.registration = function (req, res, state, db) {
     var query = db.query('insert into users set ?', post_data,
         function (error, results, fields) {
             if (error) {
-                if (/ER_DUP_ENTRY/.test(error.message)) message('It looks like that user is already registered', state, res, db)
+                if (/ER_DUP_ENTRY/.test(error.message)) message('That user is already registered', state, res, db)
                 else                                    message('Darn, something went wrong', state, res, db)
                 return
             }
@@ -187,7 +155,7 @@ pages.registration = function (req, res, state, db) {
                 from:    conf.admin_email,
                 to:      post_data.user_email,
                 subject: 'Wecome to whatdidyoubid.com',
-                html:    `You can <a href='${ baseurl }/login?email=${ post_data.user_email }&password=${ password }'>click here</a>
+                html:    `You can <a href='${ baseurl }/get_login?email=${ post_data.user_email }&password=${ password }'>click here</a>
                           to log in, or you can login with your email ${ post_data.user_email } and password, which is ${ password }`
             }
 
@@ -259,6 +227,44 @@ pages.postcomment = function (req, res, state, db) {
 }
 
 //////////////////////////////////////// end of pages; helper functions below ////////////////////////////////////////
+
+function login(req, res, state, db, login_data) {
+
+    var query = db.query('select * from users where user_email = ? and user_md5pass = ?', [login_data.email, md5(login_data.password)],
+             function (error, results, fields) {
+
+        if (error) { db.release(); throw error }
+
+        if (0 == results.length) {
+            state.user         = null
+            var user_id        = ''
+            var user_md5pass   = ''
+            state.login_failed = true
+        }
+        else {
+            state.user       = results[0]
+            var user_id      = state.user.user_id
+            var user_md5pass = state.user.user_md5pass
+        }
+
+        html = pagefactory.render(state)
+
+        var cookie = `whatdidyoubid=${user_id}_${user_md5pass}`
+        var d      = new Date()
+        var decade = new Date(d.getFullYear()+10, d.getMonth(), d.getDate()).toUTCString()
+
+        var headers =  {
+            'Content-Length' : html.length,
+            'Content-Type'   : 'text/html',
+            'Expires'        : d.toUTCString(),
+            'Set-Cookie'     : `${cookie}; Expires=${decade}; Path=/; secure`,
+        }
+
+        res.writeHead(200, headers)
+        res.end(html)
+        if (db) db.release()
+    })
+}
 
 function redirect(redirect_to, res, db) {
 
