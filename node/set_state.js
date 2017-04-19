@@ -11,10 +11,10 @@ pool.on('release', function (db) { // scan locks and delete the lock object whic
 
 exports.run = function (req, res, page) {
 
-    if (typeof pages[page] !== 'function') { send_html(404, `No page like "${req.url}"`, res, null); return }
-
     var state = {} // start accumulation of state
     state.page = page
+
+    if (typeof pages[page] !== 'function') { send_html(404, `No page like "${req.url}"`, res, null); return }
 
     connect_to_db(req, res, state)
 }
@@ -103,18 +103,16 @@ pages.post_login = function (req, res, state, db) {
 }
 
 pages.logout = function (req, res, state, db) {
-    var cookie       = `whatdidyoubid=_`
-    var d            = new Date()
-    var decade       = new Date(d.getFullYear()+10, d.getMonth(), d.getDate()).toUTCString()
 
     state.user = null
-    html = pagefactory.render(state)
+    var d      = new Date()
+    var html   = pagefactory.render(state)
 
     var headers =  {
         'Content-Length' : html.length,
         'Content-Type'   : 'text/html',
         'Expires'        : d.toUTCString(),
-        'Set-Cookie'     : `${cookie}; Expires=${decade}; Path=/; secure`,
+        'Set-Cookie'     : `whatdidyoubid=_; Expires=${d}; Path=/`,
     }
 
     res.writeHead(200, headers)
@@ -259,6 +257,56 @@ function block_evil(req, res, state, db) {
     })
 }
 
+function collect_post_data(req, res, state, db) { // if there is any POST data, accumulate it and append it to req object
+
+    if (req.method == 'POST') {
+        var body = ''
+
+        req.on('data', function (data) {
+            body += data
+
+            if (body.length > 1e6) { // too much POST data, kill the connection
+                req.connection.destroy()
+                res.writeHead(413, {'Content-Type': 'text/plain'}).end()
+            }
+        })
+
+        req.on('end', function () {
+            var post_data   = qs.parse(body)
+            Object.keys(post_data).map(function(key) { post_data[key] = post_data[key].trim() }) // trim all top level values, should all be strings
+            state.post_data = post_data
+            set_user(req, res, state, db)
+        })
+    }
+    else {
+        set_user(req, res, state, db)
+    }
+}
+
+function set_user(req, res, state, db) { // update state with whether they are logged in or not
+
+    // cookie is like whatdidyoubid=1_432d32044278053db427a93fc352235d where 1 is user and 432d... is md5'd password
+
+    try {
+        var user_id      = req.headers.cookie.split('=')[1].split('_')[0]
+        var user_md5pass = req.headers.cookie.split('=')[1].split('_')[1]
+
+        var query = db.query('select * from users where user_id = ? and user_md5pass = ?', [user_id, user_md5pass], function (error, results, fields) {
+
+            if (error) { db.release(); throw error }
+
+            if (0 == results.length) state.user = null
+            else                     state.user = results[0]
+
+            pages[state.page](req, res, state, db)
+        })
+    }
+    catch(e) { // no valid cookie
+        state.user = null
+        pages[state.page](req, res, state, db)
+    }
+}
+
 function login(req, res, state, db, email, password) {
 
     var query = db.query('select * from users where user_email = ? and user_md5pass = ?', [email, md5(password)],
@@ -288,7 +336,7 @@ function login(req, res, state, db, email, password) {
             'Content-Length' : html.length,
             'Content-Type'   : 'text/html',
             'Expires'        : d.toUTCString(),
-            'Set-Cookie'     : `${cookie}; Expires=${decade}; Path=/; secure`,
+            'Set-Cookie'     : `${cookie}; Expires=${decade}; Path=/`, // do NOT use "secure" or will not be able to test login in dev, w is http only
         }
 
         res.writeHead(200, headers)
@@ -338,58 +386,8 @@ function md5(str) {
     return hash.digest('hex')
 }
 
-function collect_post_data(req, res, state, db) { // if there is any POST data, accumulate it and append it to req object
-
-    if (req.method == 'POST') {
-        var body = ''
-
-        req.on('data', function (data) {
-            body += data
-
-            if (body.length > 1e6) { // too much POST data, kill the connection
-                req.connection.destroy()
-                res.writeHead(413, {'Content-Type': 'text/plain'}).end()
-            }
-        })
-
-        req.on('end', function () {
-            var post_data   = qs.parse(body)
-            Object.keys(post_data).map(function(key) { post_data[key] = post_data[key].trim() }) // trim all top level values, should all be strings
-            state.post_data = post_data
-            set_user(req, res, state, db)
-        })
-    }
-    else {
-        set_user(req, res, state, db)
-    }
-}
-
 function strip_tags(s) {
     return s.replace(/(<([^>]+)>)/g,'')
-}
-
-function set_user(req, res, state, db) { // update state with whether they are logged in or not
-
-    // cookie is like whatdidyoubid=1_432d32044278053db427a93fc352235d where 1 is user and 432d... is md5'd password
-
-    try {
-        var user_id      = req.headers.cookie.split('=')[1].split('_')[0]
-        var user_md5pass = req.headers.cookie.split('=')[1].split('_')[1]
-
-        db.query('select * from users where user_id = ? and user_md5pass = ?', [user_id, user_md5pass], function (error, results, fields) {
-
-            if (error) { db.release(); throw error }
-
-            if (0 == results.length) state.user = null
-            else                     state.user = results[0]
-
-            pages[state.page](req, res, state, db)
-        })
-    }
-    catch(e) { // no valid cookie
-        state.user = null
-        pages[state.page](req, res, state, db)
-    }
 }
 
 function get_transporter() {
