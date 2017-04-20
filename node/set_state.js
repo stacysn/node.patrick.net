@@ -30,6 +30,20 @@ pages.home = function (req, res, state, db) {
     })
 }
 
+pages.users = function (req, res, state, db) {
+    state.message = 'Users list not implemented yet'
+    send_html(200, pagefactory.render(state), res, db)
+}
+
+pages.about = function (req, res, state, db) {
+    state.message = 'About whatdidyoubid.com'
+
+    state.text = `Realtors routinely block or "lose" bids that do not give their own agency both sides of the commission. whatdidyoubid.com is a place
+    where bidders can list what they bid for a house so that sellers and other bidders can get an idea of the degree to which this takes place.`
+
+    send_html(200, pagefactory.render(state), res, db)
+}
+
 pages.registerform = function (req, res, state, db) { send_html(200, pagefactory.render(state), res, db) }
 
 pages.lostpwform = function (req, res, state, db) {

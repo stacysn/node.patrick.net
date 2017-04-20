@@ -13,8 +13,7 @@ pages.home = function () {
         head(),
         body(
             header(),
-            tabs(),
-            message(),
+            h1(),
             address_list(),
             new_address_button(),
             footer()
@@ -22,12 +21,21 @@ pages.home = function () {
     )
 }
 
+pages.users = function () {
+    return pages.message()
+}
+
+pages.about = function () {
+    return pages.message()
+}
+
 pages.message = function () {
     return html(
         head(),
         body(
             header(),
-            message(),
+            h1(),
+            text(),
             footer()
         )
     )
@@ -132,9 +140,12 @@ function icon_or_loginprompt() {
 }
 
 function icon() {
+
+    var img = state.user.user_icon ?
+        `<img src='${state.user.user_icon}' width='${state.user.user_icon_width}' height='${state.user.user_icon_height}' >` : ''
+
     return `<div id='status' >
-        <a href='/users/${state.user.user_screenname}' ><img src='${state.user.user_icon}'
-            width='${state.user.user_icon_width}' height='${state.user.user_icon_height}' > ${state.user.user_screenname}</a>
+        <a href='/users/${state.user.user_screenname}' >${img} ${state.user.user_screenname}</a>
         <p>
         <a HREF='#' onclick="$.get('/logout', function(data) { $('#status').html(data) });return false">logout</a>
         </div>`
@@ -221,8 +232,12 @@ function commentbox() {
     </form>`
 }
 
-function message() {
+function h1() {
     return `<h1>${ state.message }</h1>`
+}
+
+function text() {
+    return `${ state.text || '' }`
 }
 
 function comment() {
@@ -287,9 +302,9 @@ function footer() {
         <a href='#'>top</a> &nbsp;
         <a href="/users">users</a> &nbsp;
         <a href="/about">about</a> &nbsp;
-        <a href='/1302130/2017-01-28-patnet-improvement-suggestions'>suggestions</a> &nbsp;
-        <a href='mailto:p@patrick.net?subject=%2F' >contact</a> &nbsp;
-        search box goes here`
+        <a href='mailto:p@whatdidyoubid.com'>suggestions</a> &nbsp;
+        <a href='mailto:p@whatdidyoubid.com' >contact</a> &nbsp;
+        `
 }
 
 function alert() {
