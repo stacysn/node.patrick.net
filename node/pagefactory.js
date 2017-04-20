@@ -5,6 +5,7 @@ var pages = {}
 
 exports.render = function(s) {
     state = s
+    console.log(state)
     return pages[state.page]()
 }
 
@@ -256,12 +257,8 @@ function address_list() {
 
     if (state.addresses) {
         var formatted = state.addresses.map( (item) => {
-            return `<div class="address" ><a href="/address/${item.address_id}/slug">
-            ${item.address_num_street},
-            ${item.zip_city}
-            ${item.zip_state}
-            ${item.zip_code}
-            </a></div>`
+            var link = address_link(item)
+            return `<div class="address" >${ link }</div>`
         })
     }
     else formatted = []
@@ -269,17 +266,22 @@ function address_list() {
     return formatted.join('')
 }
 
-function new_address_button() {
-    return '<a href="/addressform" class="btn btn-success btn-sm" title="start writing about a new address" ><b>add new address</b></a>'
+function address() {
+    var link = address_link(state.address)
+    return `<h1>${ link }</h1>`
 }
 
-function address() {
-    return `<h1><a href="/address/${state.address.address_id}/slug">
-    ${state.address.address_num_street},
-    ${state.address.zip_city}
-    ${state.address.zip_state}
-    ${state.address.zip_code}
-    </a></h1>`
+function address_link(addr) {
+    slug = slugify(`${addr.address_num_street} ${addr.zip_city} ${addr.zip_state} ${addr.zip_code}`)
+    return `<a href="/address/${addr.address_id}/${slug}">${addr.address_num_street}, ${addr.zip_city} ${addr.zip_state} ${addr.zip_code}</a>`
+}
+
+function slugify(s) { // url-safe pretty chars only; not used for navigation, only for seo and humans
+    return s.replace(/\W/g,'-').toLowerCase().replace(/-+/,'-').replace(/^-+|-+$/,'')
+}
+
+function new_address_button() {
+    return '<a href="/addressform" class="btn btn-success btn-sm" title="start writing about a new address" ><b>add new address</b></a>'
 }
 
 function comment_list() {

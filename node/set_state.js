@@ -24,8 +24,9 @@ pages.home = function (req, res, state, db) {
     var query = db.query('select * from addresses, zips where address_zip=zip_code', function (error, results, fields) {
         if (error) { db.release(); throw error }
 
-        state.addresses = results
         state.message   = 'Increasing fair play for buyers and sellers'
+        state.addresses = results
+
         send_html(200, pagefactory.render(state), res, db)
     })
 }
@@ -57,14 +58,14 @@ pages.addressform = function (req, res, state, db) { send_html(200, pagefactory.
 
 pages.address = function (req, res, state, db) { // show a single address page
 
-    var address_id = url.parse(req.url).path.split('/')[2].replace(/\D/g,'') // get address' db row number from url, eg /address/47/slug-goes-here
+    var address_id = url.parse(req.url).path.split('/')[2].replace(/\D/g,'') // get address' db row number from url, eg 47 from /address/47/slug-goes-here
 
     var query = db.query('select * from addresses, zips where address_id=? and address_zip=zip_code', [address_id], function (error, results, fields) {
         if (error) { db.release(); throw error }
 
         if (0 == results.length) send_html(404, `No address with id "${address_id}"`, res, null)
         else {
-            state.address = results[0]
+            state.address      = results[0]
 
             // now pick up the comment list for this address
             var query = db.query('select * from comments where comment_address_id = ? order by comment_created', [address_id],
@@ -186,7 +187,7 @@ pages.postaddress = function (req, res, state, db) {
     var query = db.query('insert into addresses set ? on duplicate key update address_id=last_insert_id(address_id)', post_data,
         function (error, results, fields) {
             if (error) { db.release(); throw error }
-            redirect(`/address/${results.insertId}/slug`, res, db)
+            redirect(`/address/${results.insertId}`, res, db)
         })
 }
 
