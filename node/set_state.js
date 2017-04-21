@@ -196,17 +196,11 @@ pages.postcomment = function (req, res, state, db) {
     post_data = state.post_data
     Object.keys(post_data).map(key => { post_data[key] = strip_tags(post_data[key]) })
 
-    if (!post_data.comment_content) {
-        send_html(200, '', res, db) 
-        return
-    }
-
-    post_data.comment_author_ip = state.ip
+    if (!post_data.comment_content) { send_html(200, '', res, db); return } // empty comment
 
     // rate limit by ip address
     var query = db.query('select (now() - comment_created) as ago from comments where comment_author_ip = ? order by comment_created desc limit 1',
-        [post_data.comment_author_ip],
-        function (error, results, fields) {
+        [state.ip], function (error, results, fields) {
             if (error) { db.release(); throw error }
 
             if (results.length && results[0].ago < 2) { // this ip already commented less than two seconds ago
@@ -215,6 +209,10 @@ pages.postcomment = function (req, res, state, db) {
                 send_html(200, pagefactory.render(state), res, db)
             }
             else {
+
+                post_data.comment_author_ip = state.ip                            // so that ip gets inserted along with other post_data
+                post_data.comment_content   = post_data.comment_content.linkify() // linkify, imagify, etc
+
                 var query = db.query('insert into comments set ?', post_data, function (error, results, fields) {
                     if (error) { db.release(); throw error }
 
@@ -452,4 +450,18 @@ function send_login_link(req, res, state, db) {
             }
             else message(`Could not find user with email ${ state.post_data.user_email }`, state, res, db)
         })
+}
+
+String.prototype.linkify = function(ref) {
+
+    var urlPattern = /\b(?:https?|ftp):\/\/[a-z0-9-+&@#\/%?=~_|!:,.;]*[a-z0-9-+&@#\/%=~_|]/gim; // http://, https://, ftp://
+
+    var pseudoUrlPattern = /(^|[^\/])(www\.[\S]+(\b|$))/gim;                                    // www. sans http:// or https://
+
+    var emailAddressPattern = /[\w.]+@[a-zA-Z_-]+?(?:\.[a-zA-Z]{2,6})+/gim;
+
+    return this
+        .replace(urlPattern,          '<a href="$&">$&</a>')
+        .replace(pseudoUrlPattern,    '$1<a href="http://$2">$2</a>')
+        .replace(emailAddressPattern, '<a href="mailto:$&">$&</a>');
 }
