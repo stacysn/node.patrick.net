@@ -9,6 +9,7 @@
   "author": "Patrick Killelea",
   "license": "ISC",
   "dependencies": {
+    "moment-timezone": "^0.5.13",
     "mysql": "^2.5.4",
     "nodemailer": "^4.0.1"
   }

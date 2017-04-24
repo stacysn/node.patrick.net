@@ -242,7 +242,7 @@ function text() {
 }
 
 function comment() {
-    return `<div class="comment" >${ state.comment.comment_created } ${ state.comment.comment_content }</div>`
+    return `<div class="comment" >${ format_date(state.comment.comment_created) }<br>${ state.comment.comment_content }</div>`
 }
 
 function body(...args) {
@@ -311,4 +311,9 @@ function footer() {
 
 function alert() {
     return `<script type='text/javascript'> alert('${ state.alert_content }'); </script>`
+}
+
+function format_date(utc) {
+    var utz = state.user ? state.user.user_timezone : 'America/Los_Angeles'
+    return moment(Date.parse(utc)).tz(utz).format('YYYY MMMM Do h:mma z')
 }

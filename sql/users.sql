@@ -6,6 +6,7 @@ create table users (
   user_md5pass           varchar(64),
   user_key               varchar(64),
   user_country           varchar(40),
+  user_timezone          varchar(40) default 'America/Los_Angeles',
   user_aboutyou          text,
   user_email_validated   int(1) unsigned default 0,
   user_wants_emails      int(1) unsigned default 1,
