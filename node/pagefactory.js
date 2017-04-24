@@ -223,7 +223,6 @@ function commentbox() {
     <form id='commentform' >
         <textarea            name='comment_content'    class='form-control' rows='10' placeholder='write a comment...' ></textarea><p>
         <input type='hidden' name='comment_address_id' value='${ state.address.address_id }' />
-        <input type='hidden' name='comment_author'     value='${ state.user ? state.user.user_id : 0 }' ><p>
         <button class='btn btn-success btn-sm'
             onclick="$.post('/postcomment', $('#commentform').serialize()).done(function(data) {
                 if (data) $('#newcomment').append(data)
@@ -242,9 +241,9 @@ function text() {
 }
 
 function comment() {
-    var u = state.user ? `<a href='/users/${state.user.user_screenname}'>${state.user.user_screenname}</a>` : 'anonymous'
+    var u = state.comment.user_screenname ? `<a href='/users/${state.comment.user_screenname}'>${state.comment.user_screenname}</a>` : 'anonymous'
 
-    return `<div class="comment" >${ u } ${ format_date(state.comment.comment_created) }<br> ${ state.comment.comment_content }</div>`
+    return `<div class="comment" >${ u } ${ format_date(state.comment.comment_created) }<br>${ state.comment.comment_content }</div>`
 }
 
 function body(...args) {

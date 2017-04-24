@@ -68,7 +68,8 @@ pages.address = function (req, res, state, db) { // show a single address page
             state.address      = results[0]
 
             // now pick up the comment list for this address
-            var query = db.query('select * from comments where comment_address_id = ? order by comment_created', [address_id],
+            var query = db.query('select * from comments left join users on comment_author=user_id where comment_address_id = ? order by comment_created',
+                [address_id],
                 function (error, results, fields) {
                     if (error) { db.release(); throw error }
 
@@ -210,14 +211,15 @@ pages.postcomment = function (req, res, state, db) {
             }
             else {
 
+                post_data.comment_author    = state.user ? state.user.user_id : 0
                 post_data.comment_author_ip = state.ip                            // so that ip gets inserted along with other post_data
                 post_data.comment_content   = post_data.comment_content.linkify() // linkify, imagify, etc
 
                 var query = db.query('insert into comments set ?', post_data, function (error, results, fields) {
                     if (error) { db.release(); throw error }
 
-                    // now select the inserted row so that we pick up the comment_created time for displaying the comment
-                    var query = db.query('select * from comments where comment_id = ?', [results.insertId],
+                    // now select the inserted row so that we pick up the comment_created time and user data for displaying the comment
+                    var query = db.query('select * from comments left join users on comment_author=user_id where comment_id = ?', [results.insertId],
                         function (error, results, fields) {
                             if (error) { db.release(); throw error }
 
@@ -349,7 +351,8 @@ function login(req, res, state, db, email, password) {
             'Content-Length' : html.length,
             'Content-Type'   : 'text/html',
             'Expires'        : d.toUTCString(),
-            'Set-Cookie'     : `${cookie}; Expires=${decade}; Path=/`, // do NOT use "secure" or will not be able to test login in dev, w is http only
+            'Set-Cookie'     : `${cookie}; Expires=${decade}; Path=/`,
+            // do NOT use "secure" or will not be able to test login in dev, w is http only
         }
 
         res.writeHead(200, headers)
