@@ -242,7 +242,9 @@ function text() {
 }
 
 function comment() {
-    return `<div class="comment" >${ format_date(state.comment.comment_created) }<br>${ state.comment.comment_content }</div>`
+    var u = state.user ? `<a href='/users/${state.user.user_screenname}'>${state.user.user_screenname}</a>` : 'anonymous'
+
+    return `<div class="comment" >${ u } ${ format_date(state.comment.comment_created) }<br> ${ state.comment.comment_content }</div>`
 }
 
 function body(...args) {
