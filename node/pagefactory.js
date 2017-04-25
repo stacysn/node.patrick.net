@@ -4,7 +4,7 @@ var state = {}
 var pages = {}
 
 exports.render = function(s) {
-    //console.log(s)
+    console.log(s)
     state = s
     return pages[state.page]()
 }
