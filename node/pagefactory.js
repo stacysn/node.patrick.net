@@ -119,7 +119,7 @@ function html(...args) {
 
     return `<!DOCTYPE html><html lang="en">
         ${ args.join('') }
-        <script async src="/js/jquery.min.js"></script>${ '\n' }${ state.user.user_is_admin ? queries.join('\n') : '' }
+        <script async src="/js/jquery.min.js"></script><!-- ${ '\n' }${ state.user.user_is_admin ? queries.join('\n') : '' } -->
         </html>`
 }
 
