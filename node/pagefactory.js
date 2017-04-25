@@ -113,13 +113,14 @@ pages.alert = function () {
 function html(...args) {
 
 
-    var queries = state.queries.sortByProp('ms').map( (item) => { return `${ item.ms }ms ${ item.sql }` })
-
-    state.user.user_is_admin = true
+    if (state.user && 'admin' == state.user.user_level)
+        var queries = state.queries.sortByProp('ms').map( (item) => { return `${ item.ms }ms ${ item.sql }` }).join('\n')
+    else
+        var queries = ''
 
     return `<!DOCTYPE html><html lang="en">
         ${ args.join('') }
-        <script async src="/js/jquery.min.js"></script><!-- ${ '\n' }${ state.user.user_is_admin ? queries.join('\n') : '' } -->
+        <script async src="/js/jquery.min.js"></script><!-- ${ '\n' }${ queries } -->
         </html>`
 }
 

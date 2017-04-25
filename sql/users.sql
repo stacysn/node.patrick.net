@@ -22,6 +22,7 @@ create table users (
   user_credibility       int(8) unsigned,
   user_last_comment_ip   varchar(16),
   user_last_comment_time datetime,
+  user_level             enum('new','known','trusted','admin') not null default 'new',
   primary key                       (user_id),
   unique  key user_email_index      (user_email),
   unique  key user_key_index        (user_key),
