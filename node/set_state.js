@@ -23,7 +23,7 @@ exports.run = function (req, res, page) {
 pages.home = function (req, res, state, db) {
 
     query(db, 'select * from addresses, zips where address_zip=zip_code', null, state,
-        (results) => {
+        results => {
             state.message   = 'Increasing fair play for buyers and sellers'
             state.addresses = results
             send_html(200, pagefactory.render(state), res, db)
@@ -61,13 +61,14 @@ pages.address = function (req, res, state, db) { // show a single address page
     var address_id = url.parse(req.url).path.split('/')[2].replace(/\D/g,'') // get address' db row number from url, eg 47 from /address/47/slug-goes-here
 
     query(db, 'select * from addresses, zips where address_id=? and address_zip=zip_code', [address_id], state,
-        (results) => {
+        results => {
             if (0 == results.length) send_html(404, `No address with id "${address_id}"`, res, null)
             else {
                 state.address = results[0]
 
                 query(db, 'select * from comments left join users on comment_author=user_id where comment_address_id = ? order by comment_created',
-                    [address_id], state, (results) => { // now pick up the comment list for this address
+                    [address_id], state,
+                    results => { // now pick up the comment list for this address
                         if (results.length) state.comments = results
                         send_html(200, pagefactory.render(state), res, db)
                     }
@@ -83,28 +84,19 @@ pages.key_login = function (req, res, state, db) { // erase key so it cannot be 
     password      = md5(Date.now() + conf.nonce_secret).substring(0, 6)
     state.message = `Your password is ${ password } and you are now logged in`
 
-    var query = db.query('select user_email from users where user_key = ?', [key],
-        function (error, results, fields) {
-
-            if (error) { db.release(); throw error }
-
+    query(db, 'select user_email from users where user_key = ?', [key], state,
+        results => {
             if (results.length) email = results[0].user_email
             else {
                 message(`Darn, that key has already been used. Please <a href='/lostpwform'>reset password</a>`, state, res, db)
                 return
             }
 
-            var query = db.query('update users set user_key=null, user_md5pass=? where user_key=?', [md5(password), key],
-                function (error, results, fields) {
-
-                    if (error) {
-                        message('Darn, something went wrong', state, res, db)
-                        return
-                    }
-
-                    login(req, res, state, db, email, password)
-                })
-        })
+            query(db, 'update users set user_key=null, user_md5pass=? where user_key=?', [md5(password), key], state,
+                results => { login(req, res, state, db, email, password) }
+            )
+        }
+    )
 }
 
 pages.post_login = function (req, res, state, db) {
@@ -136,40 +128,23 @@ pages.registration = function (req, res, state, db) {
 
     Object.keys(state.post_data).map(key => { state.post_data[key] = strip_tags(state.post_data[key]) })
 
-    if (/\W/.test(state.post_data.user_screenname)) {
-        message('Please go back and enter username consisting only of letters', state, res, db); return
-    }
+    if (/\W/.test(state.post_data.user_screenname)) { message('Please go back and enter username consisting only of letters', state, res, db); return }
 
-    if (!/^\w.*@.+\.\w+$/.test(state.post_data.user_email)) {
-        message('Please go back and enter a valid email address',  state, res, db); return
-    }
+    if (!/^\w.*@.+\.\w+$/.test(state.post_data.user_email)) { message('Please go back and enter a valid email address',  state, res, db); return }
 
-    var query = db.query('insert into users set ?', state.post_data,
-        function (error, results, fields) {
+    // should really check for duplicates before doing insert; cannot use /ER_DUP_ENTRY/.test(error.message) because all my error handling is generic now
 
-            if (error) {
-                if (/ER_DUP_ENTRY/.test(error.message))
-                    message(`That user is already registered. <a href='/lostpwform?email=${ state.post_data.user_email }'>reset password</a>`, state, res, db)
-                else
-                    message('Darn, something went wrong', state, res, db)
-
-                return
-            }
-            send_login_link(req, res, state, db)
-        })
+    query(db, 'insert into users set ?', state.post_data, state, results => { send_login_link(req, res, state, db) })
 }
 
 pages.recoveryemail = function (req, res, state, db) {
 
     Object.keys(state.post_data).map(key => { state.post_data[key] = strip_tags(state.post_data[key]) })
 
-    if (!/^\w.*@.+\.\w+$/.test(state.post_data.user_email)) {
-        message('Please go back and enter a valid email address',  state, res, db); return
-    }
+    if (!/^\w.*@.+\.\w+$/.test(state.post_data.user_email)) { message('Please go back and enter a valid email address',  state, res, db); return }
 
     send_login_link(req, res, state, db)
 }
-
 
 pages.postaddress = function (req, res, state, db) {
 
@@ -181,11 +156,9 @@ pages.postaddress = function (req, res, state, db) {
     if (!/^\d\d\d\d\d$/.test(post_data.address_zip))     { message('Please go back and enter a five-digit zip code',  state, res, db); return }
 
     // if duplicate address, results.insertId will still be set correctly to existing address_id
-    var query = db.query('insert into addresses set ? on duplicate key update address_id=last_insert_id(address_id)', post_data,
-        function (error, results, fields) {
-            if (error) { db.release(); throw error }
-            redirect(`/address/${results.insertId}`, res, db)
-        })
+    query(db, 'insert into addresses set ? on duplicate key update address_id=last_insert_id(address_id)', post_data, state,
+        results => { redirect(`/address/${results.insertId}`, res, db) }
+    )
 }
 
 pages.postcomment = function (req, res, state, db) {
@@ -196,9 +169,8 @@ pages.postcomment = function (req, res, state, db) {
     if (!post_data.comment_content) { send_html(200, '', res, db); return } // empty comment
 
     // rate limit by ip address
-    var query = db.query('select (now() - comment_created) as ago from comments where comment_author_ip = ? order by comment_created desc limit 1',
-        [state.ip], function (error, results, fields) {
-            if (error) { db.release(); throw error }
+    query(db, 'select (now() - comment_created) as ago from comments where comment_author_ip = ? order by comment_created desc limit 1', [state.ip], state,
+        results => {
 
             if (results.length && results[0].ago < 2) { // this ip already commented less than two seconds ago
                 state.page          = 'alert'
@@ -211,21 +183,19 @@ pages.postcomment = function (req, res, state, db) {
                 post_data.comment_author_ip = state.ip                            // so that ip gets inserted along with other post_data
                 post_data.comment_content   = post_data.comment_content.linkify() // linkify, imagify, etc
 
-                var query = db.query('insert into comments set ?', post_data, function (error, results, fields) {
-                    if (error) { db.release(); throw error }
-
-                    // now select the inserted row so that we pick up the comment_created time and user data for displaying the comment
-                    var query = db.query('select * from comments left join users on comment_author=user_id where comment_id = ?', [results.insertId],
-                        function (error, results, fields) {
-                            if (error) { db.release(); throw error }
-
-                            if (results.length) state.comment = results[0]
-
-                            send_html(200, pagefactory.render(state), res, db)
-                    })
-                })
+                query(db, 'insert into comments set ?', post_data, state,
+                    results => { // now select the inserted row so that we pick up the comment_created time and user data for displaying the comment
+                        query(db, 'select * from comments left join users on comment_author=user_id where comment_id = ?', [results.insertId], state,
+                            results => {
+                                if (results.length) state.comment = results[0]
+                                send_html(200, pagefactory.render(state), res, db)
+                            }
+                        )
+                    }
+                )
             }
-        })
+        }
+    )
 }
 
 //////////////////////////////////////// end of pages; helper functions below ////////////////////////////////////////
@@ -249,23 +219,20 @@ function connect_to_db(req, res, state) {
     })
 }
 
-function block_evil(req, res, state, db) {
-    // block entire countries like Russia because all comments from there are inevitably spam
-    db.query('select country_evil from countries where inet_aton(?) >= country_start and inet_aton(?) <= country_end', [state.ip, state.ip],
-             function (error, results, fields) {
+function block_evil(req, res, state, db) { // block entire countries like Russia because all comments from there are inevitably spam
+    query(db, 'select country_evil from countries where inet_aton(?) >= country_start and inet_aton(?) <= country_end', [state.ip, state.ip], state,
+        results => {
+            if (results.length && results[0].country_evil) { send_html(404, 'Not Found', res, db); return } // just give a 404 to all evil countries
 
-        if (error)                                     { db.release(); throw error }
-        if (results.length && results[0].country_evil) { send_html(404, 'Not Found', res, db); return } // just give a 404 to all evil countries
-
-        // block individual known spammer ip addresses
-        db.query('select count(*) as c from nukes where nuke_ip_address = ?', [state.ip], function (error, results, fields) {
-
-            if (error)        { db.release(); throw error }
-            if (results[0].c) { send_html(404, 'Not Found', res, db); return }
-
-            collect_post_data(req, res, state, db)
-        })
-    })
+            // block individual known spammer ip addresses
+            query(db, 'select count(*) as c from nukes where nuke_ip_address = ?', [state.ip], state,
+                results => {
+                    if (results[0].c) { send_html(404, 'Not Found', res, db); return }
+                    collect_post_data(req, res, state, db)
+                }
+            )
+        }
+    )
 }
 
 function collect_post_data(req, res, state, db) { // if there is any POST data, accumulate it and append it to req object
@@ -302,15 +269,14 @@ function set_user(req, res, state, db) { // update state with whether they are l
         var user_id      = req.headers.cookie.split('=')[1].split('_')[0]
         var user_md5pass = req.headers.cookie.split('=')[1].split('_')[1]
 
-        var query = db.query('select * from users where user_id = ? and user_md5pass = ?', [user_id, user_md5pass], function (error, results, fields) {
+        query(db, 'select * from users where user_id = ? and user_md5pass = ?', [user_id, user_md5pass], state,
+            results => {
+                if (0 == results.length) state.user = null
+                else                     state.user = results[0]
 
-            if (error) { db.release(); throw error }
-
-            if (0 == results.length) state.user = null
-            else                     state.user = results[0]
-
-            pages[state.page](req, res, state, db)
-        })
+                pages[state.page](req, res, state, db)
+            }
+        )
     }
     catch(e) { // no valid cookie
         state.user = null
@@ -320,41 +286,40 @@ function set_user(req, res, state, db) { // update state with whether they are l
 
 function login(req, res, state, db, email, password) {
 
-    var query = db.query('select * from users where user_email = ? and user_md5pass = ?', [email, md5(password)],
-             function (error, results, fields) {
+    query(db, 'select * from users where user_email = ? and user_md5pass = ?', [email, md5(password)], state,
+        results => {
 
-        if (error) { db.release(); throw error }
+            if (0 == results.length) {
+                state.user         = null
+                var user_id        = ''
+                var user_md5pass   = ''
+                state.login_failed = true
+            }
+            else {
+                state.user       = results[0]
+                var user_id      = state.user.user_id
+                var user_md5pass = state.user.user_md5pass
+            }
 
-        if (0 == results.length) {
-            state.user         = null
-            var user_id        = ''
-            var user_md5pass   = ''
-            state.login_failed = true
+            html = pagefactory.render(state)
+
+            var cookie = `whatdidyoubid=${user_id}_${user_md5pass}`
+            var d      = new Date()
+            var decade = new Date(d.getFullYear()+10, d.getMonth(), d.getDate()).toUTCString()
+
+            var headers =  {
+                'Content-Length' : html.length,
+                'Content-Type'   : 'text/html',
+                'Expires'        : d.toUTCString(),
+                'Set-Cookie'     : `${cookie}; Expires=${decade}; Path=/`,
+                // do NOT use "secure" or will not be able to test login in dev, w is http only
+            }
+
+            res.writeHead(200, headers)
+            res.end(html)
+            if (db) db.release()
         }
-        else {
-            state.user       = results[0]
-            var user_id      = state.user.user_id
-            var user_md5pass = state.user.user_md5pass
-        }
-
-        html = pagefactory.render(state)
-
-        var cookie = `whatdidyoubid=${user_id}_${user_md5pass}`
-        var d      = new Date()
-        var decade = new Date(d.getFullYear()+10, d.getMonth(), d.getDate()).toUTCString()
-
-        var headers =  {
-            'Content-Length' : html.length,
-            'Content-Type'   : 'text/html',
-            'Expires'        : d.toUTCString(),
-            'Set-Cookie'     : `${cookie}; Expires=${decade}; Path=/`,
-            // do NOT use "secure" or will not be able to test login in dev, w is http only
-        }
-
-        res.writeHead(200, headers)
-        res.end(html)
-        if (db) db.release()
-    })
+    )
 }
 
 function redirect(redirect_to, res, db) {
@@ -423,13 +388,8 @@ function send_login_link(req, res, state, db) {
     key      = md5(Date.now() + conf.nonce_secret)
     key_link = `${ baseurl }/key_login?key=${ key }`
 
-    var query = db.query('update users set user_key=? where user_email=?', [key, state.post_data.user_email],
-        function (error, results, fields) {
-
-            if (error) {
-                message('Darn, something went wrong', state, res, db)
-                return
-            }
+    query(db, 'update users set user_key=? where user_email=?', [key, state.post_data.user_email], state,
+        results => {
 
             if (results.changedRows) {
 
@@ -448,7 +408,8 @@ function send_login_link(req, res, state, db) {
                 })
             }
             else message(`Could not find user with email ${ state.post_data.user_email }`, state, res, db)
-        })
+        }
+    )
 }
 
 String.prototype.linkify = function(ref) {
