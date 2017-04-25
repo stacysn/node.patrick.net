@@ -4,7 +4,7 @@ var state = {}
 var pages = {}
 
 exports.render = function(s) {
-    console.log(s)
+    //console.log(s)
     state = s
     return pages[state.page]()
 }
@@ -111,9 +111,15 @@ pages.alert = function () {
 //////////////////////////////////////// end of pages; all html is below ////////////////////////////////////////
 
 function html(...args) {
+
+
+    var queries = state.queries.sortByProp('ms').map( (item) => { return `${ item.ms }ms ${ item.sql }` })
+
+    state.user.user_is_admin = true
+
     return `<!DOCTYPE html><html lang="en">
         ${ args.join('') }
-        <script async src="/js/jquery.min.js"></script>
+        <script async src="/js/jquery.min.js"></script>${ '\n' }${ state.user.user_is_admin ? queries.join('\n') : '' }
         </html>`
 }
 
@@ -317,4 +323,10 @@ function alert() {
 function format_date(utc) {
     var utz = state.user ? state.user.user_timezone : 'America/Los_Angeles'
     return moment(Date.parse(utc)).tz(utz).format('YYYY MMMM Do h:mma z')
+}
+
+Array.prototype.sortByProp = function(p){
+    return this.sort(function(a,b){
+        return (a[p] > b[p]) ? 1 : (a[p] < b[p]) ? -1 : 0
+    })
 }

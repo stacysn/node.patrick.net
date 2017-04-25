@@ -436,7 +436,7 @@ function query(db, sql, args, state, cb) {
         cb(results)
     }
 
-    args ? q = db.query(sql, args, get_results)
-         : q = db.query(sql,       get_results)
+    q = args ? db.query(sql, args, get_results)
+             : db.query(sql,       get_results)
 }
 
