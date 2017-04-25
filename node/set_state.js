@@ -22,13 +22,13 @@ exports.run = function (req, res, page) {
 
 pages.home = function (req, res, state, db) {
 
-    var cb = function (results, state) {
-        state.message   = 'Increasing fair play for buyers and sellers'
-        state.addresses = results
-        send_html(200, pagefactory.render(state), res, db)
-    }
-
-    query('select * from addresses, zips where address_zip=zip_code', null, cb, db, state)
+    query(db, 'select * from addresses, zips where address_zip=zip_code', null, state,
+        (results) => {
+            state.message   = 'Increasing fair play for buyers and sellers'
+            state.addresses = results
+            send_html(200, pagefactory.render(state), res, db)
+        }
+    )
 }
     
 pages.users = function (req, res, state, db) {
@@ -60,23 +60,21 @@ pages.address = function (req, res, state, db) { // show a single address page
 
     var address_id = url.parse(req.url).path.split('/')[2].replace(/\D/g,'') // get address' db row number from url, eg 47 from /address/47/slug-goes-here
 
-    var cb = function (results, state) {
+    query(db, 'select * from addresses, zips where address_id=? and address_zip=zip_code', [address_id], state,
+        (results) => {
+            if (0 == results.length) send_html(404, `No address with id "${address_id}"`, res, null)
+            else {
+                state.address = results[0]
 
-        if (0 == results.length) send_html(404, `No address with id "${address_id}"`, res, null)
-        else {
-            state.address = results[0]
-
-            var cb = function (results, state) { // now pick up the comment list for this address
-                if (results.length) state.comments = results
-                send_html(200, pagefactory.render(state), res, db)
+                query(db, 'select * from comments left join users on comment_author=user_id where comment_address_id = ? order by comment_created',
+                    [address_id], state, (results) => { // now pick up the comment list for this address
+                        if (results.length) state.comments = results
+                        send_html(200, pagefactory.render(state), res, db)
+                    }
+                )
             }
-
-            query('select * from comments left join users on comment_author=user_id where comment_address_id = ? order by comment_created',
-                [address_id], cb, db, state)
         }
-    }
-
-    query('select * from addresses, zips where address_id=? and address_zip=zip_code', [address_id], cb, db, state)
+    )
 }
 
 pages.key_login = function (req, res, state, db) { // erase key so it cannot be used again, and set new password
@@ -467,14 +465,14 @@ String.prototype.linkify = function(ref) {
         .replace(emailAddressPattern, '<a href="mailto:$&">$&</a>');
 }
 
-function query(sql, args, cb, db, state) {
+function query(db, sql, args, state, cb) {
 
     var q
 
     var get_results = function (error, results, fields, timing) {
         if (error) { db.release(); throw error }
         state.queries.push({sql : q.sql, ms : timing})
-        cb(results, state)
+        cb(results)
     }
 
     args ? q = db.query(sql, args, get_results)
