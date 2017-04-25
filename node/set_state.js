@@ -22,7 +22,7 @@ exports.run = function (req, res, page) {
 
 pages.home = function (req, res, state, db) {
 
-    query(db, 'select * from addresses, zips where address_zip=zip_code', null, state,
+    query(db, 'select * from addresses, zips where address_zip=zip_code order by address_modified desc', null, state,
         results => {
             state.message   = 'Increasing fair play for buyers and sellers'
             state.addresses = results
