@@ -213,6 +213,18 @@ pages.postcomment = (req, res, state, db) => {
     )
 }
 
+pages.delete = (req, res, state, db) => { // delete a comment
+
+    // check that current user has permission to delete this comment first
+    var comment_id = url.parse(req.url).path.split('/')[2].replace(/\D/g,'') // get comment db row number from url, eg 47 from /delete/47
+
+    query(db, 'delete from comments where comment_id = ?', [comment_id], state,
+        results => {
+            send_html(200, pagefactory.render(state), res, db)
+        }
+    )
+}
+
 //////////////////////////////////////// end of pages; helper functions below ////////////////////////////////////////
 
 function connect_to_db(req, res, state) {

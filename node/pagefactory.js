@@ -90,25 +90,12 @@ var pages = {
         )
     },
 
-    key_login : () => {
-        return pages.home()
-    },
-
-    post_login : () => {
-        return icon_or_loginprompt()
-    },
-
-    logout : () => {
-        return loginprompt()
-    },
-
-    postcomment : () => {
-        return comment()
-    },
-
-    alert : () => {
-        return alert()
-    },
+    alert       : () => { return  alert()                },
+    delete      : () => { return  ''                     },
+    key_login   : () => { return  pages.home()           },
+    logout      : () => { return  loginprompt()          },
+    post_login  : () => { return  icon_or_loginprompt()  },
+    postcomment : () => { return  comment(state.comment) },
 }
 
 //////////////////////////////////////// end of pages; all html is below ////////////////////////////////////////
@@ -157,7 +144,7 @@ function id_box() {
     return `<div id='status' >
         <a href='/users/${state.user.user_screenname}' >${img} ${state.user.user_screenname}</a>
         <p>
-        <a HREF='#' onclick="$.get('/logout', function(data) { $('#status').html(data) });return false">logout</a>
+        <a href='#' onclick="$.get('/logout', function(data) { $('#status').html(data) });return false">logout</a>
         </div>`
 }
 
@@ -249,10 +236,13 @@ function text() {
     return `${ state.text || '' }`
 }
 
-function comment() {
-    var u = state.comment.user_screenname ? `<a href='/users/${state.comment.user_screenname}'>${state.comment.user_screenname}</a>` : 'anonymous'
+function comment(c) {
+    var u = c.user_screenname ? `<a href='/users/${c.user_screenname}'>${c.user_screenname}</a>` : 'anonymous'
 
-    return `<div class="comment" >${ u } ${ format_date(state.comment.comment_created) }<br>${ state.comment.comment_content }</div>`
+    var del = state.user.user_id == c.comment_author ?
+        `<a href='#' onclick="$.get('/delete/${ c.comment_id }', function() { $('#${ c.comment_id }').remove() });return false">delete</a>` : ''
+
+    return `<div class="comment" id="${ c.comment_id }" >${ u } ${ format_date(c.comment_created) } ${ del }<br>${ c.comment_content }</div>`
 }
 
 function body(...args) {
@@ -319,10 +309,8 @@ function new_address_button() {
 function comment_list() {
     if (state.comments) {
         var formatted = state.comments.map( (item) => {
-            state.comment = item // so that comment() will pick up the right data
-            return comment()
+            return comment(item)
         })
-        state.comment = null
 
         return formatted.join('')
     }
