@@ -447,7 +447,10 @@ function query(db, sql, args, state, cb) {
 
     var get_results = function (error, results, fields, timing) {
         if (error) { db.release(); throw error }
-        state.queries.push({sql : q.sql, ms : timing})
+        state.queries.push({
+            sql : q.sql,
+            ms  : timing
+        })
         cb(results)
     }
 

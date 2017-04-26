@@ -338,6 +338,7 @@ function footer() {
         <a href="/about">about</a> &nbsp;
         <a href='mailto:p@whatdidyoubid.com'>suggestions</a> &nbsp;
         <a href='mailto:p@whatdidyoubid.com' >contact</a> &nbsp;
+        <a href='https://github.com/killelea/whatdidyoubid.com' >source code</a> &nbsp;
         `
 }
 
