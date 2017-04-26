@@ -1,7 +1,8 @@
 // The page factory never does IO. It simply assembles a page from state, which will be overwritten on each call to render()
+// state does not change at all once render is called
 
-var state = {}
 var pages = {}
+var state = {}
 
 exports.render = function(s) {
     //console.log(s)
@@ -11,7 +12,6 @@ exports.render = function(s) {
 
 pages.home = function () {
     return html(
-        head(),
         body(
             header(),
             h1(),
@@ -23,7 +23,13 @@ pages.home = function () {
 }
 
 pages.users = function () {
-    return pages.message()
+    return html(
+        body(
+            header(),
+            user_list(),
+            footer()
+        )
+    )
 }
 
 pages.about = function () {
@@ -32,7 +38,6 @@ pages.about = function () {
 
 pages.message = function () {
     return html(
-        head(),
         body(
             header(),
             h1(),
@@ -44,7 +49,6 @@ pages.message = function () {
 
 pages.registerform = function () {
     return html(
-        head(),
         body(
             header(),
             registerform(),
@@ -55,7 +59,6 @@ pages.registerform = function () {
 
 pages.lostpwform = function () {
     return html(
-        head(),
         body(
             header(),
             lostpwform(),
@@ -66,7 +69,6 @@ pages.lostpwform = function () {
 
 pages.addressform = function () {
     return html(
-        head(),
         body(
             header(),
             addressform(),
@@ -77,7 +79,6 @@ pages.addressform = function () {
 
 pages.address = function () {
     return html(
-        head(),
         body(
             header(),
             address(),
@@ -119,20 +120,17 @@ function html(...args) {
         var queries = ''
 
     return `<!DOCTYPE html><html lang="en">
-        ${ args.join('') }
-        <script async src="/js/jquery.min.js"></script><!-- ${ '\n' }${ queries } -->
-        </html>`
-}
-
-function head() {
-    return `<head>
+        <head>
         <link href='/css/style_20170309.css' rel='stylesheet' type='text/css' />
         <link rel='icon' href='/favicon.ico' />
         <meta charset='utf-8' />
         <meta name='description' content='real estate, offers, bids' />
         <meta name='viewport' content='width=device-width, initial-scale=1, shrink-to-fit=no' />
         <title>What Did You Bid?</title>
-        </head>`
+        </head>
+            ${ args.join('') }
+        <script async src="/js/jquery.min.js"></script><!-- ${ '\n' }${ queries } -->
+        </html>`
 }
 
 function header() {
@@ -143,14 +141,17 @@ function header() {
 }
 
 function icon_or_loginprompt() {
-    if (state.user) return icon()
+    if (state.user) return id_box()
     else            return loginprompt()
 }
 
-function icon() {
+function user_icon(u) {
+    return u.user_icon ? `<img src='${u.user_icon}' width='${u.user_icon_width}' height='${u.user_icon_height}' >` : ''
+}
 
-    var img = state.user.user_icon ?
-        `<img src='${state.user.user_icon}' width='${state.user.user_icon_width}' height='${state.user.user_icon_height}' >` : ''
+function id_box() {
+
+    var img = user_icon(state.user)
 
     return `<div id='status' >
         <a href='/users/${state.user.user_screenname}' >${img} ${state.user.user_screenname}</a>
@@ -282,6 +283,28 @@ function address() {
 function address_link(addr) {
     slug = slugify(`${addr.address_num_street} ${addr.zip_city} ${addr.zip_state} ${addr.zip_code}`)
     return `<a href="/address/${addr.address_id}/${slug}">${addr.address_num_street}, ${addr.zip_city} ${addr.zip_state} ${addr.zip_code}</a>`
+}
+
+function user_list() {
+
+    if (state.users && state.users.length) {
+        if (1 == state.users.length) {
+            return user_page(state.users[0])
+        }
+        else if (state.users.length > 1) {
+            var formatted = state.users.map( (item) => {
+                return `<div class="address" ><a href='/users/${ item.user_screenname }'>${ item.user_screenname }</a></div>`
+            })
+        }
+    }
+    else formatted = []
+
+    return formatted.join('')
+}
+
+function user_page(u) {
+    var img = user_icon(u)
+    return `<center><a href='/users/${ u.user_screenname }' >${ img }</a><h2>${ u.user_screenname }</h2></p>joined ${ u.user_registered }</center>`
 }
 
 function slugify(s) { // url-safe pretty chars only; not used for navigation, only for seo and humans

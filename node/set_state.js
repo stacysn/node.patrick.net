@@ -32,8 +32,23 @@ pages.home = function (req, res, state, db) {
 }
     
 pages.users = function (req, res, state, db) {
-    state.message = 'Users list not implemented yet'
-    send_html(200, pagefactory.render(state), res, db)
+
+    try {
+        var user_screenname = url.parse(req.url).path.split('/')[2].replace(/\W/g,'') // like /users/Patrick
+        var sql   = 'select * from users where user_screenname=?'
+        var parms = [user_screenname]
+    }
+    catch(e) {
+        var sql   = 'select * from users'                                             // no username given, so show them all
+        var parms = null
+    }
+
+    query(db, sql, parms, state,
+        results => {
+            state.users = results
+            send_html(200, pagefactory.render(state), res, db)
+        }
+    )
 }
 
 pages.about = function (req, res, state, db) {
