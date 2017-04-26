@@ -3,13 +3,13 @@ var locks = {}
 
 pool = mysql.createPool(conf.db)
 
-pool.on('release', function (db) { // scan locks and delete the lock object which has db.threadId and any that are older than 2 seconds
+pool.on('release', db => { // scan locks and delete the lock object which has db.threadId and any that are older than 2 seconds
     Object.keys(locks).map(ip => {
         if (locks[ip].threadId == db.threadId || locks[ip].ts < (Date.now() - 2000)) delete locks[ip]
     })
 })
 
-exports.run = function (req, res, page) {
+exports.run = (req, res, page) => {
 
     var state = {} // start accumulation of state
     state.page = page
@@ -20,7 +20,7 @@ exports.run = function (req, res, page) {
     connect_to_db(req, res, state)
 }
 
-pages.home = function (req, res, state, db) {
+pages.home = (req, res, state, db) => {
 
     query(db, 'select * from addresses, zips where address_zip=zip_code order by address_modified desc', null, state,
         results => {
@@ -31,7 +31,7 @@ pages.home = function (req, res, state, db) {
     )
 }
     
-pages.users = function (req, res, state, db) {
+pages.users = (req, res, state, db) => {
 
     try {
         var user_screenname = url.parse(req.url).path.split('/')[2].replace(/\W/g,'') // like /users/Patrick
@@ -51,7 +51,7 @@ pages.users = function (req, res, state, db) {
     )
 }
 
-pages.about = function (req, res, state, db) {
+pages.about = (req, res, state, db) => {
     state.message = 'About whatdidyoubid.com'
 
     state.text = `Realtors routinely block or "lose" bids that do not give their own agency both sides of the commission. whatdidyoubid.com is a place
@@ -60,18 +60,18 @@ pages.about = function (req, res, state, db) {
     send_html(200, pagefactory.render(state), res, db)
 }
 
-pages.registerform = function (req, res, state, db) { send_html(200, pagefactory.render(state), res, db) }
+pages.registerform = (req, res, state, db) => { send_html(200, pagefactory.render(state), res, db) }
 
-pages.lostpwform = function (req, res, state, db) {
+pages.lostpwform = (req, res, state, db) => {
 
     state.email = url.parse(req.url, true).query.email
 
     send_html(200, pagefactory.render(state), res, db)
 }
 
-pages.addressform = function (req, res, state, db) { send_html(200, pagefactory.render(state), res, db) }
+pages.addressform = (req, res, state, db) => { send_html(200, pagefactory.render(state), res, db) }
 
-pages.address = function (req, res, state, db) { // show a single address page
+pages.address = (req, res, state, db) => { // show a single address page
 
     var address_id = url.parse(req.url).path.split('/')[2].replace(/\D/g,'') // get address' db row number from url, eg 47 from /address/47/slug-goes-here
 
@@ -93,7 +93,7 @@ pages.address = function (req, res, state, db) { // show a single address page
     )
 }
 
-pages.key_login = function (req, res, state, db) { // erase key so it cannot be used again, and set new password
+pages.key_login = (req, res, state, db) => { // erase key so it cannot be used again, and set new password
 
     key           = url.parse(req.url, true).query.key
     password      = md5(Date.now() + conf.nonce_secret).substring(0, 6)
@@ -114,14 +114,14 @@ pages.key_login = function (req, res, state, db) { // erase key so it cannot be 
     )
 }
 
-pages.post_login = function (req, res, state, db) {
+pages.post_login = (req, res, state, db) => {
     email    = state.post_data.email
     password = state.post_data.password
 
     login(req, res, state, db, email, password)
 }
 
-pages.logout = function (req, res, state, db) {
+pages.logout = (req, res, state, db) => {
 
     state.user = null
     var d      = new Date()
@@ -139,7 +139,7 @@ pages.logout = function (req, res, state, db) {
     if (db) db.release()
 }
 
-pages.registration = function (req, res, state, db) {
+pages.registration = (req, res, state, db) => {
 
     Object.keys(state.post_data).map(key => { state.post_data[key] = strip_tags(state.post_data[key]) })
 
@@ -152,7 +152,7 @@ pages.registration = function (req, res, state, db) {
     query(db, 'insert into users set ?', state.post_data, state, results => { send_login_link(req, res, state, db) })
 }
 
-pages.recoveryemail = function (req, res, state, db) {
+pages.recoveryemail = (req, res, state, db) => {
 
     Object.keys(state.post_data).map(key => { state.post_data[key] = strip_tags(state.post_data[key]) })
 
@@ -161,7 +161,7 @@ pages.recoveryemail = function (req, res, state, db) {
     send_login_link(req, res, state, db)
 }
 
-pages.postaddress = function (req, res, state, db) {
+pages.postaddress = (req, res, state, db) => {
 
     post_data = state.post_data
     Object.keys(post_data).map(key => { post_data[key] = strip_tags(post_data[key]) })
@@ -176,7 +176,7 @@ pages.postaddress = function (req, res, state, db) {
     )
 }
 
-pages.postcomment = function (req, res, state, db) {
+pages.postcomment = (req, res, state, db) => {
 
     post_data = state.post_data
     Object.keys(post_data).map(key => { post_data[key] = strip_tags(post_data[key]) })

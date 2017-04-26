@@ -1,118 +1,119 @@
 // The page factory never does IO. It simply assembles a page from state, which will be overwritten on each call to render()
 // state does not change at all once render is called
 
-var pages = {}
 var state = {}
 
-exports.render = function(s) {
+exports.render = s => {
     //console.log(s)
     state = s
     return pages[state.page]()
 }
 
-pages.home = function () {
-    return html(
-        body(
-            header(),
-            h1(),
-            address_list(),
-            new_address_button(),
-            footer()
+var pages = {
+
+    home : () => {
+        return html(
+            body(
+                header(),
+                h1(),
+                address_list(),
+                new_address_button(),
+                footer()
+            )
         )
-    )
-}
+    },
 
-pages.users = function () {
-    return html(
-        body(
-            header(),
-            user_list(),
-            footer()
+    users : () => {
+        return html(
+            body(
+                header(),
+                user_list(),
+                footer()
+            )
         )
-    )
-}
+    },
 
-pages.about = function () {
-    return pages.message()
-}
+    about : () => {
+        return pages.message()
+    },
 
-pages.message = function () {
-    return html(
-        body(
-            header(),
-            h1(),
-            text(),
-            footer()
+    message : () => {
+        return html(
+            body(
+                header(),
+                h1(),
+                text(),
+                footer()
+            )
         )
-    )
-}
+    },
 
-pages.registerform = function () {
-    return html(
-        body(
-            header(),
-            registerform(),
-            footer()
+    registerform : () => {
+        return html(
+            body(
+                header(),
+                registerform(),
+                footer()
+            )
         )
-    )
-}
+    },
 
-pages.lostpwform = function () {
-    return html(
-        body(
-            header(),
-            lostpwform(),
-            footer()
+    lostpwform : () => {
+        return html(
+            body(
+                header(),
+                lostpwform(),
+                footer()
+            )
         )
-    )
-}
+    },
 
-pages.addressform = function () {
-    return html(
-        body(
-            header(),
-            addressform(),
-            footer()
+    addressform : () => {
+        return html(
+            body(
+                header(),
+                addressform(),
+                footer()
+            )
         )
-    )
-}
+    },
 
-pages.address = function () {
-    return html(
-        body(
-            header(),
-            address(),
-            comment_list(),
-            commentbox(),
-            footer()
+    address : () => {
+        return html(
+            body(
+                header(),
+                address(),
+                comment_list(),
+                commentbox(),
+                footer()
+            )
         )
-    )
-}
+    },
 
-pages.key_login = function () {
-    return pages.home()
-}
+    key_login : () => {
+        return pages.home()
+    },
 
-pages.post_login = function () {
-    return icon_or_loginprompt()
-}
+    post_login : () => {
+        return icon_or_loginprompt()
+    },
 
-pages.logout = function () {
-    return loginprompt()
-}
+    logout : () => {
+        return loginprompt()
+    },
 
-pages.postcomment = function () {
-    return comment()
-}
+    postcomment : () => {
+        return comment()
+    },
 
-pages.alert = function () {
-    return alert()
+    alert : () => {
+        return alert()
+    },
 }
 
 //////////////////////////////////////// end of pages; all html is below ////////////////////////////////////////
 
 function html(...args) {
-
 
     if (state.user && 'admin' == state.user.user_level)
         var queries = state.queries.sortByProp('ms').map( (item) => { return `${ item.ms }ms ${ item.sql }` }).join('\n')
@@ -129,7 +130,7 @@ function html(...args) {
         <title>What Did You Bid?</title>
         </head>
             ${ args.join('') }
-        <script async src="/js/jquery.min.js"></script><!-- ${ '\n' }${ queries } -->
+        <script async src="/js/jquery.min.js"></script><!-- ${'\n' + queries + '\n'} -->
         </html>`
 }
 
@@ -293,7 +294,7 @@ function user_list() {
         }
         else if (state.users.length > 1) {
             var formatted = state.users.map( (item) => {
-                return `<div class="address" ><a href='/users/${ item.user_screenname }'>${ item.user_screenname }</a></div>`
+                return `<div class="user" ><a href='/users/${ item.user_screenname }'>${ item.user_screenname }</a></div>`
             })
         }
     }
