@@ -206,7 +206,7 @@ function lostpwform() {
     return `
         <h1>reset password</h1>
         <form action='/recoveryemail' method='post'>
-        <div class='form-group'><input type='text' name='user_email' ${ show } class='form-control' ></div>
+        <div class='form-group'><input type='text' name='user_email' ${ show } class='form-control' id='user_email' ></div>
         <button type='submit' id='submit' class='btn btn-success btn-sm'>submit</button>
         </form>
         <script type="text/javascript">document.getElementById('user_email').focus();</script>`
