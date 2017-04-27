@@ -239,8 +239,10 @@ function text() {
 function comment(c) {
     var u = c.user_screenname ? `<a href='/users/${c.user_screenname}'>${c.user_screenname}</a>` : 'anonymous'
 
-    var del = state.user.user_id == c.comment_author ?
-        `<a href='#' onclick="$.get('/delete/${ c.comment_id }', function() { $('#${ c.comment_id }').remove() });return false">delete</a>` : ''
+    if (state.user) {
+        var del = state.user.user_id == c.comment_author ?
+            `<a href='#' onclick="$.get('/delete/${ c.comment_id }', function() { $('#${ c.comment_id }').remove() });return false">delete</a>` : ''
+    }
 
     return `<div class="comment" id="${ c.comment_id }" >${ u } ${ format_date(c.comment_created) } ${ del }<br>${ c.comment_content }</div>`
 }
