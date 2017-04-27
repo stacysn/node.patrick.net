@@ -215,10 +215,14 @@ pages.postcomment = (req, res, state, db) => {
 
 pages.delete = (req, res, state, db) => { // delete a comment
 
-    // check that current user has permission to delete this comment first
     var comment_id = url.parse(req.url).path.split('/')[2].replace(/\D/g,'') // get comment db row number from url, eg 47 from /delete/47
 
-    query(db, 'delete from comments where comment_id = ?', [comment_id], state,
+    // check that current user has permission to delete this comment
+
+    if (!state.user) send_html(200, pagefactory.render(state), res, db) // do nothing if not logged in
+
+    // delete comment only if current user is comment_author
+    query(db, 'delete from comments where comment_id = ? and comment_author = ?', [comment_id, state.user.user_id], state,
         results => {
             send_html(200, pagefactory.render(state), res, db)
         }
