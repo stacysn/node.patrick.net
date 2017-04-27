@@ -84,22 +84,32 @@ pages.address = (req, res, state, db) => { // show a single address page
     )
 }
 
-pages.key_login = (req, res, state, db) => { // erase key so it cannot be used again, and set new password
+pages.key_login = (req, res, state, db) => {
 
-    key           = url.parse(req.url, true).query.key
-    password      = md5(Date.now() + conf.nonce_secret).substring(0, 6)
-    state.message = `Your password is ${ password } and you are now logged in`
+    key      = url.parse(req.url, true).query.key
+    password = md5(Date.now() + conf.nonce_secret).substring(0, 6)
 
-    query(db, 'select user_email from users where user_key = ?', [key], state,
+    // unfortunately a copy of home page sql
+    query(db, 'select * from addresses, zips where address_zip=zip_code order by address_modified desc', null, state,
         results => {
-            if (results.length) email = results[0].user_email
-            else {
-                message(`Darn, that key has already been used. Please <a href='/lostpwform'>reset password</a>`, state, res, db)
-                return
-            }
+            state.addresses     = results
+            state.alert_content = `Your password is ${ password } and you are now logged in`
+            state.message       = 'Increasing fair play for buyers and sellers'
+            state.page          = 'home' // key_login generates home page html
 
-            query(db, 'update users set user_key=null, user_md5pass=? where user_key=?', [md5(password), key], state,
-                results => { login(req, res, state, db, email, password) }
+            query(db, 'select user_email from users where user_key = ?', [key], state,
+                results => {
+                    if (results.length) email = results[0].user_email
+                    else {
+                        message(`Darn, that key has already been used. Please try 'forgot password' if you need to log in.</a>`, state, res, db)
+                        return
+                    }
+
+                    // erase key so it cannot be used again, and set new password
+                    query(db, 'update users set user_key=null, user_md5pass=? where user_key=?', [md5(password), key], state,
+                        results => { login(req, res, state, db, email, password) }
+                    )
+                }
             )
         }
     )
@@ -336,6 +346,7 @@ function login(req, res, state, db, email, password) {
             }
 
             html = pagefactory.render(state)
+            console.log(state)
 
             var cookie = `whatdidyoubid=${user_id}_${user_md5pass}`
             var d      = new Date()
@@ -345,8 +356,7 @@ function login(req, res, state, db, email, password) {
                 'Content-Length' : html.length,
                 'Content-Type'   : 'text/html',
                 'Expires'        : d.toUTCString(),
-                'Set-Cookie'     : `${cookie}; Expires=${decade}; Path=/`,
-                // do NOT use "secure" or will not be able to test login in dev, w is http only
+                'Set-Cookie'     : `${cookie}; Expires=${decade}; Path=/`, // do NOT use 'secure' or unable to test login in dev, w is http only
             }
 
             res.writeHead(200, headers)

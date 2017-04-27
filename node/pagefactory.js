@@ -14,6 +14,7 @@ var pages = {
     home : () => {
         return html(
             header(),
+            alert(),
             midpage(
                 h1(),
                 address_list(),
@@ -72,7 +73,6 @@ var pages = {
 
     alert       : () => { return  alert()                },
     delete      : () => { return  ''                     },
-    key_login   : () => { return  pages.home()           },
     logout      : () => { return  loginprompt()          },
     post_login  : () => { return  icon_or_loginprompt()  },
     postcomment : () => { return  comment(state.comment) },
@@ -327,7 +327,7 @@ function footer() {
 }
 
 function alert() {
-    return `<script type='text/javascript'> alert('${ state.alert_content }'); </script>`
+    return state.alert_content ? `<script type='text/javascript'> alert('${ state.alert_content }'); </script>` : ''
 }
 
 function format_date(utc) {
