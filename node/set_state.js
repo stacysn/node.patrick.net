@@ -449,11 +449,14 @@ String.prototype.linkify = function(ref) {
 
     var pseudoUrlPattern = /(^|[^\/])(www\.[\S]+(\b|$))/gim;                                    // www. sans http:// or https://
 
+    var imagePattern = />((?:https?):\/\/[a-z0-9-+&@#\/%?=~_|!:,.;]*[a-z0-9-+&@#\/%=~_|]\.(jpg|jpeg|gif|gifv|png|bmp))</gim;
+
     var emailAddressPattern = /[\w.]+@[a-zA-Z_-]+?(?:\.[a-zA-Z]{2,6})+/gim;
 
     return this
         .replace(urlPattern,          '<a href="$&">$&</a>')
         .replace(pseudoUrlPattern,    '$1<a href="http://$2">$2</a>')
+        .replace(imagePattern,        '><img src="$1"><') // it's already a link because of urlPattern above
         .replace(emailAddressPattern, '<a href="mailto:$&">$&</a>');
 }
 
