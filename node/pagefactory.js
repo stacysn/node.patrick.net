@@ -15,9 +15,11 @@ var pages = {
         return html(
             body(
                 header(),
-                h1(),
-                address_list(),
-                new_address_button(),
+                midpage(
+                    h1(),
+                    address_list(),
+                    new_address_button()
+                ),
                 footer()
             )
         )
@@ -27,7 +29,9 @@ var pages = {
         return html(
             body(
                 header(),
-                user_list(),
+                midpage(
+                    user_list()
+                ),
                 footer()
             )
         )
@@ -41,8 +45,10 @@ var pages = {
         return html(
             body(
                 header(),
-                h1(),
-                text(),
+                midpage(
+                    h1(),
+                    text()
+                ),
                 footer()
             )
         )
@@ -52,7 +58,9 @@ var pages = {
         return html(
             body(
                 header(),
-                registerform(),
+                midpage(
+                    registerform()
+                ),
                 footer()
             )
         )
@@ -62,7 +70,9 @@ var pages = {
         return html(
             body(
                 header(),
-                lostpwform(),
+                midpage(
+                    lostpwform()
+                ),
                 footer()
             )
         )
@@ -72,7 +82,9 @@ var pages = {
         return html(
             body(
                 header(),
-                addressform(),
+                midpage(
+                    addressform()
+                ),
                 footer()
             )
         )
@@ -82,9 +94,11 @@ var pages = {
         return html(
             body(
                 header(),
-                address(),
-                comment_list(),
-                commentbox(),
+                midpage(
+                    address(),
+                    comment_list(),
+                    commentbox()
+                ),
                 footer()
             )
         )
@@ -149,20 +163,27 @@ function id_box() {
 }
 
 function loginprompt() {
-    return `<div id='status' >
-        ${ state.login_failed ? 'login failed' : '' }
-        <form id='loginform' >
-            <fieldset id='inputs'>
-                <input id='email'    type='text'     placeholder='email'    name='email'    required >   
-                <input id='password' type='password' placeholder='password' name='password' required >
-            </fieldset>
-            <fieldset id='actions'>
-                <input type='submit' id='submit' value='log in'
-                    onclick="$.post('/post_login', $('#loginform').serialize()).done(function(data) { $('#status').html(data) });return false">
 
-                <a href='/lostpwform'>forgot your password?</a> <a href='/registerform'>register</a>
-            </fieldset>
-        </form>
+    return `
+        <div id='status' >
+            <div style='display: none;' >
+                ${ lostpwform() }
+            </div>
+
+            ${ state.login_failed ? 'login failed' : '' }
+            <form id='loginform' >
+                <fieldset>
+                    <input id='email'    name='email'    placeholder='email'    type='text'     required >   
+                    <input id='password' name='password' placeholder='password' type='password' required >
+                </fieldset>
+                <fieldset>
+                    <input type='submit' id='submit' value='log in'
+                        onclick="$.post('/post_login', $('#loginform').serialize()).done(function(data) { $('#status').html(data) });return false">
+
+                    <a href='#' onclick="document.getElementById('midpage').innerHTML = lostpwform.innerHTML; return false" >forgot your password?</a>
+                    <a href='/registerform'>register</a>
+                </fieldset>
+            </form>
         </div>`
 }
 
@@ -189,15 +210,17 @@ function registerform() {
 }
 
 function lostpwform() {
-    var show = state.email ? `value='${ state.email }'` : `placeholder='email address'`
+    var show = state.login_failed ? `value='${ state.login_failed }'` : `placeholder='email address'`
 
     return `
-        <h1>reset password</h1>
-        <form action='/recoveryemail' method='post'>
-        <div class='form-group'><input type='text' name='user_email' ${ show } class='form-control' id='user_email' ></div>
-        <button type='submit' id='submit' class='btn btn-success btn-sm'>submit</button>
-        </form>
-        <script type="text/javascript">document.getElementById('user_email').focus();</script>`
+        <div id='lostpwform' >
+            <h1>reset password</h1>
+            <form action='/recoveryemail' method='post'>
+                <div class='form-group'><input type='text' name='user_email' ${ show } class='form-control' id='lost_pw_email' ></div>
+                <button type='submit' id='submit' class='btn btn-success btn-sm'>submit</button>
+            </form>
+            <script type="text/javascript">document.getElementById('lost_pw_email').focus();</script>
+        </div>`
 }
 
 function addressform() {
@@ -253,6 +276,12 @@ function body(...args) {
         ${ args.join('') }
         </div>
         </body>`
+}
+
+function midpage(...args) { // just an id so we can easily swap out the middle of the page
+    return `<div id="midpage" >
+        ${ args.join('') }
+        </div>`
 }
 
 function address_list() {

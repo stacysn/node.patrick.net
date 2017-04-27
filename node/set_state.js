@@ -238,7 +238,7 @@ function connect_to_db(req, res, state) {
         state.ip = req.headers['x-forwarded-for']
 
         // query or set a database lock for this ip; each ip is allowed only one outstanding connection at a time
-        if (locks[state.ip]) { send_html(403, 'Rate Limit Exceeded', res, db); return }
+        if (locks[state.ip]) { send_html(403, 'Rate Limit Exceeded', res, db); console.log('Rate limit exceeded by state.ip'); return }
         else { // set the lock
             locks[state.ip] = {
                 threadId : db.threadId,
@@ -324,7 +324,7 @@ function login(req, res, state, db, email, password) {
                 state.user         = null
                 var user_id        = ''
                 var user_md5pass   = ''
-                state.login_failed = true
+                state.login_failed = email
             }
             else {
                 state.user       = results[0]
