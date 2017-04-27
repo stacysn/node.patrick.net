@@ -60,8 +60,6 @@ pages.about = (req, res, state, db) => {
     send_html(200, pagefactory.render(state), res, db)
 }
 
-pages.registerform = (req, res, state, db) => { send_html(200, pagefactory.render(state), res, db) }
-
 pages.addressform = (req, res, state, db) => { send_html(200, pagefactory.render(state), res, db) }
 
 pages.address = (req, res, state, db) => { // show a single address page
@@ -137,12 +135,23 @@ pages.registration = (req, res, state, db) => {
     Object.keys(state.post_data).map(key => { state.post_data[key] = strip_tags(state.post_data[key]) })
 
     if (/\W/.test(state.post_data.user_screenname)) { message('Please go back and enter username consisting only of letters', state, res, db); return }
-
     if (!/^\w.*@.+\.\w+$/.test(state.post_data.user_email)) { message('Please go back and enter a valid email address',  state, res, db); return }
 
-    // should really check for duplicates before doing insert; cannot use /ER_DUP_ENTRY/.test(error.message) because all my error handling is generic now
-
-    query(db, 'insert into users set ?', state.post_data, state, results => { send_login_link(req, res, state, db) })
+    query(db, 'select * from users where user_email = ?', [state.post_data.user_email], state, results => {
+        if (results[0]) {
+            message(`That email is already registered. Please use the "forgot password" link above.</a>`, state, res, db)
+            return
+        }
+        else {
+            query(db, 'select * from users where user_screenname = ?', [state.post_data.user_screenname], state, results => {
+                if (results[0]) {
+                    message(`That user name is already registered. Please choose a different one.</a>`, state, res, db)
+                    return
+                }
+                else query(db, 'insert into users set ?', state.post_data, state, results => { send_login_link(req, res, state, db) })
+            })
+        }
+    })
 }
 
 pages.recoveryemail = (req, res, state, db) => {
@@ -470,4 +479,3 @@ function query(db, sql, args, state, cb) {
     q = args ? db.query(sql, args, get_results)
              : db.query(sql,       get_results)
 }
-

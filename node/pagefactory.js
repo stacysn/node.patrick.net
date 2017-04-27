@@ -13,27 +13,23 @@ var pages = {
 
     home : () => {
         return html(
-            body(
-                header(),
-                midpage(
-                    h1(),
-                    address_list(),
-                    new_address_button()
-                ),
-                footer()
-            )
+            header(),
+            midpage(
+                h1(),
+                address_list(),
+                new_address_button()
+            ),
+            footer()
         )
     },
 
     users : () => {
         return html(
-            body(
-                header(),
-                midpage(
-                    user_list()
-                ),
-                footer()
-            )
+            header(),
+            midpage(
+                user_list()
+            ),
+            footer()
         )
     },
 
@@ -43,52 +39,34 @@ var pages = {
 
     message : () => {
         return html(
-            body(
-                header(),
-                midpage(
-                    h1(),
-                    text()
-                ),
-                footer()
-            )
-        )
-    },
-
-    registerform : () => {
-        return html(
-            body(
-                header(),
-                midpage(
-                    registerform()
-                ),
-                footer()
-            )
+            header(),
+            midpage(
+                h1(),
+                text()
+            ),
+            footer()
         )
     },
 
     addressform : () => {
         return html(
-            body(
-                header(),
-                midpage(
-                    addressform()
-                ),
-                footer()
-            )
+            header(),
+            midpage(
+                addressform()
+            ),
+            footer()
         )
     },
 
     address : () => {
         return html(
-            body(
-                header(),
-                midpage(
-                    address(),
-                    comment_list(),
-                    commentbox()
-                ),
-                footer()
-            )
+            header(),
+            midpage(
+                address(),
+                comment_list(),
+                commentbox()
+            ),
+            footer()
         )
     },
 
@@ -118,7 +96,11 @@ function html(...args) {
         <meta name='viewport' content='width=device-width, initial-scale=1, shrink-to-fit=no' />
         <title>What Did You Bid?</title>
         </head>
+        <body>
+            <div class="container" >
             ${ args.join('') }
+            </div>
+        </body>
         <script async src="/js/jquery.min.js"></script><!-- ${'\n' + queries + '\n'} -->
         </html>`
 }
@@ -155,7 +137,8 @@ function loginprompt() {
     return `
         <div id='status' >
             <div style='display: none;' >
-                ${ lostpwform() }
+                ${ lostpwform()   }
+                ${ registerform() }
             </div>
 
             ${ state.login_failed_email ? 'login failed' : '' }
@@ -168,8 +151,8 @@ function loginprompt() {
                     <input type='submit' id='submit' value='log in'
                         onclick="$.post('/post_login', $('#loginform').serialize()).done(function(data) { $('#status').html(data) });return false">
 
-                    <a href='#' onclick="document.getElementById('midpage').innerHTML = lostpwform.innerHTML; return false" >forgot your password?</a>
-                    <a href='/registerform'>register</a>
+                    <a href='#' onclick="document.getElementById('midpage').innerHTML = lostpwform.innerHTML;  return false" >forgot password</a>
+                    <a href='#' onclick="document.getElementById('midpage').innerHTML = registerform.innerHTML; return false" >register</a>
                 </fieldset>
             </form>
         </div>`
@@ -186,6 +169,7 @@ function tabs() {
 
 function registerform() {
     return `
+    <div id='registerform' >
         <h1>register</h1>
         <form action='/registration' method='post'>
         <div >
@@ -194,21 +178,22 @@ function registerform() {
         </div>
         <button type='submit' id='submit' class='btn btn-success btn-sm'>submit</button>
         </form>
-        <script type="text/javascript">document.getElementById('user_screenname').focus();</script>`
+        <script type="text/javascript">document.getElementById('user_screenname').focus();</script>
+    </div>`
 }
 
 function lostpwform() {
     var show = state.login_failed_email ? `value='${ state.login_failed_email }'` : `placeholder='email address'`
 
     return `
-        <div id='lostpwform' >
-            <h1>reset password</h1>
-            <form action='/recoveryemail' method='post'>
-                <div class='form-group'><input type='text' name='user_email' ${ show } class='form-control' id='lost_pw_email' ></div>
-                <button type='submit' id='submit' class='btn btn-success btn-sm'>submit</button>
-            </form>
-            <script type="text/javascript">document.getElementById('lost_pw_email').focus();</script>
-        </div>`
+    <div id='lostpwform' >
+        <h1>reset password</h1>
+        <form action='/recoveryemail' method='post'>
+            <div class='form-group'><input type='text' name='user_email' ${ show } class='form-control' id='lost_pw_email' ></div>
+            <button type='submit' id='submit' class='btn btn-success btn-sm'>submit</button>
+        </form>
+        <script type="text/javascript">document.getElementById('lost_pw_email').focus();</script>
+    </div>`
 }
 
 function addressform() {
@@ -256,14 +241,6 @@ function comment(c) {
     }
 
     return `<div class="comment" id="${ c.comment_id }" >${ u } ${ format_date(c.comment_created) } ${ del }<br>${ c.comment_content }</div>`
-}
-
-function body(...args) {
-    return `<body>
-        <div class="container" >
-        ${ args.join('') }
-        </div>
-        </body>`
 }
 
 function midpage(...args) { // just an id so we can easily swap out the middle of the page
