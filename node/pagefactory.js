@@ -66,18 +66,6 @@ var pages = {
         )
     },
 
-    lostpwform : () => {
-        return html(
-            body(
-                header(),
-                midpage(
-                    lostpwform()
-                ),
-                footer()
-            )
-        )
-    },
-
     addressform : () => {
         return html(
             body(
@@ -170,7 +158,7 @@ function loginprompt() {
                 ${ lostpwform() }
             </div>
 
-            ${ state.login_failed ? 'login failed' : '' }
+            ${ state.login_failed_email ? 'login failed' : '' }
             <form id='loginform' >
                 <fieldset>
                     <input id='email'    name='email'    placeholder='email'    type='text'     required >   
@@ -210,7 +198,7 @@ function registerform() {
 }
 
 function lostpwform() {
-    var show = state.login_failed ? `value='${ state.login_failed }'` : `placeholder='email address'`
+    var show = state.login_failed_email ? `value='${ state.login_failed_email }'` : `placeholder='email address'`
 
     return `
         <div id='lostpwform' >

@@ -62,13 +62,6 @@ pages.about = (req, res, state, db) => {
 
 pages.registerform = (req, res, state, db) => { send_html(200, pagefactory.render(state), res, db) }
 
-pages.lostpwform = (req, res, state, db) => {
-
-    state.email = url.parse(req.url, true).query.email
-
-    send_html(200, pagefactory.render(state), res, db)
-}
-
 pages.addressform = (req, res, state, db) => { send_html(200, pagefactory.render(state), res, db) }
 
 pages.address = (req, res, state, db) => { // show a single address page
@@ -321,15 +314,16 @@ function login(req, res, state, db, email, password) {
         results => {
 
             if (0 == results.length) {
-                state.user         = null
-                var user_id        = ''
-                var user_md5pass   = ''
-                state.login_failed = email
+                state.login_failed_email = email
+                state.user               = null
+                var user_id              = ''
+                var user_md5pass         = ''
             }
             else {
-                state.user       = results[0]
-                var user_id      = state.user.user_id
-                var user_md5pass = state.user.user_md5pass
+                state.login_failed_email = null
+                state.user               = results[0]
+                var user_id              = state.user.user_id
+                var user_md5pass         = state.user.user_md5pass
             }
 
             html = pagefactory.render(state)
