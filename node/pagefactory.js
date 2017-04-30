@@ -108,7 +108,7 @@ function html(...args) {
 function header() {
     return `<div class='headerbox' >
         <a href='/' ><font color='ba114c'><h3 title='back to home page' >What Did You Bid?</h3></font></a> &nbsp;
-        <div style='float:right'>${ icon_or_loginprompt() }</div><p>
+        <div style='float:right' >${ icon_or_loginprompt() }</div><p>
         </div>`
 }
 
@@ -125,22 +125,22 @@ function id_box() {
 
     var img = user_icon(state.user)
 
-    return `<div id='status' >
-        <a href='/users/${state.user.user_screenname}' >${img} ${state.user.user_screenname}</a>
-        <p>
-        <a href='#' onclick="$.get('/logout', function(data) { $('#status').html(data) });return false">logout</a>
+    return `
+        <div id='status' >
+            <a href='/users/${state.user.user_screenname}' >${img} ${state.user.user_screenname}</a>
+            <p>
+            <a href='#' onclick="$.get('/logout', function(data) { $('#status').html(data) });return false">logout</a>
         </div>`
 }
 
 function loginprompt() {
 
     return `
+        <div style='display: none;' >
+            ${ lostpwform()   }
+            ${ registerform() }
+        </div>
         <div id='status' >
-            <div style='display: none;' >
-                ${ lostpwform()   }
-                ${ registerform() }
-            </div>
-
             ${ state.login_failed_email ? 'login failed' : '' }
             <form id='loginform' >
                 <fieldset>
