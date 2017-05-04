@@ -9,20 +9,22 @@ pool.on('release', db => { // scan locks and delete the lock object which has db
     })
 })
 
-exports.run = (req, res, page) => {
+exports.run = (req, res) => {
 
     var state = { // start accumulation of state for this request
-        page    : page,
+        page    : url.parse(req.url).pathname.split('/')[1] || 'home',
         queries : [],
         req     : req,
         res     : res,
     }
 
-    if (typeof pages[page] !== 'function') { send_html(404, `No page like "${req.url}"`, res, null); return }
+    var eh = create_err_handler(state)
+
+    if (typeof pages[state.page] !== 'function') { return send_html(404, `No page like "${req.url}"`, res, null) }
 
     connect_to_db(state)
         .then(block_evil)
-        .catch(create_rejection_handler(res))
+        .catch(eh)
 }
 
 pages.home = (req, res, state, db) => {
@@ -507,9 +509,9 @@ function query(db, sql, args, state, cb) {
              : db.query(sql,       get_results)
 }
 
-function create_rejection_handler(res) { // closure to pass back a promise rejection handler which has res in context
+function create_err_handler(state) { // closure to pass back a promise rejection handler which has res in context
 
     return function(err) { // the actual rejection handler
-        send_html(err.code, err.message, res, null)
+        send_html(err.code, err.message, state.res, state.db)
     }
 }
