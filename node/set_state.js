@@ -11,13 +11,18 @@ pool.on('release', db => { // scan locks and delete the lock object which has db
 
 exports.run = (req, res, page) => {
 
-    var state = {} // start accumulation of state
-    state.page = page
-    state.queries = []
+    var state = { // start accumulation of state for this request
+        page    : page,
+        queries : [],
+        req     : req,
+        res     : res,
+    }
 
     if (typeof pages[page] !== 'function') { send_html(404, `No page like "${req.url}"`, res, null); return }
 
-    connect_to_db(req, res, state)
+    connect_to_db(state)
+        .then(block_evil)
+        .catch(create_rejection_handler(res))
 }
 
 pages.home = (req, res, state, db) => {
@@ -243,35 +248,48 @@ pages.delete = (req, res, state, db) => { // delete a comment
 
 //////////////////////////////////////// end of pages; helper functions below ////////////////////////////////////////
 
-function connect_to_db(req, res, state) {
-    pool.getConnection(function(err, db) {
-        if (err) throw err
+function connect_to_db(state) {
 
-        state.ip = req.headers['x-forwarded-for']
+    var promise = new Promise(function(fulfill, reject) {
 
-        // query or set a database lock for this ip; each ip is allowed only one outstanding connection at a time
-        if (locks[state.ip]) { send_html(403, 'Rate Limit Exceeded', res, db); console.log('Rate limit exceeded by state.ip'); return }
-        else { // set the lock
-            locks[state.ip] = {
-                threadId : db.threadId,
-                ts       : Date.now()
+		pool.getConnection(function(err, db) {
+
+            if (err) throw {
+                code    : 500,
+                message : 'failed to get db connection',
             }
-        }
 
-        block_evil(req, res, state, db)
+            state.db = db
+			state.ip = state.req.headers['x-forwarded-for']
+
+			// query or set a database lock for this ip; each ip is allowed only one outstanding connection at a time
+			if (locks[state.ip]) { send_html(403, 'Rate Limit Exceeded', state.res, db); console.log('Rate limit exceeded by state.ip'); return }
+			else {
+				locks[state.ip] = { // set the lock
+					threadId : db.threadId,
+					ts       : Date.now()
+				}
+			}
+
+            fulfill(state)
+		})
     })
+
+    return promise
 }
 
-function block_evil(req, res, state, db) { // block entire countries like Russia because all comments from there are inevitably spam
-    query(db, 'select country_evil from countries where inet_aton(?) >= country_start and inet_aton(?) <= country_end', [state.ip, state.ip], state,
+function block_evil(state) { // block entire countries like Russia because all comments from there are inevitably spam
+
+    query(state.db, 'select country_evil from countries where inet_aton(?) >= country_start and inet_aton(?) <= country_end', [state.ip, state.ip], state,
         results => {
-            if (results.length && results[0].country_evil) { send_html(404, 'Not Found', res, db); return } // just give a 404 to all evil countries
+
+            if (results.length && results[0].country_evil) { send_html(404, 'Not Found', state.res, state.db); return } // give a 404 to all evil countries
 
             // block individual known spammer ip addresses
-            query(db, 'select count(*) as c from nukes where nuke_ip_address = ?', [state.ip], state,
+            query(state.db, 'select count(*) as c from nukes where nuke_ip_address = ?', [state.ip], state,
                 results => {
-                    if (results[0].c) { send_html(404, 'Not Found', res, db); return }
-                    collect_post_data(req, res, state, db)
+                    if (results[0].c) { send_html(404, 'Not Found', state.res, state.db); return }
+                    collect_post_data(state.req, state.res, state, state.db)
                 }
             )
         }
@@ -346,7 +364,6 @@ function login(req, res, state, db, email, password) {
             }
 
             html = pagefactory.render(state)
-            console.log(state)
 
             var cookie = `whatdidyoubid=${user_id}_${user_md5pass}`
             var d      = new Date()
@@ -488,4 +505,11 @@ function query(db, sql, args, state, cb) {
 
     q = args ? db.query(sql, args, get_results)
              : db.query(sql,       get_results)
+}
+
+function create_rejection_handler(res) { // closure to pass back a promise rejection handler which has res in context
+
+    return function(err) { // the actual rejection handler
+        send_html(err.code, err.message, res, null)
+    }
 }

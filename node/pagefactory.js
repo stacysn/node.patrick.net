@@ -4,7 +4,6 @@
 var state = {}
 
 exports.render = s => {
-    //console.log(s)
     state = s
     return pages[state.page]()
 }
