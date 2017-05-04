@@ -135,10 +135,6 @@ function id_box() {
 function loginprompt() {
 
     return `
-        <div style='display: none;' >
-            ${ lostpwform()   }
-            ${ registerform() }
-        </div>
         <div id='status' >
             ${ state.login_failed_email ? 'login failed' : '' }
             <form id='loginform' >
@@ -154,6 +150,10 @@ function loginprompt() {
                     <a href='#' onclick="document.getElementById('midpage').innerHTML = registerform.innerHTML; return false" >register</a>
                 </fieldset>
             </form>
+            <div style='display: none;' >
+                ${ lostpwform()   }
+                ${ registerform() }
+            </div>
         </div>`
 }
 
