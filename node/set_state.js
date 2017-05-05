@@ -26,6 +26,7 @@ exports.run = (req, res) => {
         .then(block_countries)
         .then(block_nuked)
         .then(collect_post_data)
+        .then(set_user)
         .catch(eh)
 }
 
@@ -316,50 +317,53 @@ function block_nuked(state) { // block nuked users, usually spammers
 
 function collect_post_data(state) { // if there is any POST data, accumulate it and append it to req object
 
-    if (state.req.method == 'POST') {
-        var body = ''
+    var promise = new Promise(function(fulfill, reject) {
 
-        state.req.on('data', function (data) {
-            body += data
+        if (state.req.method == 'POST') {
+            var body = ''
 
-            if (body.length > 1e6) { // too much POST data, kill the connection
-                state.req.connection.destroy()
-                state.res.writeHead(413, {'Content-Type': 'text/plain'}).end()
-            }
-        })
+            state.req.on('data', function (data) {
+                body += data
 
-        state.req.on('end', function () {
-            var post_data   = qs.parse(body)
-            Object.keys(post_data).map(function(key) { post_data[key] = post_data[key].trim() }) // trim all top level values, should all be strings
-            state.post_data = post_data
-            set_user(state.req, state.res, state, state.db)
-        })
-    }
-    else {
-        set_user(state.req, state.res, state, state.db)
-    }
+                if (body.length > 1e6) { // too much POST data, kill the connection
+                    state.req.connection.destroy()
+                    throw { code : 413, message : 'Too much POST data', }
+                }
+            })
+
+            state.req.on('end', function () {
+                var post_data   = qs.parse(body)
+                Object.keys(post_data).map(function(key) { post_data[key] = post_data[key].trim() }) // trim all top level values, should all be strings
+                state.post_data = post_data
+                fulfill(state)
+            })
+        }
+        else fulfill(state)
+    })
+
+    return promise
 }
 
-function set_user(req, res, state, db) { // update state with whether they are logged in or not
+function set_user(state) { // update state with whether they are logged in or not
 
     // cookie is like whatdidyoubid=1_432d32044278053db427a93fc352235d where 1 is user and 432d... is md5'd password
 
     try {
-        var user_id      = req.headers.cookie.split('=')[1].split('_')[0]
-        var user_md5pass = req.headers.cookie.split('=')[1].split('_')[1]
+        var user_id      = state.req.headers.cookie.split('=')[1].split('_')[0]
+        var user_md5pass = state.req.headers.cookie.split('=')[1].split('_')[1]
 
-        query(db, 'select * from users where user_id = ? and user_md5pass = ?', [user_id, user_md5pass], state,
+        query(state.db, 'select * from users where user_id = ? and user_md5pass = ?', [user_id, user_md5pass], state,
             results => {
                 if (0 == results.length) state.user = null
                 else                     state.user = results[0]
 
-                pages[state.page](req, res, state, db)
+                pages[state.page](state.req, state.res, state, state.db)
             }
         )
     }
     catch(e) { // no valid cookie
         state.user = null
-        pages[state.page](req, res, state, db)
+        pages[state.page](state.req, state.res, state, state.db)
     }
 }
 
