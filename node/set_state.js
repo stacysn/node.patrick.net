@@ -27,10 +27,11 @@ exports.run = (req, res) => {
         .then(block_nuked)
         .then(collect_post_data)
         .then(set_user)
+        .then(pages[state.page])
         .catch(eh)
 }
 
-pages.home = (state) => {
+pages.home = state => {
 
     query(state.db, 'select * from addresses, zips where address_zip=zip_code order by address_modified desc', null, state,
         results => {
@@ -41,7 +42,7 @@ pages.home = (state) => {
     )
 }
     
-pages.users = (state) => {
+pages.users = state => {
 
     try {
         var user_screenname = url.parse(state.req.url).path.split('/')[2].replace(/\W/g,'') // like /users/Patrick
@@ -61,7 +62,7 @@ pages.users = (state) => {
     )
 }
 
-pages.about = (state) => {
+pages.about = state => {
     state.message = 'About whatdidyoubid.com'
 
     state.text = `Realtors routinely block or "lose" bids that do not give their own agency both sides of the commission. whatdidyoubid.com is a place
@@ -70,9 +71,9 @@ pages.about = (state) => {
     send_html(200, pagefactory.render(state), state.res, state.db)
 }
 
-pages.addressform = (state) => { send_html(200, pagefactory.render(state), state.res, state.db) }
+pages.addressform = state => { send_html(200, pagefactory.render(state), state.res, state.db) }
 
-pages.address = (state) => { // show a single address page
+pages.address = state => { // show a single address page
 
     // get address' db row number from url, eg 47 from /address/47/slug-goes-here
     var address_id = url.parse(state.req.url).path.split('/')[2].replace(/\D/g,'')
@@ -95,7 +96,7 @@ pages.address = (state) => { // show a single address page
     )
 }
 
-pages.key_login = (state) => {
+pages.key_login = state => {
 
     key      = url.parse(state.req.url, true).query.key
     password = md5(Date.now() + conf.nonce_secret).substring(0, 6)
@@ -126,14 +127,14 @@ pages.key_login = (state) => {
     )
 }
 
-pages.post_login = (state) => {
+pages.post_login = state => {
     email    = state.post_data.email
     password = state.post_data.password
 
     login(state.req, state.res, state, state.db, email, password)
 }
 
-pages.logout = (state) => {
+pages.logout = state => {
 
     state.user = null
     var d      = new Date()
@@ -151,7 +152,7 @@ pages.logout = (state) => {
     if (state.db) state.db.release()
 }
 
-pages.registration = (state) => {
+pages.registration = state => {
 
     Object.keys(state.post_data).map(key => { state.post_data[key] = strip_tags(state.post_data[key]) })
 
@@ -175,7 +176,7 @@ pages.registration = (state) => {
     })
 }
 
-pages.recoveryemail = (state) => {
+pages.recoveryemail = state => {
 
     Object.keys(state.post_data).map(key => { state.post_data[key] = strip_tags(state.post_data[key]) })
 
@@ -184,7 +185,7 @@ pages.recoveryemail = (state) => {
     send_login_link(state.req, state.res, state, state.db)
 }
 
-pages.postaddress = (state) => {
+pages.postaddress = state => {
 
     post_data = state.post_data
     Object.keys(post_data).map(key => { post_data[key] = strip_tags(post_data[key]) })
@@ -199,7 +200,7 @@ pages.postaddress = (state) => {
     )
 }
 
-pages.postcomment = (state) => {
+pages.postcomment = state => {
 
     post_data = state.post_data
     Object.keys(post_data).map(key => { post_data[key] = strip_tags(post_data[key]) })
@@ -236,7 +237,7 @@ pages.postcomment = (state) => {
     )
 }
 
-pages.delete = (state) => { // delete a comment
+pages.delete = state => { // delete a comment
 
     var comment_id = url.parse(state.req.url).path.split('/')[2].replace(/\D/g,'') // get comment db row number from url, eg 47 from /delete/47
 
@@ -349,23 +350,28 @@ function set_user(state) { // update state with whether they are logged in or no
 
     // cookie is like whatdidyoubid=1_432d32044278053db427a93fc352235d where 1 is user and 432d... is md5'd password
 
-    try {
-        var user_id      = state.req.headers.cookie.split('=')[1].split('_')[0]
-        var user_md5pass = state.req.headers.cookie.split('=')[1].split('_')[1]
+    var promise = new Promise(function(fulfill, reject) {
 
-        query(state.db, 'select * from users where user_id = ? and user_md5pass = ?', [user_id, user_md5pass], state,
-            results => {
-                if (0 == results.length) state.user = null
-                else                     state.user = results[0]
+        try {
+            var user_id      = state.req.headers.cookie.split('=')[1].split('_')[0]
+            var user_md5pass = state.req.headers.cookie.split('=')[1].split('_')[1]
 
-                pages[state.page](state)
-            }
-        )
-    }
-    catch(e) { // no valid cookie
-        state.user = null
-        pages[state.page](state)
-    }
+            query(state.db, 'select * from users where user_id = ? and user_md5pass = ?', [user_id, user_md5pass], state,
+                results => {
+                    if (0 == results.length) state.user = null
+                    else                     state.user = results[0]
+
+                    fulfill(state)
+                }
+            )
+        }
+        catch(e) { // no valid cookie
+            state.user = null
+            fulfill(state)
+        }
+    })
+
+    return promise
 }
 
 function login(req, res, state, db, email, password) {
@@ -530,7 +536,7 @@ function query(db, sql, args, state, cb) {
              : db.query(sql,       get_results)
 }
 
-function create_err_handler(state) { // closure to pass back a promise rejection handler which has res in context
+function create_err_handler(state) { // closure to pass back a promise rejection handler which has state in context
 
     return function(err) { // the actual rejection handler
         send_html(err.code, err.message, state.res, state.db)
