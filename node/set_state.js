@@ -257,7 +257,7 @@ pages.delete = state => { // delete a comment
 
 function connect_to_db(state) {
 
-    var promise = new Promise(function(fulfill, reject) {
+    return new Promise(function(fulfill, reject) {
 
 		pool.getConnection(function(err, db) {
 
@@ -281,13 +281,11 @@ function connect_to_db(state) {
             fulfill(state)
 		})
     })
-
-    return promise
 }
 
 function block_countries(state) { // block entire countries like Russia because all comments from there are inevitably spam
 
-    var promise = new Promise(function(fulfill, reject) {
+    return new Promise(function(fulfill, reject) {
 
         query('select country_evil from countries where inet_aton(?) >= country_start and inet_aton(?) <= country_end', [state.ip, state.ip],
             state, results => {
@@ -298,13 +296,11 @@ function block_countries(state) { // block entire countries like Russia because 
             }
         )
     })
-
-    return promise
 }
 
 function block_nuked(state) { // block nuked users, usually spammers
 
-    var promise = new Promise(function(fulfill, reject) {
+    return new Promise(function(fulfill, reject) {
 
         query('select count(*) as c from nukes where nuke_ip_address = ?', [state.ip], state,
             results => {
@@ -313,13 +309,11 @@ function block_nuked(state) { // block nuked users, usually spammers
             }
         )
     })
-
-    return promise
 }
 
 function collect_post_data(state) { // if there is any POST data, accumulate it and append it to req object
 
-    var promise = new Promise(function(fulfill, reject) {
+    return new Promise(function(fulfill, reject) {
 
         if (state.req.method == 'POST') {
             var body = ''
@@ -342,15 +336,13 @@ function collect_post_data(state) { // if there is any POST data, accumulate it 
         }
         else fulfill(state)
     })
-
-    return promise
 }
 
 function set_user(state) { // update state with whether they are logged in or not
 
     // cookie is like whatdidyoubid=1_432d32044278053db427a93fc352235d where 1 is user and 432d... is md5'd password
 
-    var promise = new Promise(function(fulfill, reject) {
+    return new Promise(function(fulfill, reject) {
 
         try {
             var user_id      = state.req.headers.cookie.split('=')[1].split('_')[0]
@@ -370,8 +362,6 @@ function set_user(state) { // update state with whether they are logged in or no
             fulfill(state)
         }
     })
-
-    return promise
 }
 
 function login(req, res, state, db, email, password) {
