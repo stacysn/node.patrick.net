@@ -157,17 +157,17 @@ pages.registration = state => {
     Object.keys(state.post_data).map(key => { state.post_data[key] = strip_tags(state.post_data[key]) })
 
     if (/\W/.test(state.post_data.user_screenname)) { message('Please go back and enter username consisting only of letters', state, state.res, state.db); return }
-    if (!/^\w.*@.+\.\w+$/.test(state.post_data.user_email)) { message('Please go back and enter a valid email address',  state, state.res, state.db); return }
+    if (!/^\w.*@.+\.\w+$/.test(state.post_data.user_email)) { message('Please go back and enter a valid email address',  state); return }
 
     query('select * from users where user_email = ?', [state.post_data.user_email], state, results => {
         if (results[0]) {
-            message(`That email is already registered. Please use the "forgot password" link above.</a>`, state, state.res, state.db)
+            message(`That email is already registered. Please use the "forgot password" link above.</a>`, state)
             return
         }
         else {
             query('select * from users where user_screenname = ?', [state.post_data.user_screenname], state, results => {
                 if (results[0]) {
-                    message(`That user name is already registered. Please choose a different one.</a>`, state, state.res, state.db)
+                    message(`That user name is already registered. Please choose a different one.</a>`, state)
                     return
                 }
                 else query('insert into users set ?', state.post_data, state, results => { send_login_link(state.req, state.res, state, state.db) })
@@ -180,7 +180,7 @@ pages.recoveryemail = state => {
 
     Object.keys(state.post_data).map(key => { state.post_data[key] = strip_tags(state.post_data[key]) })
 
-    if (!/^\w.*@.+\.\w+$/.test(state.post_data.user_email)) { message('Please go back and enter a valid email address',  state, state.res, state.db); return }
+    if (!/^\w.*@.+\.\w+$/.test(state.post_data.user_email)) { message('Please go back and enter a valid email address',  state); return }
 
     send_login_link(state.req, state.res, state, state.db)
 }
@@ -191,8 +191,8 @@ pages.postaddress = state => {
     Object.keys(post_data).map(key => { post_data[key] = strip_tags(post_data[key]) })
 
     // do a bit of validation before inserting
-    if (!/\d+\s+\w+/.test(post_data.address_num_street)) { message('Please go back and enter a valid street address', state, state.res, state.db); return }
-    if (!/^\d\d\d\d\d$/.test(post_data.address_zip))     { message('Please go back and enter a five-digit zip code',  state, state.res, state.db); return }
+    if (!/\d+\s+\w+/.test(post_data.address_num_street)) { message('Please go back and enter a valid street address', state); return }
+    if (!/^\d\d\d\d\d$/.test(post_data.address_zip))     { message('Please go back and enter a five-digit zip code',  state); return }
 
     // if duplicate address, results.insertId will still be set correctly to existing address_id
     query('insert into addresses set ? on duplicate key update address_id=last_insert_id(address_id)', post_data, state,
@@ -427,7 +427,7 @@ function redirect(redirect_to, res, db) {
     if (db) db.release()
 }
 
-function message(message, state, res, db) {
+function message(message, state) {
     state.page    = 'message'
     state.message =  message
     send_html(200, pagefactory.render(state), state)
