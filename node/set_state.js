@@ -33,11 +33,11 @@ exports.run = (req, res) => {
 
 pages.home = state => {
 
-    query(state.db, 'select * from addresses, zips where address_zip=zip_code order by address_modified desc', null, state,
+    query('select * from addresses, zips where address_zip=zip_code order by address_modified desc', null, state,
         results => {
             state.message   = 'Increasing fair play for buyers and sellers'
             state.addresses = results
-            send_html(200, pagefactory.render(state), state.res, state.db)
+            send_html(200, pagefactory.render(state), state)
         }
     )
 }
@@ -54,10 +54,10 @@ pages.users = state => {
         var parms = null
     }
 
-    query(state.db, sql, parms, state,
+    query(sql, parms, state,
         results => {
             state.users = results
-            send_html(200, pagefactory.render(state), state.res, state.db)
+            send_html(200, pagefactory.render(state), state)
         }
     )
 }
@@ -68,27 +68,27 @@ pages.about = state => {
     state.text = `Realtors routinely block or "lose" bids that do not give their own agency both sides of the commission. whatdidyoubid.com is a place
     where bidders can list what they bid for a house so that sellers and other bidders can get an idea of the degree to which this takes place.`
 
-    send_html(200, pagefactory.render(state), state.res, state.db)
+    send_html(200, pagefactory.render(state), state)
 }
 
-pages.addressform = state => { send_html(200, pagefactory.render(state), state.res, state.db) }
+pages.addressform = state => { send_html(200, pagefactory.render(state), state) }
 
 pages.address = state => { // show a single address page
 
     // get address' db row number from url, eg 47 from /address/47/slug-goes-here
     var address_id = url.parse(state.req.url).path.split('/')[2].replace(/\D/g,'')
 
-    query(state.db, 'select * from addresses, zips where address_id=? and address_zip=zip_code', [address_id], state,
+    query('select * from addresses, zips where address_id=? and address_zip=zip_code', [address_id], state,
         results => {
-            if (0 == results.length) send_html(404, `No address with id "${address_id}"`, state.res, null)
+            if (0 == results.length) send_html(404, `No address with id "${address_id}"`, state)
             else {
                 state.address = results[0]
 
-                query(state.db, 'select * from comments left join users on comment_author=user_id where comment_address_id = ? order by comment_created',
+                query('select * from comments left join users on comment_author=user_id where comment_address_id = ? order by comment_created',
                     [address_id], state,
                     results => { // now pick up the comment list for this address
                         if (results.length) state.comments = results
-                        send_html(200, pagefactory.render(state), state.res, state.db)
+                        send_html(200, pagefactory.render(state), state)
                     }
                 )
             }
@@ -102,14 +102,14 @@ pages.key_login = state => {
     password = md5(Date.now() + conf.nonce_secret).substring(0, 6)
 
     // unfortunately a copy of home page sql
-    query(state.db, 'select * from addresses, zips where address_zip=zip_code order by address_modified desc', null, state,
+    query('select * from addresses, zips where address_zip=zip_code order by address_modified desc', null, state,
         results => {
             state.addresses     = results
             state.alert_content = `Your password is ${ password } and you are now logged in`
             state.message       = 'Increasing fair play for buyers and sellers'
             state.page          = 'home' // key_login generates home page html
 
-            query(state.db, 'select user_email from users where user_key = ?', [key], state,
+            query('select user_email from users where user_key = ?', [key], state,
                 results => {
                     if (results.length) email = results[0].user_email
                     else {
@@ -118,7 +118,7 @@ pages.key_login = state => {
                     }
 
                     // erase key so it cannot be used again, and set new password
-                    query(state.db, 'update users set user_key=null, user_md5pass=? where user_key=?', [md5(password), key], state,
+                    query('update users set user_key=null, user_md5pass=? where user_key=?', [md5(password), key], state,
                         results => { login(state.req, state.res, state, state.db, email, password) }
                     )
                 }
@@ -159,18 +159,18 @@ pages.registration = state => {
     if (/\W/.test(state.post_data.user_screenname)) { message('Please go back and enter username consisting only of letters', state, state.res, state.db); return }
     if (!/^\w.*@.+\.\w+$/.test(state.post_data.user_email)) { message('Please go back and enter a valid email address',  state, state.res, state.db); return }
 
-    query(state.db, 'select * from users where user_email = ?', [state.post_data.user_email], state, results => {
+    query('select * from users where user_email = ?', [state.post_data.user_email], state, results => {
         if (results[0]) {
             message(`That email is already registered. Please use the "forgot password" link above.</a>`, state, state.res, state.db)
             return
         }
         else {
-            query(state.db, 'select * from users where user_screenname = ?', [state.post_data.user_screenname], state, results => {
+            query('select * from users where user_screenname = ?', [state.post_data.user_screenname], state, results => {
                 if (results[0]) {
                     message(`That user name is already registered. Please choose a different one.</a>`, state, state.res, state.db)
                     return
                 }
-                else query(state.db, 'insert into users set ?', state.post_data, state, results => { send_login_link(state.req, state.res, state, state.db) })
+                else query('insert into users set ?', state.post_data, state, results => { send_login_link(state.req, state.res, state, state.db) })
             })
         }
     })
@@ -195,7 +195,7 @@ pages.postaddress = state => {
     if (!/^\d\d\d\d\d$/.test(post_data.address_zip))     { message('Please go back and enter a five-digit zip code',  state, state.res, state.db); return }
 
     // if duplicate address, results.insertId will still be set correctly to existing address_id
-    query(state.db, 'insert into addresses set ? on duplicate key update address_id=last_insert_id(address_id)', post_data, state,
+    query('insert into addresses set ? on duplicate key update address_id=last_insert_id(address_id)', post_data, state,
         results => { redirect(`/address/${results.insertId}`, state.res, state.db) }
     )
 }
@@ -205,16 +205,16 @@ pages.postcomment = state => {
     post_data = state.post_data
     Object.keys(post_data).map(key => { post_data[key] = strip_tags(post_data[key]) })
 
-    if (!post_data.comment_content) { send_html(200, '', state.res, state.db); return } // empty comment
+    if (!post_data.comment_content) { send_html(200, '', state); return } // empty comment
 
     // rate limit by ip address
-    query(state.db, 'select (now() - comment_created) as ago from comments where comment_author_ip = ? order by comment_created desc limit 1', [state.ip], state,
+    query('select (now() - comment_created) as ago from comments where comment_author_ip = ? order by comment_created desc limit 1', [state.ip], state,
         results => {
 
             if (results.length && results[0].ago < 2) { // this ip already commented less than two seconds ago
                 state.page          = 'alert'
                 state.alert_content = 'You are posting comments too quickly! Please slow down.'
-                send_html(200, pagefactory.render(state), state.res, state.db)
+                send_html(200, pagefactory.render(state), state)
             }
             else {
 
@@ -222,12 +222,12 @@ pages.postcomment = state => {
                 post_data.comment_author_ip = state.ip                            // so that ip gets inserted along with other post_data
                 post_data.comment_content   = post_data.comment_content.linkify() // linkify, imagify, etc
 
-                query(state.db, 'insert into comments set ?', post_data, state,
+                query('insert into comments set ?', post_data, state,
                     results => { // now select the inserted row so that we pick up the comment_created time and user data for displaying the comment
-                        query(state.db, 'select * from comments left join users on comment_author=user_id where comment_id = ?', [results.insertId], state,
+                        query('select * from comments left join users on comment_author=user_id where comment_id = ?', [results.insertId], state,
                             results => {
                                 if (results.length) state.comment = results[0]
-                                send_html(200, pagefactory.render(state), state.res, state.db)
+                                send_html(200, pagefactory.render(state), state)
                             }
                         )
                     }
@@ -243,12 +243,12 @@ pages.delete = state => { // delete a comment
 
     // check that current user has permission to delete this comment
 
-    if (!state.user) send_html(200, pagefactory.render(state), state.res, state.db) // do nothing if not logged in
+    if (!state.user) send_html(200, pagefactory.render(state), state) // do nothing if not logged in
 
     // delete comment only if current user is comment_author
-    query(state.db, 'delete from comments where comment_id = ? and comment_author = ?', [comment_id, state.user.user_id], state,
+    query('delete from comments where comment_id = ? and comment_author = ?', [comment_id, state.user.user_id], state,
         results => {
-            send_html(200, pagefactory.render(state), state.res, state.db)
+            send_html(200, pagefactory.render(state), state)
         }
     )
 }
@@ -270,7 +270,7 @@ function connect_to_db(state) {
 			state.ip = state.req.headers['x-forwarded-for']
 
 			// query or set a database lock for this ip; each ip is allowed only one outstanding connection at a time
-			if (locks[state.ip]) { send_html(403, 'Rate Limit Exceeded', state.res, db); console.log('Rate limit exceeded by state.ip'); return }
+			if (locks[state.ip]) { send_html(403, 'Rate Limit Exceeded', state); console.log('Rate limit exceeded by state.ip'); return }
 			else {
 				locks[state.ip] = { // set the lock
 					threadId : db.threadId,
@@ -289,7 +289,7 @@ function block_countries(state) { // block entire countries like Russia because 
 
     var promise = new Promise(function(fulfill, reject) {
 
-        query(state.db, 'select country_evil from countries where inet_aton(?) >= country_start and inet_aton(?) <= country_end', [state.ip, state.ip],
+        query('select country_evil from countries where inet_aton(?) >= country_start and inet_aton(?) <= country_end', [state.ip, state.ip],
             state, results => {
 
                 if (results.length && results[0].country_evil) throw { code : 404, message : 'Not Found', }
@@ -306,7 +306,7 @@ function block_nuked(state) { // block nuked users, usually spammers
 
     var promise = new Promise(function(fulfill, reject) {
 
-        query(state.db, 'select count(*) as c from nukes where nuke_ip_address = ?', [state.ip], state,
+        query('select count(*) as c from nukes where nuke_ip_address = ?', [state.ip], state,
             results => {
                 if (results[0].c) throw { code : 404, message : 'Not Found', }
                 fulfill(state)
@@ -356,7 +356,7 @@ function set_user(state) { // update state with whether they are logged in or no
             var user_id      = state.req.headers.cookie.split('=')[1].split('_')[0]
             var user_md5pass = state.req.headers.cookie.split('=')[1].split('_')[1]
 
-            query(state.db, 'select * from users where user_id = ? and user_md5pass = ?', [user_id, user_md5pass], state,
+            query('select * from users where user_id = ? and user_md5pass = ?', [user_id, user_md5pass], state,
                 results => {
                     if (0 == results.length) state.user = null
                     else                     state.user = results[0]
@@ -376,7 +376,7 @@ function set_user(state) { // update state with whether they are logged in or no
 
 function login(req, res, state, db, email, password) {
 
-    query(db, 'select * from users where user_email = ? and user_md5pass = ?', [email, md5(password)], state,
+    query('select * from users where user_email = ? and user_md5pass = ?', [email, md5(password)], state,
         results => {
 
             if (0 == results.length) {
@@ -430,10 +430,10 @@ function redirect(redirect_to, res, db) {
 function message(message, state, res, db) {
     state.page    = 'message'
     state.message =  message
-    send_html(200, pagefactory.render(state), res, db)
+    send_html(200, pagefactory.render(state), state)
 }
 
-function send_html(code, html, res, db) {
+function send_html(code, html, state) {
 
     var headers =  {
         'Content-Type'   : 'text/html',
@@ -441,9 +441,9 @@ function send_html(code, html, res, db) {
         'Expires'        : new Date().toUTCString()
     }
 
-    res.writeHead(code, headers)
-    res.end(html)
-    if (db) db.release()
+    state.res.writeHead(code, headers)
+    state.res.end(html)
+    if (state.db) state.db.release()
 }
 
 function md5(str) {
@@ -478,7 +478,7 @@ function send_login_link(req, res, state, db) {
     key      = md5(Date.now() + conf.nonce_secret)
     key_link = `${ baseurl }/key_login?key=${ key }`
 
-    query(db, 'update users set user_key=? where user_email=?', [key, state.post_data.user_email], state,
+    query('update users set user_key=? where user_email=?', [key, state.post_data.user_email], state,
         results => {
 
             if (results.changedRows) {
@@ -519,12 +519,12 @@ String.prototype.linkify = function(ref) {
         .replace(emailAddressPattern, '<a href="mailto:$&">$&</a>');
 }
 
-function query(db, sql, args, state, cb) {
+function query(sql, args, state, cb) {
 
     var q
 
     var get_results = function (error, results, fields, timing) {
-        if (error) { db.release(); throw error }
+        if (error) { state.db.release(); throw error }
         state.queries.push({
             sql : q.sql,
             ms  : timing
@@ -532,13 +532,13 @@ function query(db, sql, args, state, cb) {
         cb(results)
     }
 
-    q = args ? db.query(sql, args, get_results)
-             : db.query(sql,       get_results)
+    q = args ? state.db.query(sql, args, get_results)
+             : state.db.query(sql,       get_results)
 }
 
 function create_err_handler(state) { // closure to pass back a promise rejection handler which has state in context
 
     return function(err) { // the actual rejection handler
-        send_html(err.code, err.message, state.res, state.db)
+        send_html(err.code, err.message, state)
     }
 }
