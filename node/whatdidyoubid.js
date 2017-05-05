@@ -9,9 +9,9 @@ catch(e) {
 cluster     = require('cluster')
 http        = require('http')
 logline     = require('./logline')
-moment      = require('moment-timezone')
-mysql       = require('mysql')
-nodemailer  = require('nodemailer')
+moment      = require('moment-timezone') // external
+mysql       = require('mysql')           // external
+nodemailer  = require('nodemailer')      // external
 os          = require('os')
 pagefactory = require('./pagefactory')
 qs          = require('querystring')

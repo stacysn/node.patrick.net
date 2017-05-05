@@ -30,21 +30,21 @@ exports.run = (req, res) => {
         .catch(eh)
 }
 
-pages.home = (req, res, state, db) => {
+pages.home = (state) => {
 
-    query(db, 'select * from addresses, zips where address_zip=zip_code order by address_modified desc', null, state,
+    query(state.db, 'select * from addresses, zips where address_zip=zip_code order by address_modified desc', null, state,
         results => {
             state.message   = 'Increasing fair play for buyers and sellers'
             state.addresses = results
-            send_html(200, pagefactory.render(state), res, db)
+            send_html(200, pagefactory.render(state), state.res, state.db)
         }
     )
 }
     
-pages.users = (req, res, state, db) => {
+pages.users = (state) => {
 
     try {
-        var user_screenname = url.parse(req.url).path.split('/')[2].replace(/\W/g,'') // like /users/Patrick
+        var user_screenname = url.parse(state.req.url).path.split('/')[2].replace(/\W/g,'') // like /users/Patrick
         var sql   = 'select * from users where user_screenname=?'
         var parms = [user_screenname]
     }
@@ -53,40 +53,41 @@ pages.users = (req, res, state, db) => {
         var parms = null
     }
 
-    query(db, sql, parms, state,
+    query(state.db, sql, parms, state,
         results => {
             state.users = results
-            send_html(200, pagefactory.render(state), res, db)
+            send_html(200, pagefactory.render(state), state.res, state.db)
         }
     )
 }
 
-pages.about = (req, res, state, db) => {
+pages.about = (state) => {
     state.message = 'About whatdidyoubid.com'
 
     state.text = `Realtors routinely block or "lose" bids that do not give their own agency both sides of the commission. whatdidyoubid.com is a place
     where bidders can list what they bid for a house so that sellers and other bidders can get an idea of the degree to which this takes place.`
 
-    send_html(200, pagefactory.render(state), res, db)
+    send_html(200, pagefactory.render(state), state.res, state.db)
 }
 
-pages.addressform = (req, res, state, db) => { send_html(200, pagefactory.render(state), res, db) }
+pages.addressform = (state) => { send_html(200, pagefactory.render(state), state.res, state.db) }
 
-pages.address = (req, res, state, db) => { // show a single address page
+pages.address = (state) => { // show a single address page
 
-    var address_id = url.parse(req.url).path.split('/')[2].replace(/\D/g,'') // get address' db row number from url, eg 47 from /address/47/slug-goes-here
+    // get address' db row number from url, eg 47 from /address/47/slug-goes-here
+    var address_id = url.parse(state.req.url).path.split('/')[2].replace(/\D/g,'')
 
-    query(db, 'select * from addresses, zips where address_id=? and address_zip=zip_code', [address_id], state,
+    query(state.db, 'select * from addresses, zips where address_id=? and address_zip=zip_code', [address_id], state,
         results => {
-            if (0 == results.length) send_html(404, `No address with id "${address_id}"`, res, null)
+            if (0 == results.length) send_html(404, `No address with id "${address_id}"`, state.res, null)
             else {
                 state.address = results[0]
 
-                query(db, 'select * from comments left join users on comment_author=user_id where comment_address_id = ? order by comment_created',
+                query(state.db, 'select * from comments left join users on comment_author=user_id where comment_address_id = ? order by comment_created',
                     [address_id], state,
                     results => { // now pick up the comment list for this address
                         if (results.length) state.comments = results
-                        send_html(200, pagefactory.render(state), res, db)
+                        send_html(200, pagefactory.render(state), state.res, state.db)
                     }
                 )
             }
@@ -94,30 +95,30 @@ pages.address = (req, res, state, db) => { // show a single address page
     )
 }
 
-pages.key_login = (req, res, state, db) => {
+pages.key_login = (state) => {
 
-    key      = url.parse(req.url, true).query.key
+    key      = url.parse(state.req.url, true).query.key
     password = md5(Date.now() + conf.nonce_secret).substring(0, 6)
 
     // unfortunately a copy of home page sql
-    query(db, 'select * from addresses, zips where address_zip=zip_code order by address_modified desc', null, state,
+    query(state.db, 'select * from addresses, zips where address_zip=zip_code order by address_modified desc', null, state,
         results => {
             state.addresses     = results
             state.alert_content = `Your password is ${ password } and you are now logged in`
             state.message       = 'Increasing fair play for buyers and sellers'
             state.page          = 'home' // key_login generates home page html
 
-            query(db, 'select user_email from users where user_key = ?', [key], state,
+            query(state.db, 'select user_email from users where user_key = ?', [key], state,
                 results => {
                     if (results.length) email = results[0].user_email
                     else {
-                        message(`Darn, that key has already been used. Please try 'forgot password' if you need to log in.</a>`, state, res, db)
+                        message(`Darn, that key has already been used. Please try 'forgot password' if you need to log in.</a>`, state, state.res, state.db)
                         return
                     }
 
                     // erase key so it cannot be used again, and set new password
-                    query(db, 'update users set user_key=null, user_md5pass=? where user_key=?', [md5(password), key], state,
-                        results => { login(req, res, state, db, email, password) }
+                    query(state.db, 'update users set user_key=null, user_md5pass=? where user_key=?', [md5(password), key], state,
+                        results => { login(state.req, state.res, state, state.db, email, password) }
                     )
                 }
             )
@@ -125,14 +126,14 @@ pages.key_login = (req, res, state, db) => {
     )
 }
 
-pages.post_login = (req, res, state, db) => {
+pages.post_login = (state) => {
     email    = state.post_data.email
     password = state.post_data.password
 
-    login(req, res, state, db, email, password)
+    login(state.req, state.res, state, state.db, email, password)
 }
 
-pages.logout = (req, res, state, db) => {
+pages.logout = (state) => {
 
     state.user = null
     var d      = new Date()
@@ -145,74 +146,74 @@ pages.logout = (req, res, state, db) => {
         'Set-Cookie'     : `whatdidyoubid=_; Expires=${d}; Path=/`,
     }
 
-    res.writeHead(200, headers)
-    res.end(html)
-    if (db) db.release()
+    state.res.writeHead(200, headers)
+    state.res.end(html)
+    if (state.db) state.db.release()
 }
 
-pages.registration = (req, res, state, db) => {
+pages.registration = (state) => {
 
     Object.keys(state.post_data).map(key => { state.post_data[key] = strip_tags(state.post_data[key]) })
 
-    if (/\W/.test(state.post_data.user_screenname)) { message('Please go back and enter username consisting only of letters', state, res, db); return }
-    if (!/^\w.*@.+\.\w+$/.test(state.post_data.user_email)) { message('Please go back and enter a valid email address',  state, res, db); return }
+    if (/\W/.test(state.post_data.user_screenname)) { message('Please go back and enter username consisting only of letters', state, state.res, state.db); return }
+    if (!/^\w.*@.+\.\w+$/.test(state.post_data.user_email)) { message('Please go back and enter a valid email address',  state, state.res, state.db); return }
 
-    query(db, 'select * from users where user_email = ?', [state.post_data.user_email], state, results => {
+    query(state.db, 'select * from users where user_email = ?', [state.post_data.user_email], state, results => {
         if (results[0]) {
-            message(`That email is already registered. Please use the "forgot password" link above.</a>`, state, res, db)
+            message(`That email is already registered. Please use the "forgot password" link above.</a>`, state, state.res, state.db)
             return
         }
         else {
-            query(db, 'select * from users where user_screenname = ?', [state.post_data.user_screenname], state, results => {
+            query(state.db, 'select * from users where user_screenname = ?', [state.post_data.user_screenname], state, results => {
                 if (results[0]) {
-                    message(`That user name is already registered. Please choose a different one.</a>`, state, res, db)
+                    message(`That user name is already registered. Please choose a different one.</a>`, state, state.res, state.db)
                     return
                 }
-                else query(db, 'insert into users set ?', state.post_data, state, results => { send_login_link(req, res, state, db) })
+                else query(state.db, 'insert into users set ?', state.post_data, state, results => { send_login_link(state.req, state.res, state, state.db) })
             })
         }
     })
 }
 
-pages.recoveryemail = (req, res, state, db) => {
+pages.recoveryemail = (state) => {
 
     Object.keys(state.post_data).map(key => { state.post_data[key] = strip_tags(state.post_data[key]) })
 
-    if (!/^\w.*@.+\.\w+$/.test(state.post_data.user_email)) { message('Please go back and enter a valid email address',  state, res, db); return }
+    if (!/^\w.*@.+\.\w+$/.test(state.post_data.user_email)) { message('Please go back and enter a valid email address',  state, state.res, state.db); return }
 
-    send_login_link(req, res, state, db)
+    send_login_link(state.req, state.res, state, state.db)
 }
 
-pages.postaddress = (req, res, state, db) => {
+pages.postaddress = (state) => {
 
     post_data = state.post_data
     Object.keys(post_data).map(key => { post_data[key] = strip_tags(post_data[key]) })
 
     // do a bit of validation before inserting
-    if (!/\d+\s+\w+/.test(post_data.address_num_street)) { message('Please go back and enter a valid street address', state, res, db); return }
-    if (!/^\d\d\d\d\d$/.test(post_data.address_zip))     { message('Please go back and enter a five-digit zip code',  state, res, db); return }
+    if (!/\d+\s+\w+/.test(post_data.address_num_street)) { message('Please go back and enter a valid street address', state, state.res, state.db); return }
+    if (!/^\d\d\d\d\d$/.test(post_data.address_zip))     { message('Please go back and enter a five-digit zip code',  state, state.res, state.db); return }
 
     // if duplicate address, results.insertId will still be set correctly to existing address_id
-    query(db, 'insert into addresses set ? on duplicate key update address_id=last_insert_id(address_id)', post_data, state,
-        results => { redirect(`/address/${results.insertId}`, res, db) }
+    query(state.db, 'insert into addresses set ? on duplicate key update address_id=last_insert_id(address_id)', post_data, state,
+        results => { redirect(`/address/${results.insertId}`, state.res, state.db) }
     )
 }
 
-pages.postcomment = (req, res, state, db) => {
+pages.postcomment = (state) => {
 
     post_data = state.post_data
     Object.keys(post_data).map(key => { post_data[key] = strip_tags(post_data[key]) })
 
-    if (!post_data.comment_content) { send_html(200, '', res, db); return } // empty comment
+    if (!post_data.comment_content) { send_html(200, '', state.res, state.db); return } // empty comment
 
     // rate limit by ip address
-    query(db, 'select (now() - comment_created) as ago from comments where comment_author_ip = ? order by comment_created desc limit 1', [state.ip], state,
+    query(state.db, 'select (now() - comment_created) as ago from comments where comment_author_ip = ? order by comment_created desc limit 1', [state.ip], state,
         results => {
 
             if (results.length && results[0].ago < 2) { // this ip already commented less than two seconds ago
                 state.page          = 'alert'
                 state.alert_content = 'You are posting comments too quickly! Please slow down.'
-                send_html(200, pagefactory.render(state), res, db)
+                send_html(200, pagefactory.render(state), state.res, state.db)
             }
             else {
 
@@ -220,12 +221,12 @@ pages.postcomment = (req, res, state, db) => {
                 post_data.comment_author_ip = state.ip                            // so that ip gets inserted along with other post_data
                 post_data.comment_content   = post_data.comment_content.linkify() // linkify, imagify, etc
 
-                query(db, 'insert into comments set ?', post_data, state,
+                query(state.db, 'insert into comments set ?', post_data, state,
                     results => { // now select the inserted row so that we pick up the comment_created time and user data for displaying the comment
-                        query(db, 'select * from comments left join users on comment_author=user_id where comment_id = ?', [results.insertId], state,
+                        query(state.db, 'select * from comments left join users on comment_author=user_id where comment_id = ?', [results.insertId], state,
                             results => {
                                 if (results.length) state.comment = results[0]
-                                send_html(200, pagefactory.render(state), res, db)
+                                send_html(200, pagefactory.render(state), state.res, state.db)
                             }
                         )
                     }
@@ -235,18 +236,18 @@ pages.postcomment = (req, res, state, db) => {
     )
 }
 
-pages.delete = (req, res, state, db) => { // delete a comment
+pages.delete = (state) => { // delete a comment
 
-    var comment_id = url.parse(req.url).path.split('/')[2].replace(/\D/g,'') // get comment db row number from url, eg 47 from /delete/47
+    var comment_id = url.parse(state.req.url).path.split('/')[2].replace(/\D/g,'') // get comment db row number from url, eg 47 from /delete/47
 
     // check that current user has permission to delete this comment
 
-    if (!state.user) send_html(200, pagefactory.render(state), res, db) // do nothing if not logged in
+    if (!state.user) send_html(200, pagefactory.render(state), state.res, state.db) // do nothing if not logged in
 
     // delete comment only if current user is comment_author
-    query(db, 'delete from comments where comment_id = ? and comment_author = ?', [comment_id, state.user.user_id], state,
+    query(state.db, 'delete from comments where comment_id = ? and comment_author = ?', [comment_id, state.user.user_id], state,
         results => {
-            send_html(200, pagefactory.render(state), res, db)
+            send_html(200, pagefactory.render(state), state.res, state.db)
         }
     )
 }
@@ -357,13 +358,13 @@ function set_user(state) { // update state with whether they are logged in or no
                 if (0 == results.length) state.user = null
                 else                     state.user = results[0]
 
-                pages[state.page](state.req, state.res, state, state.db)
+                pages[state.page](state)
             }
         )
     }
     catch(e) { // no valid cookie
         state.user = null
-        pages[state.page](state.req, state.res, state, state.db)
+        pages[state.page](state)
     }
 }
 
