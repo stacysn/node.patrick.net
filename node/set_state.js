@@ -20,10 +20,12 @@ exports.run = (req, res) => {
 
     var eh = create_err_handler(state)
 
-    if (typeof pages[state.page] !== 'function') { return send_html(404, `No page like "${req.url}"`, res, null) }
+    if (typeof pages[state.page] !== 'function') return eh({ code: 404, message: `No page like "${req.url}"` })
 
     connect_to_db(state)
-        .then(block_evil)
+        .then(block_countries)
+        .then(block_nuked)
+        .then(collect_post_data)
         .catch(eh)
 }
 
@@ -280,47 +282,61 @@ function connect_to_db(state) {
     return promise
 }
 
-function block_evil(state) { // block entire countries like Russia because all comments from there are inevitably spam
+function block_countries(state) { // block entire countries like Russia because all comments from there are inevitably spam
 
-    query(state.db, 'select country_evil from countries where inet_aton(?) >= country_start and inet_aton(?) <= country_end', [state.ip, state.ip], state,
-        results => {
+    var promise = new Promise(function(fulfill, reject) {
 
-            if (results.length && results[0].country_evil) { send_html(404, 'Not Found', state.res, state.db); return } // give a 404 to all evil countries
+        query(state.db, 'select country_evil from countries where inet_aton(?) >= country_start and inet_aton(?) <= country_end', [state.ip, state.ip],
+            state, results => {
 
-            // block individual known spammer ip addresses
-            query(state.db, 'select count(*) as c from nukes where nuke_ip_address = ?', [state.ip], state,
-                results => {
-                    if (results[0].c) { send_html(404, 'Not Found', state.res, state.db); return }
-                    collect_post_data(state.req, state.res, state, state.db)
-                }
-            )
-        }
-    )
+                if (results.length && results[0].country_evil) throw { code : 404, message : 'Not Found', }
+
+                fulfill(state)
+            }
+        )
+    })
+
+    return promise
 }
 
-function collect_post_data(req, res, state, db) { // if there is any POST data, accumulate it and append it to req object
+function block_nuked(state) { // block nuked users, usually spammers
 
-    if (req.method == 'POST') {
+    var promise = new Promise(function(fulfill, reject) {
+
+        query(state.db, 'select count(*) as c from nukes where nuke_ip_address = ?', [state.ip], state,
+            results => {
+                if (results[0].c) throw { code : 404, message : 'Not Found', }
+                fulfill(state)
+            }
+        )
+    })
+
+    return promise
+}
+
+function collect_post_data(state) { // if there is any POST data, accumulate it and append it to req object
+
+    if (state.req.method == 'POST') {
         var body = ''
 
-        req.on('data', function (data) {
+        state.req.on('data', function (data) {
             body += data
 
             if (body.length > 1e6) { // too much POST data, kill the connection
-                req.connection.destroy()
-                res.writeHead(413, {'Content-Type': 'text/plain'}).end()
+                state.req.connection.destroy()
+                state.res.writeHead(413, {'Content-Type': 'text/plain'}).end()
             }
         })
 
-        req.on('end', function () {
+        state.req.on('end', function () {
             var post_data   = qs.parse(body)
             Object.keys(post_data).map(function(key) { post_data[key] = post_data[key].trim() }) // trim all top level values, should all be strings
             state.post_data = post_data
-            set_user(req, res, state, db)
+            set_user(state.req, state.res, state, state.db)
         })
     }
     else {
-        set_user(req, res, state, db)
+        set_user(state.req, state.res, state, state.db)
     }
 }
 
