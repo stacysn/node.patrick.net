@@ -1,5 +1,4 @@
-try      { conf = require('./conf.json') }
-catch(e) { console.log(e.message); process.exit(1) }
+try { conf = require('./conf.json') } catch(e) { console.log(e.message); process.exit(1) } // conf.json is required
 
 cluster     = require('cluster')
 http        = require('http')
@@ -10,10 +9,9 @@ os          = require('os')
 querystring = require('querystring')
 url         = require('url')
 
-var locks = {}
+var locks = {} // allow only one connection from db pool per ip address
 
 pool = mysql.createPool(conf.db)
-
 pool.on('release', db => { // scan locks and delete the lock object which has db.threadId and any that are older than 2 seconds
     Object.keys(locks).map(ip => {
         if (locks[ip].threadId == db.threadId || locks[ip].ts < (Date.now() - 2000)) delete locks[ip]
@@ -27,9 +25,7 @@ if (cluster.isMaster) {
         console.log(`worker pid ${worker.process.pid} died with code ${code} from signal ${signal}, replacing that worker`)
         cluster.fork()
     })
-} else {
-    http.createServer(run).listen(conf.http_port)
-}
+} else http.createServer(run).listen(conf.http_port)
 
 function run(req, res) {
 
@@ -70,15 +66,15 @@ var pages = {
 
         try {
             var user_screenname = url.parse(state.req.url).path.split('/')[2].replace(/\W/g,'') // like /users/Patrick
-            var sql   = 'select * from users where user_screenname=?'
-            var parms = [user_screenname]
+            var sql       = 'select * from users where user_screenname=?'
+            var sql_parms = [user_screenname]
         }
         catch(e) {
-            var sql   = 'select * from users'                                             // no username given, so show them all
-            var parms = null
+            var sql       = 'select * from users' // no username given, so show them all
+            var sql_parms = null
         }
 
-        query(sql, parms, state,
+        query(sql, sql_parms, state,
             results => {
                 state.users = results
                 send_html(200, render(state), state)
@@ -531,7 +527,7 @@ String.prototype.linkify = function(ref) {
         .replace(emailAddressPattern, '<a href="mailto:$&">$&</a>');
 }
 
-function query(sql, args, state, cb) {
+function query(sql, sql_parms, state, cb) {
 
     var q
 
@@ -544,8 +540,8 @@ function query(sql, args, state, cb) {
         cb(results)
     }
 
-    q = args ? state.db.query(sql, args, get_results)
-             : state.db.query(sql,       get_results)
+    q = sql_parms ? state.db.query(sql, sql_parms, get_results)
+                  : state.db.query(sql,            get_results)
 }
 
 function create_err_handler(state) { // closure to pass back a promise rejection handler which has state in context
