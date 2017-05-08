@@ -1,20 +1,13 @@
-try {
-    conf = require('./conf.json')
-}
-catch(e) {
-    console.log('App requires a conf.json file')
-    process.exit(1)
-}
+try      { conf = require('./conf.json') }
+catch(e) { console.log(e.message); process.exit(1) }
 
 cluster     = require('cluster')
 http        = require('http')
-logline     = require('./logline')
-moment      = require('moment-timezone') // external
-mysql       = require('mysql')           // external
-nodemailer  = require('nodemailer')      // external
+moment      = require('moment-timezone') // via npm
+mysql       = require('mysql')           // via npm
+nodemailer  = require('nodemailer')      // via npm
 os          = require('os')
-pagefactory = require('./pagefactory')
-qs          = require('querystring')
+querystring = require('querystring')
 url         = require('url')
 
 var locks = {}
@@ -31,7 +24,7 @@ if (cluster.isMaster) {
     for (var i = 0; i < require('os').cpus().length; i++) cluster.fork();
 
     cluster.on('exit', function(worker, code, signal) {
-        logline(__line, `worker pid ${worker.process.pid} died with code ${code} from signal ${signal}, replacing that worker`)
+        console.log(`worker pid ${worker.process.pid} died with code ${code} from signal ${signal}, replacing that worker`)
         cluster.fork()
     })
 } else {
@@ -68,7 +61,7 @@ var pages = {
             results => {
                 state.message   = 'Increasing fair play for buyers and sellers'
                 state.addresses = results
-                send_html(200, pagefactory.render(state), state)
+                send_html(200, render(state), state)
             }
         )
     },
@@ -88,7 +81,7 @@ var pages = {
         query(sql, parms, state,
             results => {
                 state.users = results
-                send_html(200, pagefactory.render(state), state)
+                send_html(200, render(state), state)
             }
         )
     },
@@ -99,10 +92,10 @@ var pages = {
         state.text = `Realtors routinely block or "lose" bids that do not give their own agency both sides of the commission. whatdidyoubid.com is a place
         where bidders can list what they bid for a house so that sellers and other bidders can get an idea of the degree to which this takes place.`
 
-        send_html(200, pagefactory.render(state), state)
+        send_html(200, render(state), state)
     },
 
-    addressform : state => { send_html(200, pagefactory.render(state), state) },
+    addressform : state => { send_html(200, render(state), state) },
 
     address : state => { // show a single address page
 
@@ -119,7 +112,7 @@ var pages = {
                         [address_id], state,
                         results => { // now pick up the comment list for this address
                             if (results.length) state.comments = results
-                            send_html(200, pagefactory.render(state), state)
+                            send_html(200, render(state), state)
                         }
                     )
                 }
@@ -169,7 +162,7 @@ var pages = {
 
         state.user = null
         var d      = new Date()
-        var html   = pagefactory.render(state)
+        var html   = render(state)
 
         var headers =  {
             'Content-Length' : html.length,
@@ -245,7 +238,7 @@ var pages = {
                 if (results.length && results[0].ago < 2) { // this ip already commented less than two seconds ago
                     state.page          = 'alert'
                     state.alert_content = 'You are posting comments too quickly! Please slow down.'
-                    send_html(200, pagefactory.render(state), state)
+                    send_html(200, render(state), state)
                 }
                 else {
 
@@ -258,7 +251,7 @@ var pages = {
                             query('select * from comments left join users on comment_author=user_id where comment_id = ?', [results.insertId], state,
                                 results => {
                                     if (results.length) state.comment = results[0]
-                                    send_html(200, pagefactory.render(state), state)
+                                    send_html(200, render(state), state)
                                 }
                             )
                         }
@@ -274,12 +267,12 @@ var pages = {
 
         // check that current user has permission to delete this comment
 
-        if (!state.user) send_html(200, pagefactory.render(state), state) // do nothing if not logged in
+        if (!state.user) send_html(200, render(state), state) // do nothing if not logged in
 
         // delete comment only if current user is comment_author
         query('delete from comments where comment_id = ? and comment_author = ?', [comment_id, state.user.user_id], state,
             results => {
-                send_html(200, pagefactory.render(state), state)
+                send_html(200, render(state), state)
             }
         )
     },
@@ -357,7 +350,7 @@ function collect_post_data(state) { // if there is any POST data, accumulate it 
             })
 
             state.req.on('end', function () {
-                var post_data   = qs.parse(body)
+                var post_data   = querystring.parse(body)
                 Object.keys(post_data).map(function(key) { post_data[key] = post_data[key].trim() }) // trim all top level values, should all be strings
                 state.post_data = post_data
                 fulfill(state)
@@ -411,7 +404,7 @@ function login(req, res, state, db, email, password) {
                 var user_md5pass         = state.user.user_md5pass
             }
 
-            html = pagefactory.render(state)
+            html = render(state)
 
             var cookie = `whatdidyoubid=${user_id}_${user_md5pass}`
             var d      = new Date()
@@ -449,7 +442,7 @@ function redirect(redirect_to, res, db) {
 function message(message, state) {
     state.page    = 'message'
     state.message =  message
-    send_html(200, pagefactory.render(state), state)
+    send_html(200, render(state), state)
 }
 
 function send_html(code, html, state) {
@@ -568,12 +561,10 @@ Array.prototype.sortByProp = function(p){
     })
 }
 
-// The page factory never does IO. It simply assembles a page from state, which will be overwritten on each call to render()
+// The render function never does IO. It simply assembles a page from state, which will be overwritten on each call to render()
 // state does not change at all once render is called
 
 function render(state) {
-
-    return pages[state.page]()
 
     var pages = {
 
@@ -901,4 +892,6 @@ function render(state) {
         return moment(Date.parse(utc)).tz(utz).format('YYYY MMMM Do h:mma z')
     }
 
-}
+    return pages[state.page]()
+
+} // end of render
