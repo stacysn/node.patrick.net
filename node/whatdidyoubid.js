@@ -83,10 +83,10 @@ var pages = {
     },
 
     about : state => {
-        state.message = 'About whatdidyoubid.com'
+        state.message = `About ${ conf.domain_name }`
 
-        state.text = `Realtors routinely block or "lose" bids that do not give their own agency both sides of the commission. whatdidyoubid.com is a place
-        where bidders can list what they bid for a house so that sellers and other bidders can get an idea of the degree to which this takes place.`
+        state.text = `Realtors routinely block or "lose" bids that do not give their own agency both sides of the commission. ${ conf.domain_name } is
+        a place where bidders can list what they bid for a house so that sellers and other bidders can get an idea of the degree to which this takes place.`
 
         send_html(200, render(state), state)
     },
@@ -164,7 +164,7 @@ var pages = {
             'Content-Length' : html.length,
             'Content-Type'   : 'text/html',
             'Expires'        : d.toUTCString(),
-            'Set-Cookie'     : `whatdidyoubid=_; Expires=${d}; Path=/`,
+            'Set-Cookie'     : `${ conf.cookie_name }=_; Expires=${d}; Path=/`,
         }
 
         state.res.writeHead(200, headers)
@@ -358,7 +358,7 @@ function collect_post_data(state) { // if there is any POST data, accumulate it 
 
 function set_user(state) { // update state with whether they are logged in or not
 
-    // cookie is like whatdidyoubid=1_432d32044278053db427a93fc352235d where 1 is user and 432d... is md5'd password
+    // cookie is like conf.cookie_name=1_432d32044278053db427a93fc352235d where 1 is user and 432d... is md5'd password
 
     return new Promise(function(fulfill, reject) {
 
@@ -402,7 +402,7 @@ function login(req, res, state, db, email, password) {
 
             html = render(state)
 
-            var cookie = `whatdidyoubid=${user_id}_${user_md5pass}`
+            var cookie = `${ conf.cookie_name }=${user_id}_${user_md5pass}`
             var d      = new Date()
             var decade = new Date(d.getFullYear()+10, d.getMonth(), d.getDate()).toUTCString()
 
@@ -467,12 +467,12 @@ function strip_tags(s) {
 
 function get_transporter() {
     return nodemailer.createTransport({
-        host:   conf.email_host,
-        port:   conf.email_port,
+        host:   conf.email.host,
+        port:   conf.email.port,
         secure: false, // do not use TLS
         auth: {
-            user: conf.email_user,
-            pass: conf.email_pass
+            user: conf.email.user,
+            pass: conf.email.password
         },
         tls: {
             rejectUnauthorized: false // do not fail on invalid certs
@@ -482,7 +482,7 @@ function get_transporter() {
 
 function send_login_link(req, res, state, db) {
 
-    baseurl  = (/localdev/.test(os.hostname())) ? 'http://dev.whatdidyoubid.com:8080' : 'https://whatdidyoubid.com' // for testing email
+    baseurl  = (/localdev/.test(os.hostname())) ? `http://dev.${ conf.domain_name }:8080` : `https://${ conf.domain_name }` // for testing email
     key      = md5(Date.now() + conf.nonce_secret)
     key_link = `${ baseurl }/key_login?key=${ key }`
 
@@ -496,7 +496,7 @@ function send_login_link(req, res, state, db) {
                 let mailOptions = {
                     from:    conf.admin_email,
                     to:      state.post_data.user_email,
-                    subject: 'Your whatdidyoubid.com login info',
+                    subject: `Your ${ conf.domain_name } login info`,
                     html:    `Click here to log in and get your password: <a href='${ key_link }'>${ key_link }</a>`
                 }
 
@@ -642,7 +642,7 @@ function render(state) {
 
         return `<!DOCTYPE html><html lang="en">
             <head>
-            <link href='/css/style_20170309.css' rel='stylesheet' type='text/css' />
+            <link href='/${ conf.stylesheet }' rel='stylesheet' type='text/css' />
             <link rel='icon' href='/favicon.ico' />
             <meta charset='utf-8' />
             <meta name='description' content='real estate, offers, bids' />
@@ -654,7 +654,7 @@ function render(state) {
                 ${ args.join('') }
                 </div>
             </body>
-            <script async src="/js/jquery.min.js"></script><!-- ${'\n' + queries + '\n'} -->
+            <script async src="/jquery.min.js"></script><!-- ${'\n' + queries + '\n'} -->
             </html>`
     }
 
@@ -873,9 +873,8 @@ function render(state) {
             <a href='#'>top</a> &nbsp;
             <a href="/users">users</a> &nbsp;
             <a href="/about">about</a> &nbsp;
-            <a href='mailto:p@whatdidyoubid.com'>suggestions</a> &nbsp;
-            <a href='mailto:p@whatdidyoubid.com' >contact</a> &nbsp;
-            <a href='https://github.com/killelea/whatdidyoubid.com' >source code</a> &nbsp;
+            <a href='mailto:${ conf.admin_email }' >contact</a> &nbsp;
+            <a href='mailto:${ conf.admin_email }' >create your own forum, free!</a> &nbsp;
             `
     }
 

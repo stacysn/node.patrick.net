@@ -1,16 +1,21 @@
 {
-    "admin_email"  : "",
+    "admin_email"  : "patrick@whatdidyoubid.com",
+    "cookie_name"  : "whatdidyoubid",
     "db"           : {
         "connectionLimit"    : 40,
         "database"           : "whatdidyoubid",
         "multipleStatements" : true,
-        "password"           : "",
-        "user"               : ""
+        "password"           : "1234",
+        "user"               : "root"
+    },
+    "domain_name"  : "whatdidyoubid.com",
+    "email"        : {
+        "host"     : "whatdidyoubid.com",
+        "port"     : 587,
+        "user"     : "p",
+        "password" : "1234"
     },
     "http_port"    : 8081,
-    "nonce_secret" : "",
-    "email_host"   : "whatdidyoubid.com",
-    "email_port"   : 587,
-    "email_user"   : "",
-    "email_pass"   : ""
+    "nonce_secret" : "1234",
+    "stylesheet"   : "style_20170309.css"
 }
