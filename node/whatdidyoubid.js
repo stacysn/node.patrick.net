@@ -27,7 +27,7 @@ if (cluster.isMaster) {
     })
 } else http.createServer(run).listen(conf.http_port)
 
-function run(req, res) {
+async function run(req, res) {
 
     var state = { // start accumulation of state for this request
         page    : url.parse(req.url).pathname.split('/')[1] || 'home',
@@ -36,17 +36,17 @@ function run(req, res) {
         res     : res,
     }
 
-    var eh = create_err_handler(state)
+    if (typeof pages[state.page] !== 'function') return send_html(404, `No page like "${req.url}"`, state)
 
-    if (typeof pages[state.page] !== 'function') return eh({ code: 404, message: `No page like "${req.url}"` })
-
-    connect_to_db(state)
-        .then(block_countries)
-        .then(block_nuked)
-        .then(collect_post_data)
-        .then(set_user)
-        .then(pages[state.page])
-        .catch(eh)
+    try {
+        await connect_to_db(state)
+        await block_countries(state)
+        await block_nuked(state)
+        await collect_post_data(state)
+        await set_user(state)
+        await pages[state.page](state)
+    }
+    catch(e) { send_html(e.code, e.message, state) }
 }
 
 var pages = {
@@ -280,11 +280,6 @@ function connect_to_db(state) {
     return new Promise(function(fulfill, reject) {
 
 		pool.getConnection(function(err, db) {
-
-            if (err) throw {
-                code    : 500,
-                message : 'failed to get db connection',
-            }
 
             state.db = db
 			state.ip = state.req.headers['x-forwarded-for']
@@ -524,14 +519,14 @@ String.prototype.linkify = function(ref) {
         .replace(urlPattern,          '<a href="$&">$&</a>')
         .replace(pseudoUrlPattern,    '$1<a href="http://$2">$2</a>')
         .replace(imagePattern,        '><img src="$1"><') // it's already a link because of urlPattern above
-        .replace(emailAddressPattern, '<a href="mailto:$&">$&</a>');
+        .replace(emailAddressPattern, '<a href="mailto:$&">$&</a>')
 }
 
 function query(sql, sql_parms, state, cb) {
 
     var q
 
-    var get_results = function (error, results, fields, timing) {
+    var get_results = function (error, results, fields, timing) { // callback to give to state.db.query()
         if (error) { state.db.release(); throw error }
         state.queries.push({
             sql : q.sql,
@@ -544,21 +539,13 @@ function query(sql, sql_parms, state, cb) {
                   : state.db.query(sql,            get_results)
 }
 
-function create_err_handler(state) { // closure to pass back a promise rejection handler which has state in context
-
-    return function(err) { // the actual rejection handler
-        send_html(err.code, err.message, state)
-    }
-}
-
 Array.prototype.sortByProp = function(p){
     return this.sort(function(a,b){
         return (a[p] > b[p]) ? 1 : (a[p] < b[p]) ? -1 : 0
     })
 }
 
-// The render function never does IO. It simply assembles a page from state, which will be overwritten on each call to render()
-// state does not change at all once render is called
+// The render function never does IO. It simply assembles a page from state. It does not change state.
 
 function render(state) {
 
