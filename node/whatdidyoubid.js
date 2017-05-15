@@ -9,7 +9,7 @@ os          = require('os')
 querystring = require('querystring')
 url         = require('url')
 
-var locks = {} // allow only one connection from db pool per ip address
+var locks = {} // allow only one connection from db pool per ip post
 
 pool = mysql.createPool(conf.db)
 pool.on('release', db => { // scan locks and delete the lock object which has db.threadId and any that are older than 2 seconds
@@ -53,10 +53,10 @@ var pages = {
 
     home : state => {
 
-        query('select * from addresses, zips where address_zip=zip_code order by address_modified desc', null, state,
+        query('select * from posts order by post_modified desc limit 20', null, state,
             results => {
-                state.message   = 'Increasing fair play for buyers and sellers'
-                state.addresses = results
+                state.message   = 'Free form forum'
+                state.posts = results
                 send_html(200, render(state), state)
             }
         )
@@ -65,9 +65,9 @@ var pages = {
     users : state => {
 
         try {
-            var user_screenname = url.parse(state.req.url).path.split('/')[2].replace(/\W/g,'') // like /users/Patrick
-            var sql       = 'select * from users where user_screenname=?'
-            var sql_parms = [user_screenname]
+            var user_name = url.parse(state.req.url).path.split('/')[2].replace(/\W/g,'') // like /users/Patrick
+            var sql       = 'select * from users where user_name=?'
+            var sql_parms = [user_name]
         }
         catch(e) {
             var sql       = 'select * from users' // no username given, so show them all
@@ -85,28 +85,27 @@ var pages = {
     about : state => {
         state.message = `About ${ conf.domain_name }`
 
-        state.text = `Realtors routinely block or "lose" bids that do not give their own agency both sides of the commission. ${ conf.domain_name } is
-        a place where bidders can list what they bid for a house so that sellers and other bidders can get an idea of the degree to which this takes place.`
+        state.text = `${ conf.domain_name } is the bomb!`
 
         send_html(200, render(state), state)
     },
 
-    addressform : state => { send_html(200, render(state), state) },
+    postform : state => { send_html(200, render(state), state) },
 
-    address : state => { // show a single address page
+    post : state => { // show a single post
 
-        // get address' db row number from url, eg 47 from /address/47/slug-goes-here
-        var address_id = url.parse(state.req.url).path.split('/')[2].replace(/\D/g,'')
+        // get post's db row number from url, eg 47 from /post/47/slug-goes-here
+        var post_id = url.parse(state.req.url).path.split('/')[2].replace(/\D/g,'')
 
-        query('select * from addresses, zips where address_id=? and address_zip=zip_code', [address_id], state,
+        query('select * from posts where post_id=?', [post_id], state,
             results => {
-                if (0 == results.length) send_html(404, `No address with id "${address_id}"`, state)
+                if (0 == results.length) send_html(404, `No post with id "${post_id}"`, state)
                 else {
-                    state.address = results[0]
+                    state.post = results[0]
 
-                    query('select * from comments left join users on comment_author=user_id where comment_address_id = ? order by comment_created',
-                        [address_id], state,
-                        results => { // now pick up the comment list for this address
+                    query('select * from comments left join users on comment_author=user_id where comment_post_id = ? order by comment_date',
+                        [post_id], state,
+                        results => { // now pick up the comment list for this post
                             if (results.length) state.comments = results
                             send_html(200, render(state), state)
                         }
@@ -122,14 +121,14 @@ var pages = {
         password = md5(Date.now() + conf.nonce_secret).substring(0, 6)
 
         // unfortunately a copy of home page sql
-        query('select * from addresses, zips where address_zip=zip_code order by address_modified desc', null, state,
+        query('select * from posts order by post_modified desc', null, state,
             results => {
-                state.addresses     = results
+                state.posts     = results
                 state.alert_content = `Your password is ${ password } and you are now logged in`
                 state.message       = 'Increasing fair play for buyers and sellers'
                 state.page          = 'home' // key_login generates home page html
 
-                query('select user_email from users where user_key = ?', [key], state,
+                query('select user_email from users where user_activation_key = ?', [key], state,
                     results => {
                         if (results.length) email = results[0].user_email
                         else {
@@ -138,7 +137,7 @@ var pages = {
                         }
 
                         // erase key so it cannot be used again, and set new password
-                        query('update users set user_key=null, user_md5pass=? where user_key=?', [md5(password), key], state,
+                        query('update users set user_activation_key=null, user_pass=? where user_activation_key=?', [md5(password), key], state,
                             results => { login(state.req, state.res, state, state.db, email, password) }
                         )
                     }
@@ -176,8 +175,8 @@ var pages = {
 
         Object.keys(state.post_data).map(key => { state.post_data[key] = strip_tags(state.post_data[key]) })
 
-        if (/\W/.test(state.post_data.user_screenname)) { message('Please go back and enter username consisting only of letters', state, state.res, state.db); return }
-        if (!/^\w.*@.+\.\w+$/.test(state.post_data.user_email)) { message('Please go back and enter a valid email address',  state); return }
+        if (/\W/.test(state.post_data.user_name)) { message('Please go back and enter username consisting only of letters', state, state.res, state.db); return }
+        if (!/^\w.*@.+\.\w+$/.test(state.post_data.user_email)) { message('Please go back and enter a valid email post',  state); return }
 
         query('select * from users where user_email = ?', [state.post_data.user_email], state, results => {
             if (results[0]) {
@@ -185,7 +184,7 @@ var pages = {
                 return
             }
             else {
-                query('select * from users where user_screenname = ?', [state.post_data.user_screenname], state, results => {
+                query('select * from users where user_name = ?', [state.post_data.user_name], state, results => {
                     if (results[0]) {
                         message(`That user name is already registered. Please choose a different one.</a>`, state)
                         return
@@ -200,35 +199,28 @@ var pages = {
 
         Object.keys(state.post_data).map(key => { state.post_data[key] = strip_tags(state.post_data[key]) })
 
-        if (!/^\w.*@.+\.\w+$/.test(state.post_data.user_email)) { message('Please go back and enter a valid email address',  state); return }
+        if (!/^\w.*@.+\.\w+$/.test(state.post_data.user_email)) { message('Please go back and enter a valid email post',  state); return }
 
         send_login_link(state.req, state.res, state, state.db)
     },
 
-    postaddress : state => {
+    new_post : state => {
 
         post_data = state.post_data
         Object.keys(post_data).map(key => { post_data[key] = strip_tags(post_data[key]) })
 
-        // do a bit of validation before inserting
-        if (!/\d+\s+\w+/.test(post_data.address_num_street)) { message('Please go back and enter a valid street address', state); return }
-        if (!/^\d\d\d\d\d$/.test(post_data.address_zip))     { message('Please go back and enter a five-digit zip code',  state); return }
-
-        // if duplicate address, results.insertId will still be set correctly to existing address_id
-        query('insert into addresses set ? on duplicate key update address_id=last_insert_id(address_id)', post_data, state,
-            results => { redirect(`/address/${results.insertId}`, state.res, state.db) }
-        )
+        query('insert into posts set ?', post_data, state, results => { redirect(`/post/${results.insertId}`, state.res, state.db) })
     },
 
-    postcomment : state => {
+    new_comment : state => {
 
         post_data = state.post_data
         Object.keys(post_data).map(key => { post_data[key] = strip_tags(post_data[key]) })
 
         if (!post_data.comment_content) { send_html(200, '', state); return } // empty comment
 
-        // rate limit by ip address
-        query('select (now() - comment_created) as ago from comments where comment_author_ip = ? order by comment_created desc limit 1', [state.ip], state,
+        // rate limit by ip post
+        query('select (now() - comment_date) as ago from comments where comment_author_ip = ? order by comment_date desc limit 1', [state.ip], state,
             results => {
 
                 if (results.length && results[0].ago < 2) { // this ip already commented less than two seconds ago
@@ -243,7 +235,7 @@ var pages = {
                     post_data.comment_content   = post_data.comment_content.linkify() // linkify, imagify, etc
 
                     query('insert into comments set ?', post_data, state,
-                        results => { // now select the inserted row so that we pick up the comment_created time and user data for displaying the comment
+                        results => { // now select the inserted row so that we pick up the comment_date time and user data for displaying the comment
                             query('select * from comments left join users on comment_author=user_id where comment_id = ?', [results.insertId], state,
                                 results => {
                                     if (results.length) state.comment = results[0]
@@ -315,7 +307,7 @@ function block_nuked(state) { // block nuked users, usually spammers
 
     return new Promise(function(fulfill, reject) {
 
-        query('select count(*) as c from nukes where nuke_ip_address = ?', [state.ip], state,
+        query('select count(*) as c from nukes where nuke_ip = ?', [state.ip], state,
             results => {
                 if (results[0].c) throw { code : 404, message : 'Not Found', }
                 fulfill(state)
@@ -359,9 +351,9 @@ function set_user(state) { // update state with whether they are logged in or no
 
         try {
             var user_id      = state.req.headers.cookie.split('=')[1].split('_')[0]
-            var user_md5pass = state.req.headers.cookie.split('=')[1].split('_')[1]
+            var user_pass = state.req.headers.cookie.split('=')[1].split('_')[1]
 
-            query('select * from users where user_id = ? and user_md5pass = ?', [user_id, user_md5pass], state,
+            query('select * from users where user_id = ? and user_pass = ?', [user_id, user_pass], state,
                 results => {
                     if (0 == results.length) state.user = null
                     else                     state.user = results[0]
@@ -379,25 +371,25 @@ function set_user(state) { // update state with whether they are logged in or no
 
 function login(req, res, state, db, email, password) {
 
-    query('select * from users where user_email = ? and user_md5pass = ?', [email, md5(password)], state,
+    query('select * from users where user_email = ? and user_pass = ?', [email, md5(password)], state,
         results => {
 
             if (0 == results.length) {
                 state.login_failed_email = email
                 state.user               = null
                 var user_id              = ''
-                var user_md5pass         = ''
+                var user_pass         = ''
             }
             else {
                 state.login_failed_email = null
                 state.user               = results[0]
                 var user_id              = state.user.user_id
-                var user_md5pass         = state.user.user_md5pass
+                var user_pass         = state.user.user_pass
             }
 
             html = render(state)
 
-            var cookie = `${ conf.cookie_name }=${user_id}_${user_md5pass}`
+            var cookie = `${ conf.cookie_name }=${user_id}_${user_pass}`
             var d      = new Date()
             var decade = new Date(d.getFullYear()+10, d.getMonth(), d.getDate()).toUTCString()
 
@@ -481,7 +473,7 @@ function send_login_link(req, res, state, db) {
     key      = md5(Date.now() + conf.nonce_secret)
     key_link = `${ baseurl }/key_login?key=${ key }`
 
-    query('update users set user_key=? where user_email=?', [key, state.post_data.user_email], state,
+    query('update users set user_activation_key=? where user_email=?', [key, state.post_data.user_email], state,
         results => {
 
             if (results.changedRows) {
@@ -513,13 +505,13 @@ String.prototype.linkify = function(ref) {
 
     var imagePattern = />((?:https?):\/\/[a-z0-9-+&@#\/%?=~_|!:,.;]*[a-z0-9-+&@#\/%=~_|]\.(jpg|jpeg|gif|gifv|png|bmp))</gim;
 
-    var emailAddressPattern = /[\w.]+@[a-zA-Z_-]+?(?:\.[a-zA-Z]{2,6})+/gim;
+    var emailpostPattern = /[\w.]+@[a-zA-Z_-]+?(?:\.[a-zA-Z]{2,6})+/gim;
 
     return this
         .replace(urlPattern,          '<a href="$&">$&</a>')
         .replace(pseudoUrlPattern,    '$1<a href="http://$2">$2</a>')
         .replace(imagePattern,        '><img src="$1"><') // it's already a link because of urlPattern above
-        .replace(emailAddressPattern, '<a href="mailto:$&">$&</a>')
+        .replace(emailpostPattern, '<a href="mailto:$&">$&</a>')
 }
 
 function query(sql, sql_parms, state, cb) {
@@ -557,8 +549,8 @@ function render(state) {
                 alert(),
                 midpage(
                     h1(),
-                    address_list(),
-                    new_address_button()
+                    post_list(),
+                    new_post_button()
                 ),
                 footer()
             )
@@ -589,21 +581,21 @@ function render(state) {
             )
         },
 
-        addressform : () => {
+        postform : () => {
             return html(
                 header(),
                 midpage(
-                    addressform()
+                    postform()
                 ),
                 footer()
             )
         },
 
-        address : () => {
+        post : () => {
             return html(
                 header(),
                 midpage(
-                    address(),
+                    post(),
                     comment_list(),
                     commentbox()
                 ),
@@ -615,7 +607,7 @@ function render(state) {
         delete      : () => { return  ''                     },
         logout      : () => { return  loginprompt()          },
         post_login  : () => { return  icon_or_loginprompt()  },
-        postcomment : () => { return  comment(state.comment) },
+        new_comment : () => { return  comment(state.comment) },
     }
 
     //////////////////////////////////////// end of pages; all html is below ////////////////////////////////////////
@@ -667,7 +659,7 @@ function render(state) {
 
         return `
             <div id='status' >
-                <a href='/users/${state.user.user_screenname}' >${img} ${state.user.user_screenname}</a>
+                <a href='/users/${state.user.user_name}' >${img} ${state.user.user_name}</a>
                 <p>
                 <a href='#' onclick="$.get('/logout', function(data) { $('#status').html(data) });return false">logout</a>
             </div>`
@@ -713,17 +705,17 @@ function render(state) {
             <h1>register</h1>
             <form action='/registration' method='post'>
             <div >
-                <div class='form-group'><input type='text' name='user_screenname' placeholder='choose username' class='form-control' id='user_screenname' ></div>
-                <div class='form-group'><input type='text' name='user_email'      placeholder='email address'   class='form-control'                      ></div>
+                <div class='form-group'><input type='text' name='user_name' placeholder='choose username' class='form-control' id='user_name' ></div>
+                <div class='form-group'><input type='text' name='user_email'      placeholder='email post'   class='form-control'                      ></div>
             </div>
             <button type='submit' id='submit' class='btn btn-success btn-sm'>submit</button>
             </form>
-            <script type="text/javascript">document.getElementById('user_screenname').focus();</script>
+            <script type="text/javascript">document.getElementById('user_name').focus();</script>
         </div>`
     }
 
     function lostpwform() {
-        var show = state.login_failed_email ? `value='${ state.login_failed_email }'` : `placeholder='email address'`
+        var show = state.login_failed_email ? `value='${ state.login_failed_email }'` : `placeholder='email post'`
 
         return `
         <div id='lostpwform' >
@@ -736,17 +728,17 @@ function render(state) {
         </div>`
     }
 
-    function addressform() {
+    function postform() {
         return `
-        <h1>add new address</h1>
-        <form action='/postaddress' method='post' >
-            <div class='form-group'><input name='address_num_street' type='text' class='form-control' placeholder='number and street only, like 123 Shady Lane' 
-                    id='address_num_street' ></div>
-            <div class='form-group'> <input name='address_apt' type='text' class='form-control' placeholder='apartment number, if any' > </div>
-            <div class='form-group'> <input name='address_zip' type='text' class='form-control' placeholder='5 digit zip code' maxlength='5' > </div>
+        <h1>add new post</h1>
+        <form action='/new_post' method='post' >
+            <div class='form-group'><input name='post_num_street' type='text' class='form-control' placeholder='number and street only, like 123 Shady Lane' 
+                    id='post_num_street' ></div>
+            <div class='form-group'> <input name='post_apt' type='text' class='form-control' placeholder='apartment number, if any' > </div>
+            <div class='form-group'> <input name='post_zip' type='text' class='form-control' placeholder='5 digit zip code' maxlength='5' > </div>
             <button type='submit' id='submit' class='btn btn-success btn-sm'>submit</button>
         </form>
-        <script type="text/javascript">document.getElementById('address_num_street').focus();</script>`
+        <script type="text/javascript">document.getElementById('post_num_street').focus();</script>`
     }
 
     function commentbox() {
@@ -754,9 +746,9 @@ function render(state) {
         <div  id='newcomment' ></div>
         <form id='commentform' >
             <textarea            name='comment_content'    class='form-control' rows='10' placeholder='write a comment...' ></textarea><p>
-            <input type='hidden' name='comment_address_id' value='${ state.address.address_id }' />
+            <input type='hidden' name='comment_post_id' value='${ state.post.post_id }' />
             <button class='btn btn-success btn-sm'
-                onclick="$.post('/postcomment', $('#commentform').serialize()).done(function(data) {
+                onclick="$.post('/new_comment', $('#commentform').serialize()).done(function(data) {
                     if (data) $('#newcomment').append(data)
                     document.getElementById('commentform').reset() // clear the textbox
                 })
@@ -773,14 +765,14 @@ function render(state) {
     }
 
     function comment(c) {
-        var u = c.user_screenname ? `<a href='/users/${c.user_screenname}'>${c.user_screenname}</a>` : 'anonymous'
+        var u = c.user_name ? `<a href='/users/${c.user_name}'>${c.user_name}</a>` : 'anonymous'
 
         if (state.user) {
             var del = state.user.user_id == c.comment_author ?
                 `<a href='#' onclick="$.get('/delete/${ c.comment_id }', function() { $('#${ c.comment_id }').remove() });return false">delete</a>` : ''
         }
 
-        return `<div class="comment" id="${ c.comment_id }" >${ u } ${ format_date(c.comment_created) } ${ del }<br>${ c.comment_content }</div>`
+        return `<div class="comment" id="${ c.comment_id }" >${ u } ${ format_date(c.comment_date) } ${ del }<br>${ c.comment_content }</div>`
     }
 
     function midpage(...args) { // just an id so we can easily swap out the middle of the page
@@ -789,12 +781,12 @@ function render(state) {
             </div>`
     }
 
-    function address_list() {
+    function post_list() {
 
-        if (state.addresses) {
-            var formatted = state.addresses.map( (item) => {
-                var link = address_link(item)
-                return `<div class="address" >${ link }</div>`
+        if (state.posts) {
+            var formatted = state.posts.map( (item) => {
+                var link = post_link(item)
+                return `<div class="post" >${ link }</div>`
             })
         }
         else formatted = []
@@ -802,14 +794,14 @@ function render(state) {
         return formatted.join('')
     }
 
-    function address() {
-        var link = address_link(state.address)
+    function post() {
+        var link = post_link(state.post)
         return `<h1>${ link }</h1>`
     }
 
-    function address_link(addr) {
-        slug = slugify(`${addr.address_num_street} ${addr.zip_city} ${addr.zip_state} ${addr.zip_code}`)
-        return `<a href="/address/${addr.address_id}/${slug}">${addr.address_num_street}, ${addr.zip_city} ${addr.zip_state} ${addr.zip_code}</a>`
+    function post_link(post) {
+        slug = slugify(`${post.post_title}`)
+        return `<a href="/post/${post.post_id}/${slug}">${post.post_title}</a>`
     }
 
     function user_list() {
@@ -820,7 +812,7 @@ function render(state) {
             }
             else if (state.users.length > 1) {
                 var formatted = state.users.map( (item) => {
-                    return `<div class="user" ><a href='/users/${ item.user_screenname }'>${ item.user_screenname }</a></div>`
+                    return `<div class="user" ><a href='/users/${ item.user_name }'>${ item.user_name }</a></div>`
                 })
             }
         }
@@ -831,15 +823,15 @@ function render(state) {
 
     function user_page(u) {
         var img = user_icon(u)
-        return `<center><a href='/users/${ u.user_screenname }' >${ img }</a><h2>${ u.user_screenname }</h2></p>joined ${ u.user_registered }</center>`
+        return `<center><a href='/users/${ u.user_name }' >${ img }</a><h2>${ u.user_name }</h2></p>joined ${ u.user_registered }</center>`
     }
 
     function slugify(s) { // url-safe pretty chars only; not used for navigation, only for seo and humans
         return s.replace(/\W/g,'-').toLowerCase().replace(/-+/,'-').replace(/^-+|-+$/,'')
     }
 
-    function new_address_button() {
-        return '<a href="/addressform" class="btn btn-success btn-sm" title="start writing about a new address" ><b>add new address</b></a>'
+    function new_post_button() {
+        return '<a href="/postform" class="btn btn-success btn-sm" title="start writing about a new post" ><b>add new post</b></a>'
     }
 
     function comment_list() {
