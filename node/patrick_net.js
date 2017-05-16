@@ -83,9 +83,9 @@ var pages = {
     },
 
     about : state => {
-        state.message = `About ${ conf.domain_name }`
+        state.message = `About ${ conf.domain }`
 
-        state.text = `${ conf.domain_name } is the bomb!`
+        state.text = `${ conf.domain } is the bomb!`
 
         send_html(200, render(state), state)
     },
@@ -163,7 +163,8 @@ var pages = {
             'Content-Length' : html.length,
             'Content-Type'   : 'text/html',
             'Expires'        : d.toUTCString(),
-            'Set-Cookie'     : `${ conf.cookie_name }=_; Expires=${d}; Path=/`,
+            'Set-Cookie'     : `${ conf.usercookie }=_; domain=${ conf.domain }; Expires=${d}; Path=/`,
+            'Set-Cookie'     : `${ conf.pwcookie   }=_; domain=${ conf.domain }; Expires=${d}; Path=/`,
         }
 
         state.res.writeHead(200, headers)
@@ -345,13 +346,11 @@ function collect_post_data(state) { // if there is any POST data, accumulate it 
 
 function set_user(state) { // update state with whether they are logged in or not
 
-    // cookie is like conf.cookie_name=1_432d32044278053db427a93fc352235d where 1 is user and 432d... is md5'd password
-
     return new Promise(function(fulfill, reject) {
 
         try {
-            var user_id      = state.req.headers.cookie.split('=')[1].split('_')[0]
-            var user_pass = state.req.headers.cookie.split('=')[1].split('_')[1]
+            var user_id   = state.req.headers.usercookie
+            var user_pass = state.req.headers.pwcookie
 
             query('select * from users where user_id = ? and user_pass = ?', [user_id, user_pass], state,
                 results => {
@@ -389,15 +388,18 @@ function login(req, res, state, db, email, password) {
 
             html = render(state)
 
-            var cookie = `${ conf.cookie_name }=${user_id}_${user_pass}`
-            var d      = new Date()
-            var decade = new Date(d.getFullYear()+10, d.getMonth(), d.getDate()).toUTCString()
+            var usercookie = `${ conf.usercookie }=${ user_id   }`
+            var pwcookie   = `${ conf.pwcookie   }=${ user_pass }`
+            var d		   = new Date()
+            var decade	   = new Date(d.getFullYear()+10, d.getMonth(), d.getDate()).toUTCString()
 
             var headers =  {
                 'Content-Length' : html.length,
                 'Content-Type'   : 'text/html',
                 'Expires'        : d.toUTCString(),
-                'Set-Cookie'     : `${cookie}; Expires=${decade}; Path=/`, // do NOT use 'secure' or unable to test login in dev, w is http only
+                // do not use 'secure' parm with cookie or will be unable to test login in dev, bc dev is http only
+                'Set-Cookie'     : `${usercookie}; domain=${ conf.domain }; Expires=${decade}; Path=/`,
+                'Set-Cookie'     : `${pwcookie};   domain=${ conf.domain }; Expires=${decade}; Path=/`,
             }
 
             res.writeHead(200, headers)
@@ -469,7 +471,7 @@ function get_transporter() {
 
 function send_login_link(req, res, state, db) {
 
-    baseurl  = (/localdev/.test(os.hostname())) ? `http://dev.${ conf.domain_name }:8080` : `https://${ conf.domain_name }` // for testing email
+    baseurl  = (/localdev/.test(os.hostname())) ? `http://dev.${ conf.domain }:8080` : `https://${ conf.domain }` // for testing email
     key      = md5(Date.now() + conf.nonce_secret)
     key_link = `${ baseurl }/key_login?key=${ key }`
 
@@ -483,7 +485,7 @@ function send_login_link(req, res, state, db) {
                 let mailOptions = {
                     from:    conf.admin_email,
                     to:      state.post_data.user_email,
-                    subject: `Your ${ conf.domain_name } login info`,
+                    subject: `Your ${ conf.domain } login info`,
                     html:    `Click here to log in and get your password: <a href='${ key_link }'>${ key_link }</a>`
                 }
 
@@ -624,9 +626,9 @@ function render(state) {
             <link href='/${ conf.stylesheet }' rel='stylesheet' type='text/css' />
             <link rel='icon' href='/favicon.ico' />
             <meta charset='utf-8' />
-            <meta name='description' content='real estate, offers, bids' />
+            <meta name='description' content='${ conf.description }' />
             <meta name='viewport' content='width=device-width, initial-scale=1, shrink-to-fit=no' />
-            <title>What Did You Bid?</title>
+            <title>${ conf.domain }</title>
             </head>
             <body>
                 <div class="container" >
@@ -638,8 +640,8 @@ function render(state) {
     }
 
     function header() {
-        return `<div class='headerbox' >
-            <a href='/' ><font color='ba114c'><h3 title='back to home page' >What Did You Bid?</h3></font></a> &nbsp;
+        return `<div class='comment' >
+            <a href='/' ><font color='ba114c'><h1 class="sitename" title='back to home page' >${ conf.domain }</h1></font></a> &nbsp;
             <div style='float:right' >${ icon_or_loginprompt() }</div><p>
             </div>`
     }
