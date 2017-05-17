@@ -121,7 +121,7 @@ var pages = {
         password = md5(Date.now() + conf.nonce_secret).substring(0, 6)
 
         // unfortunately a copy of home page sql
-        query('select * from posts order by post_modified desc', null, state,
+        query('select * from posts order by post_modified desc limit 20', null, state,
             results => {
                 state.posts     = results
                 state.alert_content = `Your password is ${ password } and you are now logged in`
@@ -177,7 +177,7 @@ var pages = {
         Object.keys(state.post_data).map(key => { state.post_data[key] = strip_tags(state.post_data[key]) })
 
         if (/\W/.test(state.post_data.user_name)) { message('Please go back and enter username consisting only of letters', state, state.res, state.db); return }
-        if (!/^\w.*@.+\.\w+$/.test(state.post_data.user_email)) { message('Please go back and enter a valid email post',  state); return }
+        if (!/^\w.*@.+\.\w+$/.test(state.post_data.user_email)) { message('Please go back and enter a valid email',  state); return }
 
         query('select * from users where user_email = ?', [state.post_data.user_email], state, results => {
             if (results[0]) {
@@ -619,10 +619,7 @@ function render(state) {
 
     function html(...args) {
 
-        if (state.user && 'admin' == state.user.user_level)
-            var queries = state.queries.sortByProp('ms').map( (item) => { return `${ item.ms }ms ${ item.sql }` }).join('\n')
-        else
-            var queries = ''
+        var queries = state.queries.sortByProp('ms').map( (item) => { return `${ item.ms }ms ${ item.sql }` }).join('\n')
 
         return `<!DOCTYPE html><html lang="en">
             <head>
@@ -858,7 +855,6 @@ function render(state) {
             <a href="/users">users</a> &nbsp;
             <a href="/about">about</a> &nbsp;
             <a href='mailto:${ conf.admin_email }' >contact</a> &nbsp;
-            <a href='mailto:${ conf.admin_email }' >create your own forum, free!</a> &nbsp;
             `
     }
 
