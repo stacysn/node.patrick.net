@@ -163,8 +163,8 @@ var pages = {
             'Content-Length' : html.length,
             'Content-Type'   : 'text/html',
             'Expires'        : d.toUTCString(),
-            'Set-Cookie'     : `${ conf.usercookie }=_; conf.domain }; Expires=${d}; Path=/`,
-            'Set-Cookie'     : `${ conf.pwcookie   }=_; conf.domain }; Expires=${d}; Path=/`,
+            'Set-Cookie'     : `${ conf.usercookie }=_; }; Expires=${d}; Path=/`,
+            'Set-Cookie'     : `${ conf.pwcookie   }=_; }; Expires=${d}; Path=/`,
         }
 
         state.res.writeHead(200, headers)
@@ -349,10 +349,17 @@ function set_user(state) { // update state with whether they are logged in or no
     return new Promise(function(fulfill, reject) {
 
         try {
-            var user_id   = state.req.headers.usercookie
-            var user_pass = state.req.headers.pwcookie
 
-            query('select * from users where user_id = ? and user_pass = ?', [user_id, user_pass], state,
+            var pairs = []
+
+            state.req.headers.cookie.replace(/\s/g,'').split(';').forEach(function(element) {
+                var name  = element.split('=')[0]
+                var value = element.split('=')[1]
+
+				pairs[name] = value
+			})
+
+            query('select * from users where user_id = ? and user_pass = ?', [pairs[conf.usercookie], pairs[conf.pwcookie]], state,
                 results => {
                     if (0 == results.length) state.user = null
                     else                     state.user = results[0]
@@ -377,13 +384,13 @@ function login(req, res, state, db, email, password) {
                 state.login_failed_email = email
                 state.user               = null
                 var user_id              = ''
-                var user_pass         = ''
+                var user_pass            = ''
             }
             else {
                 state.login_failed_email = null
                 state.user               = results[0]
                 var user_id              = state.user.user_id
-                var user_pass         = state.user.user_pass
+                var user_pass            = state.user.user_pass
             }
 
             html = render(state)
@@ -398,8 +405,7 @@ function login(req, res, state, db, email, password) {
                 'Content-Type'   : 'text/html',
                 'Expires'        : d.toUTCString(),
                 // do not use 'secure' parm with cookie or will be unable to test login in dev, bc dev is http only
-                'Set-Cookie'     : `${usercookie}; Expires=${decade}; Path=/`,
-                'Set-Cookie'     : `${pwcookie};   Expires=${decade}; Path=/`,
+                'Set-Cookie'     : `${usercookie}; ${pwcookie}; Expires=${decade}; Path=/`,
             }
 
             res.writeHead(200, headers)
@@ -471,7 +477,7 @@ function get_transporter() {
 
 function send_login_link(req, res, state, db) {
 
-    baseurl  = (/localdev/.test(os.hostname())) ? `http://dev.${ conf.domain }:8080` : `https://${ conf.domain }` // for testing email
+    baseurl  = (/localdev/.test(os.hostname())) ? conf.baseurl_dev : conf.baseurl // conf.baseurl_dev is for testing email
     key      = md5(Date.now() + conf.nonce_secret)
     key_link = `${ baseurl }/key_login?key=${ key }`
 
@@ -502,11 +508,8 @@ function send_login_link(req, res, state, db) {
 String.prototype.linkify = function(ref) {
 
     var urlPattern = /\b(?:https?|ftp):\/\/[a-z0-9-+&@#\/%?=~_|!:,.;]*[a-z0-9-+&@#\/%=~_|]/gim; // http://, https://, ftp://
-
     var pseudoUrlPattern = /(^|[^\/])(www\.[\S]+(\b|$))/gim;                                    // www. sans http:// or https://
-
     var imagePattern = />((?:https?):\/\/[a-z0-9-+&@#\/%?=~_|!:,.;]*[a-z0-9-+&@#\/%=~_|]\.(jpg|jpeg|gif|gifv|png|bmp))</gim;
-
     var emailpostPattern = /[\w.]+@[a-zA-Z_-]+?(?:\.[a-zA-Z]{2,6})+/gim;
 
     return this
@@ -865,7 +868,8 @@ function render(state) {
 
     function format_date(utc) {
         var utz = state.user ? state.user.user_timezone : 'America/Los_Angeles'
-        return moment(Date.parse(utc)).tz(utz).format('YYYY MMMM Do h:mma z')
+        //return moment(Date.parse(utc)).tz(utz).format('YYYY MMMM Do h:mma z')
+        return utc
     }
 
     return pages[state.page]()
