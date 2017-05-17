@@ -51,15 +51,12 @@ async function run(req, res) {
 
 var pages = {
 
-    home : state => {
+    home : async function (state) {
 
-        query('select * from posts order by post_modified desc limit 20', null, state,
-            results => {
-                state.message   = 'Free form forum'
-                state.posts = results
-                send_html(200, render(state), state)
-            }
-        )
+        results = await query2('select * from posts order by post_modified desc limit 20', null, state)
+        state.message   = 'Free form forum'
+        state.posts = results
+        send_html(200, render(state), state)
     },
         
     users : state => {
@@ -159,13 +156,13 @@ var pages = {
         var d      = new Date()
         var html   = render(state)
 
-        var headers =  {
-            'Content-Length' : html.length,
-            'Content-Type'   : 'text/html',
-            'Expires'        : d.toUTCString(),
-            'Set-Cookie'     : `${ conf.usercookie }=_; }; Expires=${d}; Path=/`,
-            'Set-Cookie'     : `${ conf.pwcookie   }=_; }; Expires=${d}; Path=/`,
-        }
+		var headers = [
+			['Content-Length' , html.length                               ],
+			['Content-Type'   , 'text/html'                               ],
+			['Expires'        , d.toUTCString()                           ],
+			['Set-Cookie'     , `${ conf.usercookie }=_; Expires=${d}; Path=/`],
+			['Set-Cookie'     , `${ conf.pwcookie   }=_; Expires=${d}; Path=/`]
+		] // do not use 'secure' parm with cookie or will be unable to test login in dev, bc dev is http only
 
         state.res.writeHead(200, headers)
         state.res.end(html)
@@ -400,13 +397,14 @@ function login(req, res, state, db, email, password) {
             var d		   = new Date()
             var decade	   = new Date(d.getFullYear()+10, d.getMonth(), d.getDate()).toUTCString()
 
-            var headers =  {
-                'Content-Length' : html.length,
-                'Content-Type'   : 'text/html',
-                'Expires'        : d.toUTCString(),
-                // do not use 'secure' parm with cookie or will be unable to test login in dev, bc dev is http only
-                'Set-Cookie'     : `${usercookie}; ${pwcookie}; Expires=${decade}; Path=/`,
-            }
+			// you must use the undocumented "array" feature of writeHead to set multiple cookies, because json
+			var headers = [
+                ['Content-Length' , html.length                               ],
+                ['Content-Type'   , 'text/html'                               ],
+                ['Expires'        , d.toUTCString()                           ],
+				['Set-Cookie'     , `${usercookie}; Expires=${decade}; Path=/`],
+				['Set-Cookie'     , `${pwcookie};   Expires=${decade}; Path=/`]
+			] // do not use 'secure' parm with cookie or will be unable to test login in dev, bc dev is http only
 
             res.writeHead(200, headers)
             res.end(html)
@@ -517,6 +515,25 @@ String.prototype.linkify = function(ref) {
         .replace(pseudoUrlPattern,    '$1<a href="http://$2">$2</a>')
         .replace(imagePattern,        '><img src="$1"><') // it's already a link because of urlPattern above
         .replace(emailpostPattern, '<a href="mailto:$&">$&</a>')
+}
+
+function query2(sql, sql_parms, state) {
+
+    return new Promise(function(fulfill, reject) {
+        var q
+
+        var get_results = function (error, results, fields, timing) { // callback to give to state.db.query()
+            if (error) { state.db.release(); reject(error) }
+            state.queries.push({
+                sql : q.sql,
+                ms  : timing
+            })
+            fulfill(results)
+        }
+
+        q = sql_parms ? state.db.query(sql, sql_parms, get_results)
+                      : state.db.query(sql,            get_results)
+    })
 }
 
 function query(sql, sql_parms, state, cb) {
