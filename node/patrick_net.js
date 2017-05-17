@@ -163,8 +163,8 @@ var pages = {
             'Content-Length' : html.length,
             'Content-Type'   : 'text/html',
             'Expires'        : d.toUTCString(),
-            'Set-Cookie'     : `${ conf.usercookie }=_; domain=${ conf.domain }; Expires=${d}; Path=/`,
-            'Set-Cookie'     : `${ conf.pwcookie   }=_; domain=${ conf.domain }; Expires=${d}; Path=/`,
+            'Set-Cookie'     : `${ conf.usercookie }=_; conf.domain }; Expires=${d}; Path=/`,
+            'Set-Cookie'     : `${ conf.pwcookie   }=_; conf.domain }; Expires=${d}; Path=/`,
         }
 
         state.res.writeHead(200, headers)
@@ -398,8 +398,8 @@ function login(req, res, state, db, email, password) {
                 'Content-Type'   : 'text/html',
                 'Expires'        : d.toUTCString(),
                 // do not use 'secure' parm with cookie or will be unable to test login in dev, bc dev is http only
-                'Set-Cookie'     : `${usercookie}; domain=${ conf.domain }; Expires=${decade}; Path=/`,
-                'Set-Cookie'     : `${pwcookie};   domain=${ conf.domain }; Expires=${decade}; Path=/`,
+                'Set-Cookie'     : `${usercookie}; Expires=${decade}; Path=/`,
+                'Set-Cookie'     : `${pwcookie};   Expires=${decade}; Path=/`,
             }
 
             res.writeHead(200, headers)
