@@ -59,7 +59,7 @@ var pages = {
         send_html(200, render(state), state)
     },
         
-    users : state => {
+    users : async function (state) {
 
         try {
             var user_name = url.parse(state.req.url).path.split('/')[2].replace(/\W/g,'') // like /users/Patrick
@@ -67,7 +67,7 @@ var pages = {
             var sql_parms = [user_name]
         }
         catch(e) {
-            var sql       = 'select * from users' // no username given, so show them all
+            var sql       = 'select * from users limit 20' // no username given, so show them all
             var sql_parms = null
         }
 
@@ -79,7 +79,7 @@ var pages = {
         )
     },
 
-    about : state => {
+    about : async function (state) {
         state.message = `About ${ conf.domain }`
 
         state.text = `${ conf.domain } is the bomb!`
@@ -87,9 +87,9 @@ var pages = {
         send_html(200, render(state), state)
     },
 
-    postform : state => { send_html(200, render(state), state) },
+    postform : async function (state) { send_html(200, render(state), state) },
 
-    post : state => { // show a single post
+    post : async function (state) { // show a single post
 
         // get post's db row number from url, eg 47 from /post/47/slug-goes-here
         var post_id = url.parse(state.req.url).path.split('/')[2].replace(/\D/g,'')
@@ -112,7 +112,7 @@ var pages = {
         )
     },
 
-    key_login : state => {
+    key_login : async function (state) {
 
         key      = url.parse(state.req.url, true).query.key
         password = md5(Date.now() + conf.nonce_secret).substring(0, 6)
@@ -143,14 +143,14 @@ var pages = {
         )
     },
 
-    post_login : state => {
+    post_login : async function (state) {
         email    = state.post_data.email
         password = state.post_data.password
 
         login(state.req, state.res, state, state.db, email, password)
     },
 
-    logout : state => {
+    logout : async function (state) {
 
         state.user = null
         var d      = new Date()
@@ -169,7 +169,7 @@ var pages = {
         if (state.db) state.db.release()
     },
 
-    registration : state => {
+    registration : async function (state) {
 
         Object.keys(state.post_data).map(key => { state.post_data[key] = strip_tags(state.post_data[key]) })
 
@@ -193,7 +193,7 @@ var pages = {
         })
     },
 
-    recoveryemail : state => {
+    recoveryemail : async function (state) {
 
         Object.keys(state.post_data).map(key => { state.post_data[key] = strip_tags(state.post_data[key]) })
 
@@ -202,7 +202,7 @@ var pages = {
         send_login_link(state.req, state.res, state, state.db)
     },
 
-    new_post : state => {
+    new_post : async function (state) {
 
         post_data = state.post_data
         Object.keys(post_data).map(key => { post_data[key] = strip_tags(post_data[key]) })
@@ -210,15 +210,16 @@ var pages = {
         query('insert into posts set ?', post_data, state, results => { redirect(`/post/${results.insertId}`, state.res, state.db) })
     },
 
-    new_comment : state => {
+    new_comment : async function (state) {
 
         post_data = state.post_data
         Object.keys(post_data).map(key => { post_data[key] = strip_tags(post_data[key]) })
 
         if (!post_data.comment_content) { send_html(200, '', state); return } // empty comment
 
-        // rate limit by ip post
-        query('select (now() - comment_date) as ago from comments where comment_author_ip = ? order by comment_date desc limit 1', [state.ip], state,
+        // rate limit by user's ip address
+        query('select (unix_timestamp(now()) - unix_timestamp(user_last_comment_time)) as ago from users where user_last_comment_ip = ? order by user_last_comment_time desc limit 1',
+            [state.ip], state,
             results => {
 
                 if (results.length && results[0].ago < 2) { // this ip already commented less than two seconds ago
@@ -228,9 +229,10 @@ var pages = {
                 }
                 else {
 
-                    post_data.comment_author    = state.user ? state.user.user_id : 0
-                    post_data.comment_author_ip = state.ip                            // so that ip gets inserted along with other post_data
-                    post_data.comment_content   = post_data.comment_content.linkify() // linkify, imagify, etc
+                    post_data.comment_author   = state.user ? state.user.user_id : 0
+                    post_data.comment_content  = post_data.comment_content.linkify() // linkify, imagify, etc
+                    post_data.comment_dislikes = 0
+                    post_data.comment_likes    = 0
 
                     query('insert into comments set ?', post_data, state,
                         results => { // now select the inserted row so that we pick up the comment_date time and user data for displaying the comment
@@ -247,7 +249,7 @@ var pages = {
         )
     },
 
-    delete : state => { // delete a comment
+    delete : async function (state) { // delete a comment
 
         var comment_id = url.parse(state.req.url).path.split('/')[2].replace(/\D/g,'') // get comment db row number from url, eg 47 from /delete/47
 
