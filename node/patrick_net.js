@@ -221,6 +221,8 @@ var pages = {
             post_data.comment_content  = post_data.comment_content.linkify() // linkify, imagify, etc
             post_data.comment_dislikes = 0
             post_data.comment_likes    = 0
+            post_data.comment_approved = 1
+            post_data.comment_date     = new Date().toISOString().slice(0, 19).replace('T', ' ') // mysql datetime format
 
             var results = await query2('insert into comments set ?', post_data, state)
 
@@ -271,30 +273,19 @@ function connect_to_db(state) {
     })
 }
 
-function block_countries(state) { // block entire countries like Russia because all comments from there are inevitably spam
+async function block_countries(state) { // block entire countries like Russia because all comments from there are inevitably spam
 
-    return new Promise(function(fulfill, reject) {
+    var results = await query2('select country_evil from countries where inet_aton(?) >= country_start and inet_aton(?) <= country_end',
+                                [state.ip, state.ip], state)
 
-        query('select country_evil from countries where inet_aton(?) >= country_start and inet_aton(?) <= country_end', [state.ip, state.ip],
-            state, results => {
-                if (results.length && results[0].country_evil) throw { code : 404, message : 'Not Found', }
-                fulfill(state)
-            }
-        )
-    })
+    if (results.length && results[0].country_evil) throw { code : 404, message : 'Not Found', }
 }
 
-function block_nuked(state) { // block nuked users, usually spammers
+async function block_nuked(state) { // block nuked users, usually spammers
 
-    return new Promise(function(fulfill, reject) {
+    var results = await query2('select count(*) as c from nukes where nuke_ip = ?', [state.ip], state)
 
-        query('select count(*) as c from nukes where nuke_ip = ?', [state.ip], state,
-            results => {
-                if (results[0].c) throw { code : 404, message : 'Not Found', }
-                fulfill(state)
-            }
-        )
-    })
+    if (results[0].c) throw { code : 404, message : 'Not Found', }
 }
 
 function collect_post_data(state) { // if there is any POST data, accumulate it and append it to req object
@@ -536,9 +527,7 @@ Array.prototype.sortByProp = function(p){
     })
 }
 
-// The render function never does IO. It simply assembles a page from state. It does not change state.
-
-function render(state) {
+function render(state) { // The render function never does IO. It simply assembles a page from state. It does not change state.
 
     var pages = {
 
