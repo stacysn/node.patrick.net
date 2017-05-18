@@ -53,7 +53,7 @@ var pages = {
 
     home : async function (state) {
 
-        results = await query2('select * from posts order by post_modified desc limit 20', null, state)
+        results = await query('select * from posts order by post_modified desc limit 20', null, state)
         state.message   = 'Free form forum'
         state.posts = results
         send_html(200, render(state), state)
@@ -71,7 +71,7 @@ var pages = {
             var sql_parms = null
         }
 
-        state.users = await query2(sql, sql_parms, state)
+        state.users = await query(sql, sql_parms, state)
         send_html(200, render(state), state)
     },
 
@@ -90,14 +90,14 @@ var pages = {
         // get post's db row number from url, eg 47 from /post/47/slug-goes-here
         var post_id = url.parse(state.req.url).path.split('/')[2].replace(/\D/g,'')
 
-        var results = await query2('select * from posts where post_id=?', [post_id], state)
+        var results = await query('select * from posts where post_id=?', [post_id], state)
 
         if (0 == results.length) send_html(404, `No post with id "${post_id}"`, state)
         else {
             state.post = results[0]
 
             // now pick up the comment list for this post
-            var results = await query2('select * from comments left join users on comment_author=user_id where comment_post_id = ? order by comment_date',
+            var results = await query('select * from comments left join users on comment_author=user_id where comment_post_id = ? order by comment_date',
                 [post_id], state)
 
             if (results.length) state.comments = results
@@ -111,12 +111,12 @@ var pages = {
         password = md5(Date.now() + conf.nonce_secret).substring(0, 6)
 
         // unfortunately a copy of home page sql
-        state.posts         = await query2('select * from posts order by post_modified desc limit 20', null, state)
+        state.posts         = await query('select * from posts order by post_modified desc limit 20', null, state)
         state.alert_content = `Your password is ${ password } and you are now logged in`
         state.message       = 'Increasing fair play for buyers and sellers'
         state.page          = 'home' // key_login generates home page html
 
-        var results = await query2('select user_email from users where user_activation_key = ?', [key], state)
+        var results = await query('select user_email from users where user_activation_key = ?', [key], state)
 
         if (results.length) email = results[0].user_email
         else {
@@ -125,7 +125,7 @@ var pages = {
         }
 
         // erase key so it cannot be used again, and set new password
-        await query2('update users set user_activation_key=null, user_pass=? where user_activation_key=?', [md5(password), key], state)
+        await query('update users set user_activation_key=null, user_pass=? where user_activation_key=?', [md5(password), key], state)
 
         login(state.req, state.res, state, state.db, email, password)
     },
@@ -164,18 +164,18 @@ var pages = {
         if (/\W/.test(state.post_data.user_name)) return message('Please go back and enter username consisting only of letters', state, state.res, state.db);
         if (!/^\w.*@.+\.\w+$/.test(state.post_data.user_email)) return message('Please go back and enter a valid email',  state)
 
-        var results = await query2('select * from users where user_email = ?', [state.post_data.user_email], state)
+        var results = await query('select * from users where user_email = ?', [state.post_data.user_email], state)
 
         if (results[0]) {
             message(`That email is already registered. Please use the "forgot password" link above.</a>`, state)
             return
         }
         else {
-            var results = await query2('select * from users where user_name = ?', [state.post_data.user_name], state)
+            var results = await query('select * from users where user_name = ?', [state.post_data.user_name], state)
 
             if (results[0]) return message(`That user name is already registered. Please choose a different one.</a>`, state)
             else {
-                await query2('insert into users set ?', state.post_data, state)
+                await query('insert into users set ?', state.post_data, state)
                 send_login_link(state.req, state.res, state, state.db)
             }
         }
@@ -195,7 +195,7 @@ var pages = {
         post_data = state.post_data
         Object.keys(post_data).map(key => { post_data[key] = strip_tags(post_data[key]) })
 
-        var results = await query2('insert into posts set ?', post_data, state)
+        var results = await query('insert into posts set ?', post_data, state)
         redirect(`/post/${results.insertId}`, state.res, state.db)
     },
 
@@ -207,7 +207,7 @@ var pages = {
         if (!post_data.comment_content) { send_html(200, '', state); return } // empty comment
 
         // rate limit by user's ip address
-        var results = await query2('select (unix_timestamp(now()) - unix_timestamp(user_last_comment_time)) as ago from users where user_last_comment_ip = ? order by user_last_comment_time desc limit 1',
+        var results = await query('select (unix_timestamp(now()) - unix_timestamp(user_last_comment_time)) as ago from users where user_last_comment_ip = ? order by user_last_comment_time desc limit 1',
             [state.ip], state)
 
         if (results.length && results[0].ago < 2) { // this ip already commented less than two seconds ago
@@ -224,10 +224,10 @@ var pages = {
             post_data.comment_approved = 1
             post_data.comment_date     = new Date().toISOString().slice(0, 19).replace('T', ' ') // mysql datetime format
 
-            var results = await query2('insert into comments set ?', post_data, state)
+            var results = await query('insert into comments set ?', post_data, state)
 
             // now select the inserted row so that we pick up the comment_date time and user data for displaying the comment
-            var results = await query2('select * from comments left join users on comment_author=user_id where comment_id = ?', [results.insertId], state)
+            var results = await query('select * from comments left join users on comment_author=user_id where comment_id = ?', [results.insertId], state)
 
             if (results.length) state.comment = results[0]
             send_html(200, render(state), state)
@@ -243,7 +243,7 @@ var pages = {
         if (!state.user) send_html(200, render(state), state) // do nothing if not logged in
 
         // delete comment only if current user is comment_author
-        await query2('delete from comments where comment_id = ? and comment_author = ?', [comment_id, state.user.user_id], state)
+        await query('delete from comments where comment_id = ? and comment_author = ?', [comment_id, state.user.user_id], state)
 
         send_html(200, render(state), state)
     },
@@ -275,7 +275,7 @@ function connect_to_db(state) {
 
 async function block_countries(state) { // block entire countries like Russia because all comments from there are inevitably spam
 
-    var results = await query2('select country_evil from countries where inet_aton(?) >= country_start and inet_aton(?) <= country_end',
+    var results = await query('select country_evil from countries where inet_aton(?) >= country_start and inet_aton(?) <= country_end',
                                 [state.ip, state.ip], state)
 
     if (results.length && results[0].country_evil) throw { code : 404, message : 'Not Found', }
@@ -283,7 +283,7 @@ async function block_countries(state) { // block entire countries like Russia be
 
 async function block_nuked(state) { // block nuked users, usually spammers
 
-    var results = await query2('select count(*) as c from nukes where nuke_ip = ?', [state.ip], state)
+    var results = await query('select count(*) as c from nukes where nuke_ip = ?', [state.ip], state)
 
     if (results[0].c) throw { code : 404, message : 'Not Found', }
 }
@@ -315,40 +315,31 @@ function collect_post_data(state) { // if there is any POST data, accumulate it 
     })
 }
 
-function set_user(state) { // update state with whether they are logged in or not
+async function set_user(state) { // update state with whether they are logged in or not
 
-    return new Promise(function(fulfill, reject) {
+    try {
+        var pairs = []
 
-        try {
+        state.req.headers.cookie.replace(/\s/g,'').split(';').forEach(function(element) {
+            var name  = element.split('=')[0]
+            var value = element.split('=')[1]
 
-            var pairs = []
+            pairs[name] = value
+        })
 
-            state.req.headers.cookie.replace(/\s/g,'').split(';').forEach(function(element) {
-                var name  = element.split('=')[0]
-                var value = element.split('=')[1]
+        var results = await query('select * from users where user_id = ? and user_pass = ?', [pairs[conf.usercookie], pairs[conf.pwcookie]], state)
 
-				pairs[name] = value
-			})
-
-            query('select * from users where user_id = ? and user_pass = ?', [pairs[conf.usercookie], pairs[conf.pwcookie]], state,
-                results => {
-                    if (0 == results.length) state.user = null
-                    else                     state.user = results[0]
-
-                    fulfill(state)
-                }
-            )
-        }
-        catch(e) { // no valid cookie
-            state.user = null
-            fulfill(state)
-        }
-    })
+        if (0 == results.length) state.user = null
+        else                     state.user = results[0]
+    }
+    catch(e) { // no valid cookie
+        state.user = null
+    }
 }
 
 async function login(req, res, state, db, email, password) {
 
-    var results = await query2('select * from users where user_email = ? and user_pass = ?', [email, md5(password)], state)
+    var results = await query('select * from users where user_email = ? and user_pass = ?', [email, md5(password)], state)
 
     if (0 == results.length) {
         state.login_failed_email = email
@@ -450,7 +441,7 @@ async function send_login_link(req, res, state, db) {
     key      = md5(Date.now() + conf.nonce_secret)
     key_link = `${ baseurl }/key_login?key=${ key }`
 
-    var results = await query2('update users set user_activation_key=? where user_email=?', [key, state.post_data.user_email], state)
+    var results = await query('update users set user_activation_key=? where user_email=?', [key, state.post_data.user_email], state)
 
     if (results.changedRows) {
 
@@ -485,7 +476,7 @@ String.prototype.linkify = function(ref) {
         .replace(emailpostPattern, '<a href="mailto:$&">$&</a>')
 }
 
-function query2(sql, sql_parms, state) {
+function query(sql, sql_parms, state) {
 
     return new Promise(function(fulfill, reject) {
         var q
@@ -502,23 +493,6 @@ function query2(sql, sql_parms, state) {
         q = sql_parms ? state.db.query(sql, sql_parms, get_results)
                       : state.db.query(sql,            get_results)
     })
-}
-
-function query(sql, sql_parms, state, cb) {
-
-    var q
-
-    var get_results = function (error, results, fields, timing) { // callback to give to state.db.query()
-        if (error) { state.db.release(); throw error }
-        state.queries.push({
-            sql : q.sql,
-            ms  : timing
-        })
-        cb(results)
-    }
-
-    q = sql_parms ? state.db.query(sql, sql_parms, get_results)
-                  : state.db.query(sql,            get_results)
 }
 
 Array.prototype.sortByProp = function(p){
