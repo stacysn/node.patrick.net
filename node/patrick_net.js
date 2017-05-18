@@ -355,45 +355,42 @@ function set_user(state) { // update state with whether they are logged in or no
     })
 }
 
-function login(req, res, state, db, email, password) {
+async function login(req, res, state, db, email, password) {
 
-    query('select * from users where user_email = ? and user_pass = ?', [email, md5(password)], state,
-        results => {
+    var results = await query2('select * from users where user_email = ? and user_pass = ?', [email, md5(password)], state)
 
-            if (0 == results.length) {
-                state.login_failed_email = email
-                state.user               = null
-                var user_id              = ''
-                var user_pass            = ''
-            }
-            else {
-                state.login_failed_email = null
-                state.user               = results[0]
-                var user_id              = state.user.user_id
-                var user_pass            = state.user.user_pass
-            }
+    if (0 == results.length) {
+        state.login_failed_email = email
+        state.user               = null
+        var user_id              = ''
+        var user_pass            = ''
+    }
+    else {
+        state.login_failed_email = null
+        state.user               = results[0]
+        var user_id              = state.user.user_id
+        var user_pass            = state.user.user_pass
+    }
 
-            html = render(state)
+    html = render(state)
 
-            var usercookie = `${ conf.usercookie }=${ user_id   }`
-            var pwcookie   = `${ conf.pwcookie   }=${ user_pass }`
-            var d		   = new Date()
-            var decade	   = new Date(d.getFullYear()+10, d.getMonth(), d.getDate()).toUTCString()
+    var usercookie = `${ conf.usercookie }=${ user_id   }`
+    var pwcookie   = `${ conf.pwcookie   }=${ user_pass }`
+    var d		   = new Date()
+    var decade	   = new Date(d.getFullYear()+10, d.getMonth(), d.getDate()).toUTCString()
 
-			// you must use the undocumented "array" feature of writeHead to set multiple cookies, because json
-			var headers = [
-                ['Content-Length' , html.length                               ],
-                ['Content-Type'   , 'text/html'                               ],
-                ['Expires'        , d.toUTCString()                           ],
-				['Set-Cookie'     , `${usercookie}; Expires=${decade}; Path=/`],
-				['Set-Cookie'     , `${pwcookie};   Expires=${decade}; Path=/`]
-			] // do not use 'secure' parm with cookie or will be unable to test login in dev, bc dev is http only
+    // you must use the undocumented "array" feature of writeHead to set multiple cookies, because json
+    var headers = [
+        ['Content-Length' , html.length                               ],
+        ['Content-Type'   , 'text/html'                               ],
+        ['Expires'        , d.toUTCString()                           ],
+        ['Set-Cookie'     , `${usercookie}; Expires=${decade}; Path=/`],
+        ['Set-Cookie'     , `${pwcookie};   Expires=${decade}; Path=/`]
+    ] // do not use 'secure' parm with cookie or will be unable to test login in dev, bc dev is http only
 
-            res.writeHead(200, headers)
-            res.end(html)
-            if (db) db.release()
-        }
-    )
+    res.writeHead(200, headers)
+    res.end(html)
+        if (db) db.release()
 }
 
 function redirect(redirect_to, res, db) {
@@ -456,34 +453,31 @@ function get_transporter() {
     })
 }
 
-function send_login_link(req, res, state, db) {
+async function send_login_link(req, res, state, db) {
 
     baseurl  = (/localdev/.test(os.hostname())) ? conf.baseurl_dev : conf.baseurl // conf.baseurl_dev is for testing email
     key      = md5(Date.now() + conf.nonce_secret)
     key_link = `${ baseurl }/key_login?key=${ key }`
 
-    query('update users set user_activation_key=? where user_email=?', [key, state.post_data.user_email], state,
-        results => {
+    var results = await query2('update users set user_activation_key=? where user_email=?', [key, state.post_data.user_email], state)
 
-            if (results.changedRows) {
+    if (results.changedRows) {
 
-                message('Please check your email for the login link', state, res, db)
+        message('Please check your email for the login link', state, res, db)
 
-                let mailOptions = {
-                    from:    conf.admin_email,
-                    to:      state.post_data.user_email,
-                    subject: `Your ${ conf.domain } login info`,
-                    html:    `Click here to log in and get your password: <a href='${ key_link }'>${ key_link }</a>`
-                }
-
-                get_transporter().sendMail(mailOptions, (error, info) => {
-                    if (error) { db.release(); throw error }
-                    console.log('Message %s sent: %s', info.messageId, info.response);
-                })
-            }
-            else message(`Could not find user with email ${ state.post_data.user_email }`, state, res, db)
+        let mailOptions = {
+            from:    conf.admin_email,
+            to:      state.post_data.user_email,
+            subject: `Your ${ conf.domain } login info`,
+            html:    `Click here to log in and get your password: <a href='${ key_link }'>${ key_link }</a>`
         }
-    )
+
+        get_transporter().sendMail(mailOptions, (error, info) => {
+            if (error) { db.release(); throw error }
+            console.log('Message %s sent: %s', info.messageId, info.response);
+        })
+    }
+    else message(`Could not find user with email ${ state.post_data.user_email }`, state, res, db)
 }
 
 String.prototype.linkify = function(ref) {
