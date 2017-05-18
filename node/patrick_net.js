@@ -207,7 +207,7 @@ var pages = {
         if (!post_data.comment_content) { send_html(200, '', state); return } // empty comment
 
         // rate limit by user's ip address
-        var results = await query('select (unix_timestamp(now()) - unix_timestamp(user_last_comment_time)) as ago from users where user_last_comment_ip = ? order by user_last_comment_time desc limit 1',
+        var results = await query('select (unix_timestamp(now()) - unix_timestamp(user_last_comment_time)) as ago from users where user_last_comment_time is not null and user_last_comment_ip = ? order by user_last_comment_time desc limit 1',
             [state.ip], state)
 
         if (results.length && results[0].ago < 2) { // this ip already commented less than two seconds ago
@@ -223,6 +223,8 @@ var pages = {
             post_data.comment_likes    = 0
             post_data.comment_approved = 1
             post_data.comment_date     = new Date().toISOString().slice(0, 19).replace('T', ' ') // mysql datetime format
+
+            await query('update users set user_last_comment_ip = ? where user_id = ?', [state.ip, state.user.user_id], state)
 
             var results = await query('insert into comments set ?', post_data, state)
 
@@ -479,19 +481,24 @@ String.prototype.linkify = function(ref) {
 function query(sql, sql_parms, state) {
 
     return new Promise(function(fulfill, reject) {
-        var q
+        var query
 
         var get_results = function (error, results, fields, timing) { // callback to give to state.db.query()
+
+            //console.log(query.sql)
+
             if (error) { state.db.release(); reject(error) }
+
             state.queries.push({
-                sql : q.sql,
+                sql : query.sql,
                 ms  : timing
             })
+
             fulfill(results)
         }
 
-        q = sql_parms ? state.db.query(sql, sql_parms, get_results)
-                      : state.db.query(sql,            get_results)
+        query = sql_parms ? state.db.query(sql, sql_parms, get_results)
+                          : state.db.query(sql,            get_results)
     })
 }
 
@@ -819,10 +826,9 @@ function render(state) { // The render function never does IO. It simply assembl
         return state.alert_content ? `<script type='text/javascript'> alert('${ state.alert_content }'); </script>` : ''
     }
 
-    function format_date(utc) {
+    function format_date(gmt_date) { // create localized date string from gmt date out of mysql
         var utz = state.user ? state.user.user_timezone : 'America/Los_Angeles'
-        //return moment(Date.parse(utc)).tz(utz).format('YYYY MMMM Do h:mma z')
-        return utc
+        return moment(Date.parse(gmt_date)).tz(utz).format('YYYY MMMM Do h:mma z')
     }
 
     return pages[state.page]()
