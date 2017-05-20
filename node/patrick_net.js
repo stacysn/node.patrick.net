@@ -53,7 +53,7 @@ var pages = {
 
     home : async function (state) {
 
-        results = await query('select * from posts order by post_modified desc limit 20', null, state)
+        results = await query('select sql_calc_found_rows * from posts where post_modified > date_sub(now(), interval 7 day) and post_approved=1 order by post_modified desc limit 0, 20', null, state)
         state.message   = 'Free form forum'
         state.posts = results
         send_html(200, render(state), state)
