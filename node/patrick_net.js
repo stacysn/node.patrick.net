@@ -710,17 +710,15 @@ function render(state) { // The render function never does IO. It simply assembl
         </div>`
     }
 
-    function postform() {
+    function postform() { // need to add conditional display of user-name chooser for non-logged in users
         return `
-        <h1>add new post</h1>
+        <h1>new post</h1>
         <form action='/new_post' method='post' >
-            <div class='form-group'><input name='post_num_street' type='text' class='form-control' placeholder='number and street only, like 123 Shady Lane' 
-                    id='post_num_street' ></div>
-            <div class='form-group'> <input name='post_apt' type='text' class='form-control' placeholder='apartment number, if any' > </div>
-            <div class='form-group'> <input name='post_zip' type='text' class='form-control' placeholder='5 digit zip code' maxlength='5' > </div>
+            <div class='form-group'><input name='post_title' type='text' class='form-control' placeholder='title' id='title' ></div>
+            <textarea class='form-control' name='post_content' rows='12' id='content' placeholder='write something...' ></textarea><p>
             <button type='submit' id='submit' class='btn btn-success btn-sm'>submit</button>
         </form>
-        <script type="text/javascript">document.getElementById('post_num_street').focus();</script>`
+        <script type="text/javascript">document.getElementById('title').focus();</script>`
     }
 
     function commentbox() {
