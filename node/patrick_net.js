@@ -1,18 +1,4 @@
-// ISC License
-// 
-// Copyright (c) 2017 by Patrick Killelea
-// 
-// Permission to use, copy, modify, and/or distribute this software for any
-// purpose with or without fee is hereby granted, provided that the above
-// copyright notice and this permission notice appear in all copies.
-// 
-// the software is provided "as is" and the author disclaims all warranties with
-// regard to this software including all implied warranties of merchantability
-// and fitness. In no event shall the author be liable for any special, direct,
-// indirect, or consequential damages or any damages whatsoever resulting from
-// loss of use, data or profits, whether in an action of contract, negligence
-// or other tortious action, arising out of or in connection with the use or
-// performance of this software.
+// Copyright 2017 by Patrick Killelea under the ISC license
 
 try { conf = require('./conf.json') } catch(e) { console.log(e.message); process.exit(1) } // conf.json is required
 
@@ -42,6 +28,8 @@ if (cluster.isMaster) {
         cluster.fork()
     })
 } else http.createServer(run).listen(conf.http_port)
+
+// end of top-level code; everything else is in a function
 
 async function run(req, res) {
 
@@ -211,7 +199,10 @@ var pages = {
         post_data = state.post_data
         Object.keys(post_data).map(key => { post_data[key] = strip_tags(post_data[key]) })
 
-        var results = await query('insert into posts set ?', post_data, state)
+        post_data.post_approved = 1 // create a function to check content before approving!
+
+        var results = await query('insert into posts set ?, post_modified=now()', post_data, state)
+
         redirect(`/post/${results.insertId}`, state.res, state.db)
     },
 
@@ -530,12 +521,13 @@ function render(state) { // The render function never does IO. It simply assembl
 
         home : () => {
             return html(
-                header(),
+                header(
+                    new_post_button()
+                ),
                 alert(),
                 midpage(
                     h1(),
-                    post_list(),
-                    new_post_button()
+                    post_list()
                 ),
                 footer()
             )
@@ -619,10 +611,11 @@ function render(state) { // The render function never does IO. It simply assembl
             </html>`
     }
 
-    function header() {
+    function header(...args) {
         return `<div class='comment' >
-            <a href='/' ><font color='ba114c'><h1 class="sitename" title='back to home page' >${ conf.domain }</h1></font></a> &nbsp;
-            <div style='float:right' >${ icon_or_loginprompt() }</div><p>
+            <div style='float:right' >${ icon_or_loginprompt() }</div>
+            <a href='/' ><h1 class='sitename' title='back to home page' >${ conf.domain }</h1></a><br>
+            ${ args.join('') }
             </div>`
     }
 

@@ -6,8 +6,9 @@ img {
 }
 
 .sitename  {
-    display    : inline;
-    font-size  : 2em;
+    color     : #ba114c;
+    display   : inline;
+    font-size : 2em;
 }
 
 .headerbox {
