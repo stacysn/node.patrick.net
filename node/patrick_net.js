@@ -48,6 +48,7 @@ async function run(req, res) {
         await block_nuked(state)
         await collect_post_data(state)
         await set_user(state)
+        await top_topics(state)
         await pages[state.page](state)
     }
     catch(e) { send_html(e.code, e.message, state) }
@@ -324,6 +325,12 @@ function collect_post_data(state) { // if there is any POST data, accumulate it 
     })
 }
 
+async function top_topics(state) { // update state with whether they are logged in or not
+
+	state.top_topics =
+		await query('select post_topic, count(*) as c from posts where length(post_topic) > 0 group by post_topic order by c desc limit 3', null, state)
+}
+
 async function set_user(state) { // update state with whether they are logged in or not
 
     try {
@@ -522,6 +529,7 @@ function render(state) { // The render function never does IO. It simply assembl
         home : () => {
             return html(
                 header(
+                    top_topics(),
                     new_post_button()
                 ),
                 alert(),
@@ -615,7 +623,7 @@ function render(state) { // The render function never does IO. It simply assembl
         return `<div class='comment' >
             <div style='float:right' >${ icon_or_loginprompt() }</div>
             <a href='/' ><h1 class='sitename' title='back to home page' >${ conf.domain }</h1></a><br>
-            ${ args.join('') }
+            ${ args.join('<br>') }
             </div>`
     }
 
@@ -801,6 +809,16 @@ function render(state) { // The render function never does IO. It simply assembl
 
     function slugify(s) { // url-safe pretty chars only; not used for navigation, only for seo and humans
         return s.replace(/\W/g,'-').toLowerCase().replace(/-+/,'-').replace(/^-+|-+$/,'')
+    }
+
+    function top_topics() {
+        if (state.top_topics) {
+            var formatted = state.top_topics.map( (item) => {
+                return `<a href='/topics/${ item.post_topic }'>#${ item.post_topic }</a>`
+            })
+
+            return formatted.join(' ') + ` <a href='/topics/'>more&raquo;</a>`
+        }
     }
 
     function new_post_button() {
