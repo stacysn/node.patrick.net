@@ -58,9 +58,29 @@ var pages = {
 
     home : async function (state) {
 
-        results = await query('select sql_calc_found_rows * from posts where post_modified > date_sub(now(), interval 7 day) and post_approved=1 order by post_modified desc limit 0, 20', null, state)
+        state.posts = 
+            await query('select sql_calc_found_rows * from posts where post_modified > date_sub(now(), interval 7 day) and post_approved=1 order by post_modified desc limit 0, 20', null, state)
         state.message   = 'Free form forum'
-        state.posts = results
+        send_html(200, render(state), state)
+    },
+        
+    topics : async function (state) {
+
+        state.topics =
+            await query('select post_topic, count(*) as c from posts where length(post_topic) > 0 group by post_topic having c >=3 order by c desc',
+                        null, state)
+        state.message = 'Topics'
+        send_html(200, render(state), state)
+    },
+        
+    topic : async function (state) {
+
+        var topic = url.parse(state.req.url).path.split('/')[2].replace(/\W/g,'') // like /topics/housing
+
+        state.posts =
+            await query('select sql_calc_found_rows * from posts where post_topic = ? and post_approved=1 order by post_modified desc limit 0, 20',
+                        [topic], state)
+        state.message = '#' + topic
         send_html(200, render(state), state)
     },
         
@@ -528,26 +548,37 @@ function render(state) { // The render function never does IO. It simply assembl
 
         home : () => {
             return html(
-                header(
-                    top_topics(),
-                    new_post_button()
-                ),
                 alert(),
                 midpage(
                     h1(),
                     post_list()
-                ),
-                footer()
+                )
+            )
+        },
+
+        topics : () => {
+            return html(
+                midpage(
+                    h1(),
+                    topic_list()
+                )
+            )
+        },
+
+        topic : () => {
+            return html(
+                midpage(
+                    h1(),
+                    post_list()
+                )
             )
         },
 
         users : () => {
             return html(
-                header(),
                 midpage(
                     user_list()
-                ),
-                footer()
+                )
             )
         },
 
@@ -557,34 +588,28 @@ function render(state) { // The render function never does IO. It simply assembl
 
         message : () => {
             return html(
-                header(),
                 midpage(
                     h1(),
                     text()
-                ),
-                footer()
+                )
             )
         },
 
         postform : () => {
             return html(
-                header(),
                 midpage(
                     postform()
-                ),
-                footer()
+                )
             )
         },
 
         post : () => {
             return html(
-                header(),
                 midpage(
                     post(),
                     comment_list(),
                     commentbox()
-                ),
-                footer()
+                )
             )
         },
 
@@ -612,18 +637,20 @@ function render(state) { // The render function never does IO. It simply assembl
             </head>
             <body>
                 <div class="container" >
+                ${ header() }
                 ${ args.join('') }
+                ${ footer() }
                 </div>
             </body>
             <script async src="/jquery.min.js"></script><!-- ${'\n' + queries + '\n'} -->
             </html>`
     }
 
-    function header(...args) {
+    function header() {
         return `<div class='comment' >
             <div style='float:right' >${ icon_or_loginprompt() }</div>
             <a href='/' ><h1 class='sitename' title='back to home page' >${ conf.domain }</h1></a><br>
-            ${ args.join('<br>') }
+            ${ top_topics() + '<br>' + new_post_button() }
             </div>`
     }
 
@@ -814,10 +841,20 @@ function render(state) { // The render function never does IO. It simply assembl
     function top_topics() {
         if (state.top_topics) {
             var formatted = state.top_topics.map( (item) => {
-                return `<a href='/topics/${ item.post_topic }'>#${ item.post_topic }</a>`
+                return `<a href='/topic/${ item.post_topic }'>#${ item.post_topic }</a>`
             })
 
             return formatted.join(' ') + ` <a href='/topics/'>more&raquo;</a>`
+        }
+    }
+
+    function topic_list() {
+        if (state.topics) {
+            var formatted = state.topics.map( (item) => {
+                return `<a href='/topic/${ item.post_topic }'>#${ item.post_topic }</a>`
+            })
+
+            return formatted.join(' ')
         }
     }
 
