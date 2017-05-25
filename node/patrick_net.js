@@ -407,6 +407,7 @@ function render(state) {
                 post_data.comment_date     = new Date().toISOString().slice(0, 19).replace('T', ' ') // mysql datetime format
 
                 await query('update users set user_last_comment_ip = ? where user_id = ?', [state.ip, state.user.user_id], state)
+                await query('update posts set post_modified = ? where post_id = ?', [post_data.comment_date, post_data.comment_post_id], state)
 
                 var results = await query('insert into comments set ?', post_data, state)
 
@@ -415,8 +416,7 @@ function render(state) {
 
                 if (results.length) state.comment = results[0]
 
-                let content =  comment(state.comment)
-                send_html(200, content, state)
+                send_html(200, comment(state.comment), state)
             }
         },
 
@@ -573,6 +573,117 @@ function render(state) {
         },
     }
 
+    function alert() {
+        return state.alert_content ? `<script type='text/javascript'> alert('${ state.alert_content }'); </script>` : ''
+    }
+
+    function comment(c) {
+        var u = c.user_name ? `<a href='/users/${c.user_name}'>${c.user_name}</a>` : 'anonymous'
+
+        if (state.user) {
+            var del = state.user.user_id == c.comment_author ?
+                `<a href='#' onclick="$.get('/delete/${ c.comment_id }', function() { $('#${ c.comment_id }').remove() });return false">delete</a>` : ''
+        }
+
+        return `<div class="comment" id="${ c.comment_id }" >${ u } ${ format_date(c.comment_date) } ${ del }<br>${ c.comment_content }</div>`
+    }
+
+    function commentbox() {
+        return `
+        <div  id='newcomment' ></div>
+        <form id='commentform' >
+            <textarea            name='comment_content'    class='form-control' rows='10' placeholder='write a comment...' ></textarea><p>
+            <input type='hidden' name='comment_post_id' value='${ state.post.post_id }' />
+            <button class='btn btn-success btn-sm'
+                onclick="$.post('/new_comment', $('#commentform').serialize()).done(function(data) {
+                    if (data) $('#newcomment').append(data)
+                    document.getElementById('commentform').reset() // clear the textbox
+                })
+                return false" >submit</button>
+        </form>`
+    }
+
+    function comment_list() {
+        if (state.comments) {
+            var formatted = state.comments.map( (item) => {
+                return comment(item)
+            })
+
+            return formatted.join('')
+        }
+    }
+
+    function footer() {
+        return `
+            <p>
+            <center>
+            <a href='/'>home</a> &nbsp;
+            <a href='#'>top</a> &nbsp;
+            <a href="/topics">topics</a> &nbsp;
+            <a href="/users">users</a> &nbsp;
+            <a href="/about">about</a> &nbsp;
+            <a href='mailto:${ conf.admin_email }' >contact</a> &nbsp;
+            `
+    }
+
+    function format_date(gmt_date) { // create localized date string from gmt date out of mysql
+        var utz = state.user ? state.user.user_timezone : 'America/Los_Angeles'
+        return moment(Date.parse(gmt_date)).tz(utz).format('YYYY MMMM Do h:mma z')
+    }
+
+    function header() {
+        return `<div class='comment' >
+            <div style='float:right' >${ icon_or_loginprompt() }</div>
+            <a href='/' ><h1 class='sitename' title='back to home page' >${ conf.domain }</h1></a><br>
+            ${ top_topics() + '<br>' + new_post_button() }
+            </div>`
+    }
+
+    function h1() {
+        return `<h1>${ state.message }</h1>`
+    }
+
+    function html(...args) {
+
+        var queries = state.queries.sortByProp('ms').map( (item) => { return `${ item.ms }ms ${ item.sql }` }).join('\n')
+
+        return `<!DOCTYPE html><html lang="en">
+            <head>
+            <link href='/${ conf.stylesheet }' rel='stylesheet' type='text/css' />
+            <link rel='icon' href='/favicon.ico' />
+            <meta charset='utf-8' />
+            <meta name='description' content='${ conf.description }' />
+            <meta name='viewport' content='width=device-width, initial-scale=1, shrink-to-fit=no' />
+            <title>${ conf.domain }</title>
+            </head>
+            <body>
+                <div class="container" >
+                ${ header() }
+                ${ args.join('') }
+                ${ footer() }
+                </div>
+            </body>
+            <script async src="/jquery.min.js"></script><!-- ${'\n' + queries + '\n'} -->
+            </html>`
+    }
+
+    function icon_or_loginprompt() {
+        if (state.user) return id_box()
+        else            return loginprompt()
+    }
+
+    function id_box() {
+
+        var img = user_icon(state.user)
+
+        return `
+            <div id='status' >
+                <a href='/users/${state.user.user_name}' >${img} ${state.user.user_name}</a>
+                <p>
+                <a href='#' onclick="$.get('/logout', function(data) { $('#status').html(data) });return false">logout</a>
+            </div>`
+    }
+
     async function login(req, res, state, db, email, password) {
 
         var results = await query('select * from users where user_email = ? and user_pass = ?', [email, md5(password)], state)
@@ -611,61 +722,6 @@ function render(state) {
         if (db) db.release()
     }
 
-    //////////////////////////////////////// end of pages; all html is below ////////////////////////////////////////
-
-    function html(...args) {
-
-        var queries = state.queries.sortByProp('ms').map( (item) => { return `${ item.ms }ms ${ item.sql }` }).join('\n')
-
-        return `<!DOCTYPE html><html lang="en">
-            <head>
-            <link href='/${ conf.stylesheet }' rel='stylesheet' type='text/css' />
-            <link rel='icon' href='/favicon.ico' />
-            <meta charset='utf-8' />
-            <meta name='description' content='${ conf.description }' />
-            <meta name='viewport' content='width=device-width, initial-scale=1, shrink-to-fit=no' />
-            <title>${ conf.domain }</title>
-            </head>
-            <body>
-                <div class="container" >
-                ${ header() }
-                ${ args.join('') }
-                ${ footer() }
-                </div>
-            </body>
-            <script async src="/jquery.min.js"></script><!-- ${'\n' + queries + '\n'} -->
-            </html>`
-    }
-
-    function header() {
-        return `<div class='comment' >
-            <div style='float:right' >${ icon_or_loginprompt() }</div>
-            <a href='/' ><h1 class='sitename' title='back to home page' >${ conf.domain }</h1></a><br>
-            ${ top_topics() + '<br>' + new_post_button() }
-            </div>`
-    }
-
-    function icon_or_loginprompt() {
-        if (state.user) return id_box()
-        else            return loginprompt()
-    }
-
-    function user_icon(u) {
-        return u.user_icon ? `<img src='${u.user_icon}' width='${u.user_icon_width}' height='${u.user_icon_height}' >` : ''
-    }
-
-    function id_box() {
-
-        var img = user_icon(state.user)
-
-        return `
-            <div id='status' >
-                <a href='/users/${state.user.user_name}' >${img} ${state.user.user_name}</a>
-                <p>
-                <a href='#' onclick="$.get('/logout', function(data) { $('#status').html(data) });return false">logout</a>
-            </div>`
-    }
-
     function loginprompt() {
 
         return `
@@ -691,30 +747,6 @@ function render(state) {
             </div>`
     }
 
-    function tabs() {
-        return `<ul class='nav nav-tabs'>
-            <li class='active' > <a href='/?order=active'   title='most recent comments' >active</a></li>
-            <li                > <a href='/?order=comments' title='most comments'        >comments</a></li>
-            <li                > <a href='/?order=new'      title='newest'               >new</a></li>
-            <li                > <a href='/?order=private'  title='your private chats'   >private</a></li>
-            </ul>`
-    }
-
-    function registerform() {
-        return `
-        <div id='registerform' >
-            <h1>register</h1>
-            <form action='/registration' method='post'>
-            <div >
-                <div class='form-group'><input type='text' name='user_name' placeholder='choose username' class='form-control' id='user_name' ></div>
-                <div class='form-group'><input type='text' name='user_email'      placeholder='email post'   class='form-control'                      ></div>
-            </div>
-            <button type='submit' id='submit' class='btn btn-success btn-sm'>submit</button>
-            </form>
-            <script type="text/javascript">document.getElementById('user_name').focus();</script>
-        </div>`
-    }
-
     function lostpwform() {
         var show = state.login_failed_email ? `value='${ state.login_failed_email }'` : `placeholder='email post'`
 
@@ -729,55 +761,19 @@ function render(state) {
         </div>`
     }
 
-    function postform() { // need to add conditional display of user-name chooser for non-logged in users
-        return `
-        <h1>new post</h1>
-        <form action='/new_post' method='post' >
-            <div class='form-group'><input name='post_title' type='text' class='form-control' placeholder='title' id='title' ></div>
-            <textarea class='form-control' name='post_content' rows='12' id='content' placeholder='write something...' ></textarea><p>
-            <button type='submit' id='submit' class='btn btn-success btn-sm'>submit</button>
-        </form>
-        <script type="text/javascript">document.getElementById('title').focus();</script>`
-    }
-
-    function commentbox() {
-        return `
-        <div  id='newcomment' ></div>
-        <form id='commentform' >
-            <textarea            name='comment_content'    class='form-control' rows='10' placeholder='write a comment...' ></textarea><p>
-            <input type='hidden' name='comment_post_id' value='${ state.post.post_id }' />
-            <button class='btn btn-success btn-sm'
-                onclick="$.post('/new_comment', $('#commentform').serialize()).done(function(data) {
-                    if (data) $('#newcomment').append(data)
-                    document.getElementById('commentform').reset() // clear the textbox
-                })
-                return false" >submit</button>
-        </form>`
-    }
-
-    function h1() {
-        return `<h1>${ state.message }</h1>`
-    }
-
-    function text() {
-        return `${ state.text || '' }`
-    }
-
-    function comment(c) {
-        var u = c.user_name ? `<a href='/users/${c.user_name}'>${c.user_name}</a>` : 'anonymous'
-
-        if (state.user) {
-            var del = state.user.user_id == c.comment_author ?
-                `<a href='#' onclick="$.get('/delete/${ c.comment_id }', function() { $('#${ c.comment_id }').remove() });return false">delete</a>` : ''
-        }
-
-        return `<div class="comment" id="${ c.comment_id }" >${ u } ${ format_date(c.comment_date) } ${ del }<br>${ c.comment_content }</div>`
-    }
-
     function midpage(...args) { // just an id so we can easily swap out the middle of the page
         return `<div id="midpage" >
             ${ args.join('') }
             </div>`
+    }
+
+    function new_post_button() {
+        return '<a href="/postform" class="btn btn-success btn-sm" title="start writing about a new post" ><b>new post</b></a>'
+    }
+
+    function post_link(post) {
+        slug = slugify(`${post.post_title}`)
+        return `<a href="/post/${post.post_id}/${slug}">${post.post_title}</a>`
     }
 
     function post_list() {
@@ -795,12 +791,51 @@ function render(state) {
 
     function post() {
         var link = post_link(state.post)
-        return `<h1>${ link }</h1>`
+
+        return `<div class='comment' ><h1>${ link }</h1>${ state.post.post_content }</div>`
     }
 
-    function post_link(post) {
-        slug = slugify(`${post.post_title}`)
-        return `<a href="/post/${post.post_id}/${slug}">${post.post_title}</a>`
+    function postform() { // need to add conditional display of user-name chooser for non-logged in users
+        return `
+        <h1>new post</h1>
+        <form action='/new_post' method='post' >
+            <div class='form-group'><input name='post_title' type='text' class='form-control' placeholder='title' id='title' ></div>
+            <textarea class='form-control' name='post_content' rows='12' id='content' placeholder='write something...' ></textarea><p>
+            <button type='submit' id='submit' class='btn btn-success btn-sm'>submit</button>
+        </form>
+        <script type="text/javascript">document.getElementById('title').focus();</script>`
+    }
+
+    function registerform() {
+        return `
+        <div id='registerform' >
+            <h1>register</h1>
+            <form action='/registration' method='post'>
+            <div >
+                <div class='form-group'><input type='text' name='user_name' placeholder='choose username' class='form-control' id='user_name' ></div>
+                <div class='form-group'><input type='text' name='user_email'      placeholder='email post'   class='form-control'                      ></div>
+            </div>
+            <button type='submit' id='submit' class='btn btn-success btn-sm'>submit</button>
+            </form>
+            <script type="text/javascript">document.getElementById('user_name').focus();</script>
+        </div>`
+    }
+
+    function slugify(s) { // url-safe pretty chars only; not used for navigation, only for seo and humans
+        return s.replace(/\W/g,'-').toLowerCase().replace(/-+/,'-').replace(/^-+|-+$/,'')
+    }
+
+    function tabs() {
+        return `<ul class='nav nav-tabs'>
+            <li class='active' > <a href='/?order=active'   title='most recent comments' >active</a></li>
+            <li                > <a href='/?order=comments' title='most comments'        >comments</a></li>
+            <li                > <a href='/?order=new'      title='newest'               >new</a></li>
+            <li                > <a href='/?order=private'  title='your private chats'   >private</a></li>
+            </ul>`
+    }
+
+    function text() {
+        return `${ state.text || '' }`
     }
 
     function user_list() {
@@ -818,15 +853,6 @@ function render(state) {
         else formatted = []
 
         return formatted.join('')
-    }
-
-    function user_page(u) {
-        var img = user_icon(u)
-        return `<center><a href='/users/${ u.user_name }' >${ img }</a><h2>${ u.user_name }</h2></p>joined ${ u.user_registered }</center>`
-    }
-
-    function slugify(s) { // url-safe pretty chars only; not used for navigation, only for seo and humans
-        return s.replace(/\W/g,'-').toLowerCase().replace(/-+/,'-').replace(/^-+|-+$/,'')
     }
 
     function top_topics() {
@@ -849,40 +875,13 @@ function render(state) {
         }
     }
 
-    function new_post_button() {
-        return '<a href="/postform" class="btn btn-success btn-sm" title="start writing about a new post" ><b>add new post</b></a>'
+    function user_icon(u) {
+        return u.user_icon ? `<img src='${u.user_icon}' width='${u.user_icon_width}' height='${u.user_icon_height}' >` : ''
     }
 
-    function comment_list() {
-        if (state.comments) {
-            var formatted = state.comments.map( (item) => {
-                return comment(item)
-            })
-
-            return formatted.join('')
-        }
-    }
-
-    function footer() {
-        return `
-            <p>
-            <center>
-            <a href='/'>home</a> &nbsp;
-            <a href='#'>top</a> &nbsp;
-            <a href="/topics">topics</a> &nbsp;
-            <a href="/users">users</a> &nbsp;
-            <a href="/about">about</a> &nbsp;
-            <a href='mailto:${ conf.admin_email }' >contact</a> &nbsp;
-            `
-    }
-
-    function alert() {
-        return state.alert_content ? `<script type='text/javascript'> alert('${ state.alert_content }'); </script>` : ''
-    }
-
-    function format_date(gmt_date) { // create localized date string from gmt date out of mysql
-        var utz = state.user ? state.user.user_timezone : 'America/Los_Angeles'
-        return moment(Date.parse(gmt_date)).tz(utz).format('YYYY MMMM Do h:mma z')
+    function user_page(u) {
+        var img = user_icon(u)
+        return `<center><a href='/users/${ u.user_name }' >${ img }</a><h2>${ u.user_name }</h2></p>joined ${ u.user_registered }</center>`
     }
 
     return pages[state.page](state)

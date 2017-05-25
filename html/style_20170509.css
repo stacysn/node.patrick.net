@@ -147,8 +147,9 @@ dfn {
   font-style: italic;
 }
 h1 {
-  margin: .67em 0;
-  font-size: 2em;
+    font-size     : 2em;
+    margin-bottom : 0px;
+    margin-top    : 0px;
 }
 mark {
   color: #000;
@@ -396,15 +397,6 @@ h6 .small,
   font-weight: normal;
   line-height: 1;
   color: #777;
-}
-h1,
-.h1,
-h2,
-.h2,
-h3,
-.h3 {
-  margin-top: 20px;
-  margin-bottom: 10px;
 }
 h1 small,
 .h1 small,
