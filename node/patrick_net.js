@@ -40,8 +40,6 @@ async function run(req, res) {
         res     : res,
     }
 
-    if (typeof pages[state.page] !== 'function') return send_html(404, `No page like "${req.url}"`, state)
-
     try {
         await connect_to_db(state)
         await block_countries(state)
@@ -49,236 +47,10 @@ async function run(req, res) {
         await collect_post_data(state)
         await set_user(state)
         await top_topics(state)
-        await pages[state.page](state)
+        await render(state)
     }
-    catch(e) { send_html(e.code, e.message, state) }
+    catch(e) { send_html(500, e.message, state) }
 }
-
-var pages = {
-
-    home : async function (state) {
-
-        state.posts = 
-            await query('select sql_calc_found_rows * from posts where post_modified > date_sub(now(), interval 7 day) and post_approved=1 order by post_modified desc limit 0, 20', null, state)
-        state.message   = 'Free form forum'
-        send_html(200, render(state), state)
-    },
-        
-    topics : async function (state) {
-
-        state.topics =
-            await query('select post_topic, count(*) as c from posts where length(post_topic) > 0 group by post_topic having c >=3 order by c desc',
-                        null, state)
-        state.message = 'Topics'
-        send_html(200, render(state), state)
-    },
-        
-    topic : async function (state) {
-
-        var topic = url.parse(state.req.url).path.split('/')[2].replace(/\W/g,'') // like /topics/housing
-
-        state.posts =
-            await query('select sql_calc_found_rows * from posts where post_topic = ? and post_approved=1 order by post_modified desc limit 0, 20',
-                        [topic], state)
-        state.message = '#' + topic
-        send_html(200, render(state), state)
-    },
-        
-    users : async function (state) {
-
-        try {
-            var user_name = url.parse(state.req.url).path.split('/')[2].replace(/\W/g,'') // like /users/Patrick
-            var sql       = 'select * from users where user_name=?'
-            var sql_parms = [user_name]
-        }
-        catch(e) {
-            var sql       = 'select * from users limit 20' // no username given, so show them all
-            var sql_parms = null
-        }
-
-        state.users = await query(sql, sql_parms, state)
-        send_html(200, render(state), state)
-    },
-
-    about : async function (state) {
-        state.message = `About ${ conf.domain }`
-
-        state.text = `${ conf.domain } is the bomb!`
-
-        send_html(200, render(state), state)
-    },
-
-    postform : async function (state) { send_html(200, render(state), state) },
-
-    post : async function (state) { // show a single post
-
-        // get post's db row number from url, eg 47 from /post/47/slug-goes-here
-        var post_id = url.parse(state.req.url).path.split('/')[2].replace(/\D/g,'')
-
-        var results = await query('select * from posts where post_id=?', [post_id], state)
-
-        if (0 == results.length) send_html(404, `No post with id "${post_id}"`, state)
-        else {
-            state.post = results[0]
-
-            // now pick up the comment list for this post
-            var results = await query('select * from comments left join users on comment_author=user_id where comment_post_id = ? order by comment_date',
-                [post_id], state)
-
-            if (results.length) state.comments = results
-            send_html(200, render(state), state)
-        }
-    },
-
-    key_login : async function (state) {
-
-        key      = url.parse(state.req.url, true).query.key
-        password = md5(Date.now() + conf.nonce_secret).substring(0, 6)
-
-        // unfortunately a copy of home page sql
-        state.posts         = await query('select * from posts order by post_modified desc limit 20', null, state)
-        state.alert_content = `Your password is ${ password } and you are now logged in`
-        state.message       = 'Increasing fair play for buyers and sellers'
-        state.page          = 'home' // key_login generates home page html
-
-        var results = await query('select user_email from users where user_activation_key = ?', [key], state)
-
-        if (results.length) email = results[0].user_email
-        else {
-            message(`Darn, that key has already been used. Please try 'forgot password' if you need to log in.</a>`, state, state.res, state.db)
-            return
-        }
-
-        // erase key so it cannot be used again, and set new password
-        await query('update users set user_activation_key=null, user_pass=? where user_activation_key=?', [md5(password), key], state)
-
-        login(state.req, state.res, state, state.db, email, password)
-    },
-
-    post_login : async function (state) {
-        email    = state.post_data.email
-        password = state.post_data.password
-
-        login(state.req, state.res, state, state.db, email, password)
-    },
-
-    logout : async function (state) {
-
-        state.user = null
-        var d      = new Date()
-        var html   = render(state)
-
-        // you must use the undocumented "array" feature of writeHead to set multiple cookies, because json
-		var headers = [
-			['Content-Length' , html.length                               ],
-			['Content-Type'   , 'text/html'                               ],
-			['Expires'        , d.toUTCString()                           ],
-			['Set-Cookie'     , `${ conf.usercookie }=_; Expires=${d}; Path=/`],
-			['Set-Cookie'     , `${ conf.pwcookie   }=_; Expires=${d}; Path=/`]
-		] // do not use 'secure' parm with cookie or will be unable to test login in dev, bc dev is http only
-
-        state.res.writeHead(200, headers)
-        state.res.end(html)
-        if (state.db) state.db.release()
-    },
-
-    registration : async function (state) {
-
-        Object.keys(state.post_data).map(key => { state.post_data[key] = strip_tags(state.post_data[key]) })
-
-        if (/\W/.test(state.post_data.user_name)) return message('Please go back and enter username consisting only of letters', state, state.res, state.db);
-        if (!/^\w.*@.+\.\w+$/.test(state.post_data.user_email)) return message('Please go back and enter a valid email',  state)
-
-        var results = await query('select * from users where user_email = ?', [state.post_data.user_email], state)
-
-        if (results[0]) {
-            message(`That email is already registered. Please use the "forgot password" link above.</a>`, state)
-            return
-        }
-        else {
-            var results = await query('select * from users where user_name = ?', [state.post_data.user_name], state)
-
-            if (results[0]) return message(`That user name is already registered. Please choose a different one.</a>`, state)
-            else {
-                await query('insert into users set ?', state.post_data, state)
-                send_login_link(state.req, state.res, state, state.db)
-            }
-        }
-    },
-
-    recoveryemail : async function (state) {
-
-        Object.keys(state.post_data).map(key => { state.post_data[key] = strip_tags(state.post_data[key]) })
-
-        if (!/^\w.*@.+\.\w+$/.test(state.post_data.user_email)) { message('Please go back and enter a valid email post',  state); return }
-
-        send_login_link(state.req, state.res, state, state.db)
-    },
-
-    new_post : async function (state) {
-
-        post_data = state.post_data
-        Object.keys(post_data).map(key => { post_data[key] = strip_tags(post_data[key]) })
-
-        post_data.post_approved = 1 // create a function to check content before approving!
-
-        var results = await query('insert into posts set ?, post_modified=now()', post_data, state)
-
-        redirect(`/post/${results.insertId}`, state.res, state.db)
-    },
-
-    new_comment : async function (state) {
-
-        post_data = state.post_data
-        Object.keys(post_data).map(key => { post_data[key] = strip_tags(post_data[key]) })
-
-        if (!post_data.comment_content) { send_html(200, '', state); return } // empty comment
-
-        // rate limit by user's ip address
-        var results = await query('select (unix_timestamp(now()) - unix_timestamp(user_last_comment_time)) as ago from users where user_last_comment_time is not null and user_last_comment_ip = ? order by user_last_comment_time desc limit 1',
-            [state.ip], state)
-
-        if (results.length && results[0].ago < 2) { // this ip already commented less than two seconds ago
-            state.page          = 'alert'
-            state.alert_content = 'You are posting comments too quickly! Please slow down.'
-            send_html(200, render(state), state)
-        }
-        else {
-
-            post_data.comment_author   = state.user ? state.user.user_id : 0
-            post_data.comment_content  = post_data.comment_content.linkify() // linkify, imagify, etc
-            post_data.comment_dislikes = 0
-            post_data.comment_likes    = 0
-            post_data.comment_approved = 1
-            post_data.comment_date     = new Date().toISOString().slice(0, 19).replace('T', ' ') // mysql datetime format
-
-            await query('update users set user_last_comment_ip = ? where user_id = ?', [state.ip, state.user.user_id], state)
-
-            var results = await query('insert into comments set ?', post_data, state)
-
-            // now select the inserted row so that we pick up the comment_date time and user data for displaying the comment
-            var results = await query('select * from comments left join users on comment_author=user_id where comment_id = ?', [results.insertId], state)
-
-            if (results.length) state.comment = results[0]
-            send_html(200, render(state), state)
-        }
-    },
-
-    delete : async function (state) { // delete a comment
-
-        var comment_id = url.parse(state.req.url).path.split('/')[2].replace(/\D/g,'') // get comment db row number from url, eg 47 from /delete/47
-
-        // check that current user has permission to delete this comment
-
-        if (!state.user) send_html(200, render(state), state) // do nothing if not logged in
-
-        // delete comment only if current user is comment_author
-        await query('delete from comments where comment_id = ? and comment_author = ?', [comment_id, state.user.user_id], state)
-
-        send_html(200, render(state), state)
-    },
-
-} /////////////////////////////////////// end of pages{} definition ///////////////////////////////////////
 
 function connect_to_db(state) {
 
@@ -371,44 +143,6 @@ async function set_user(state) { // update state with whether they are logged in
     catch(e) { // no valid cookie
         state.user = null
     }
-}
-
-async function login(req, res, state, db, email, password) {
-
-    var results = await query('select * from users where user_email = ? and user_pass = ?', [email, md5(password)], state)
-
-    if (0 == results.length) {
-        state.login_failed_email = email
-        state.user               = null
-        var user_id              = ''
-        var user_pass            = ''
-    }
-    else {
-        state.login_failed_email = null
-        state.user               = results[0]
-        var user_id              = state.user.user_id
-        var user_pass            = state.user.user_pass
-    }
-
-    html = render(state)
-
-    var usercookie = `${ conf.usercookie }=${ user_id   }`
-    var pwcookie   = `${ conf.pwcookie   }=${ user_pass }`
-    var d		   = new Date()
-    var decade	   = new Date(d.getFullYear()+10, d.getMonth(), d.getDate()).toUTCString()
-
-    // you must use the undocumented "array" feature of writeHead to set multiple cookies, because json
-    var headers = [
-        ['Content-Length' , html.length                               ],
-        ['Content-Type'   , 'text/html'                               ],
-        ['Expires'        , d.toUTCString()                           ],
-        ['Set-Cookie'     , `${usercookie}; Expires=${decade}; Path=/`],
-        ['Set-Cookie'     , `${pwcookie};   Expires=${decade}; Path=/`]
-    ] // do not use 'secure' parm with cookie or will be unable to test login in dev, bc dev is http only
-
-    res.writeHead(200, headers)
-    res.end(html)
-        if (db) db.release()
 }
 
 function redirect(redirect_to, res, db) {
@@ -542,52 +276,104 @@ Array.prototype.sortByProp = function(p){
     })
 }
 
-function render(state) { // The render function never does IO. It simply assembles a page from state. It does not change state.
+function render(state) {
 
     var pages = {
 
-        home : () => {
-            return html(
+        about : async function() {
+            state.message = `About ${ conf.domain }`
+            state.text = `${ conf.domain } is the bomb!`
+
+            let content = html(
+                midpage(
+                    h1(),
+                    text()
+                )
+            )
+
+            send_html(200, content, state)
+        },
+
+        alert : () => { let content =  alert()                },
+
+        delete : async function() { // delete a comment
+
+            var comment_id = url.parse(state.req.url).path.split('/')[2].replace(/\D/g,'') // get comment db row number from url, eg 47 from /delete/47
+
+            if (!state.user) send_html(200, content, state) // do nothing if not logged in
+
+            // delete comment only if current user is comment_author
+            await query('delete from comments where comment_id = ? and comment_author = ?', [comment_id, state.user.user_id], state)
+
+            send_html(200, '', state)
+        },
+
+        home : async function () {
+
+            let sql = `select sql_calc_found_rows * from posts
+                       where post_modified > date_sub(now(), interval 7 day) and post_approved=1
+                       order by post_modified desc limit 0, 20`
+
+            state.posts = await query(sql, null, state)
+
+            let content = html(
                 alert(),
                 midpage(
-                    h1(),
                     post_list()
                 )
             )
+
+            send_html(200, content, state)
         },
 
-        topics : () => {
-            return html(
-                midpage(
-                    h1(),
-                    topic_list()
-                )
-            )
+        key_login : async function() {
+
+            key      = url.parse(state.req.url, true).query.key
+            password = md5(Date.now() + conf.nonce_secret).substring(0, 6)
+
+            // unfortunately a copy of home page sql
+            state.posts         = await query('select * from posts order by post_modified desc limit 20', null, state)
+            state.alert_content = `Your password is ${ password } and you are now logged in`
+            state.message       = 'Increasing fair play for buyers and sellers'
+            state.page          = 'home' // key_login generates home page html
+
+            var results = await query('select user_email from users where user_activation_key = ?', [key], state)
+
+            if (results.length) email = results[0].user_email
+            else {
+                message(`Darn, that key has already been used. Please try 'forgot password' if you need to log in.</a>`, state, state.res, state.db)
+                return
+            }
+
+            // erase key so it cannot be used again, and set new password
+            await query('update users set user_activation_key=null, user_pass=? where user_activation_key=?', [md5(password), key], state)
+
+            login(state.req, state.res, state, state.db, email, password)
         },
 
-        topic : () => {
-            return html(
-                midpage(
-                    h1(),
-                    post_list()
-                )
-            )
-        },
+        logout : async function() {
 
-        users : () => {
-            return html(
-                midpage(
-                    user_list()
-                )
-            )
-        },
+            state.user = null
+            var d      = new Date()
+            var html   = loginprompt()
 
-        about : () => {
-            return pages.message()
+            // you must use the undocumented "array" feature of writeHead to set multiple cookies, because json
+            var headers = [
+                ['Content-Length' , html.length                               ],
+                ['Content-Type'   , 'text/html'                               ],
+                ['Expires'        , d.toUTCString()                           ],
+                ['Set-Cookie'     , `${ conf.usercookie }=_; Expires=${d}; Path=/`],
+                ['Set-Cookie'     , `${ conf.pwcookie   }=_; Expires=${d}; Path=/`]
+            ] // do not use 'secure' parm with cookie or will be unable to test login in dev, bc dev is http only
+
+            state.res.writeHead(200, headers)
+            state.res.end(html)
+            if (state.db) state.db.release()
         },
 
         message : () => {
-            return html(
+
+            let content = html(
                 midpage(
                     h1(),
                     text()
@@ -595,29 +381,234 @@ function render(state) { // The render function never does IO. It simply assembl
             )
         },
 
-        postform : () => {
-            return html(
+        new_comment : async function() {
+
+            post_data = state.post_data
+            Object.keys(post_data).map(key => { post_data[key] = strip_tags(post_data[key]) })
+
+            if (!post_data.comment_content) { send_html(200, '', state); return } // empty comment
+
+            // rate limit by user's ip address
+            var results = await query('select (unix_timestamp(now()) - unix_timestamp(user_last_comment_time)) as ago from users where user_last_comment_time is not null and user_last_comment_ip = ? order by user_last_comment_time desc limit 1',
+                [state.ip], state)
+
+            if (results.length && results[0].ago < 2) { // this ip already commented less than two seconds ago
+                state.page          = 'alert'
+                state.alert_content = 'You are posting comments too quickly! Please slow down.'
+                send_html(200, content, state)
+            }
+            else {
+
+                post_data.comment_author   = state.user ? state.user.user_id : 0
+                post_data.comment_content  = post_data.comment_content.linkify() // linkify, imagify, etc
+                post_data.comment_dislikes = 0
+                post_data.comment_likes    = 0
+                post_data.comment_approved = 1
+                post_data.comment_date     = new Date().toISOString().slice(0, 19).replace('T', ' ') // mysql datetime format
+
+                await query('update users set user_last_comment_ip = ? where user_id = ?', [state.ip, state.user.user_id], state)
+
+                var results = await query('insert into comments set ?', post_data, state)
+
+                // now select the inserted row so that we pick up the comment_date time and user data for displaying the comment
+                var results = await query('select * from comments left join users on comment_author=user_id where comment_id = ?', [results.insertId], state)
+
+                if (results.length) state.comment = results[0]
+
+                let content =  comment(state.comment)
+                send_html(200, content, state)
+            }
+        },
+
+        new_post : async function() {
+
+            post_data = state.post_data
+            Object.keys(post_data).map(key => { post_data[key] = strip_tags(post_data[key]) })
+
+            post_data.post_approved = 1 // create a function to check content before approving!
+
+            var results = await query('insert into posts set ?, post_modified=now()', post_data, state)
+
+            redirect(`/post/${results.insertId}`, state.res, state.db)
+        },
+
+        post : async function() { // show a single post
+
+            // get post's db row number from url, eg 47 from /post/47/slug-goes-here
+            var post_id = url.parse(state.req.url).path.split('/')[2].replace(/\D/g,'')
+
+            var results = await query('select * from posts where post_id=?', [post_id], state)
+
+            if (0 == results.length) send_html(404, `No post with id "${post_id}"`, state)
+            else {
+                state.post = results[0]
+
+                // now pick up the comment list for this post
+                var results = await query('select * from comments left join users on comment_author=user_id where comment_post_id = ? order by comment_date',
+                    [post_id], state)
+
+                if (results.length) state.comments = results
+
+                let content = html(
+                    midpage(
+                        post(),
+                        comment_list(),
+                        commentbox()
+                    )
+                )
+
+                send_html(200, content, state)
+            }
+        },
+
+        post_login : async function() {
+            email    = state.post_data.email
+            password = state.post_data.password
+
+            login(state.req, state.res, state, state.db, email, password)
+        },
+
+        postform : async function() {
+
+            let content = html(
                 midpage(
                     postform()
                 )
             )
+
+            send_html(200, content, state)
         },
 
-        post : () => {
-            return html(
+        recoveryemail : async function() {
+
+            Object.keys(state.post_data).map(key => { state.post_data[key] = strip_tags(state.post_data[key]) })
+
+            if (!/^\w.*@.+\.\w+$/.test(state.post_data.user_email)) { message('Please go back and enter a valid email post',  state); return }
+
+            send_login_link(state.req, state.res, state, state.db)
+        },
+
+        registration : async function() {
+
+            Object.keys(state.post_data).map(key => { state.post_data[key] = strip_tags(state.post_data[key]) })
+
+            if (/\W/.test(state.post_data.user_name)) return message('Please go back and enter username consisting only of letters', state, state.res, state.db);
+            if (!/^\w.*@.+\.\w+$/.test(state.post_data.user_email)) return message('Please go back and enter a valid email',  state)
+
+            var results = await query('select * from users where user_email = ?', [state.post_data.user_email], state)
+
+            if (results[0]) {
+                message(`That email is already registered. Please use the "forgot password" link above.</a>`, state)
+                return
+            }
+            else {
+                var results = await query('select * from users where user_name = ?', [state.post_data.user_name], state)
+
+                if (results[0]) return message(`That user name is already registered. Please choose a different one.</a>`, state)
+                else {
+                    await query('insert into users set ?', state.post_data, state)
+                    send_login_link(state.req, state.res, state, state.db)
+                }
+            }
+        },
+
+        topic : async function() {
+
+            var topic = url.parse(state.req.url).path.split('/')[2].replace(/\W/g,'') // like /topics/housing
+
+            let sql = 'select sql_calc_found_rows * from posts where post_topic = ? and post_approved=1 order by post_modified desc limit 0, 20'
+
+            state.posts = await query(sql, [topic], state)
+            state.message = '#' + topic
+        
+            let content = html(
                 midpage(
-                    post(),
-                    comment_list(),
-                    commentbox()
+                    h1(),
+                    post_list()
                 )
             )
+
+            send_html(200, content, state)
         },
 
-        alert       : () => { return  alert()                },
-        delete      : () => { return  ''                     },
-        logout      : () => { return  loginprompt()          },
-        post_login  : () => { return  icon_or_loginprompt()  },
-        new_comment : () => { return  comment(state.comment) },
+        topics : async function () {
+
+            let sql = 'select post_topic, count(*) as c from posts where length(post_topic) > 0 group by post_topic having c >=3 order by c desc'
+
+            state.topics = await query(sql, null, state)
+
+            state.message = 'Topics'
+        
+            let content = html(
+                midpage(
+                    h1(),
+                    topic_list()
+                )
+            )
+
+            send_html(200, content, state)
+        },
+
+        users : async function() {
+
+            try {
+                var user_name = url.parse(state.req.url).path.split('/')[2].replace(/\W/g,'') // like /users/Patrick
+                var sql       = 'select * from users where user_name=?'
+                var sql_parms = [user_name]
+            }
+            catch(e) {
+                var sql       = 'select * from users limit 20' // no username given, so show them all
+                var sql_parms = null
+            }
+
+            state.users = await query(sql, sql_parms, state)
+
+            let content = html(
+                midpage(
+                    user_list()
+                )
+            )
+
+            send_html(200, content, state)
+        },
+    }
+
+    async function login(req, res, state, db, email, password) {
+
+        var results = await query('select * from users where user_email = ? and user_pass = ?', [email, md5(password)], state)
+
+        if (0 == results.length) {
+            state.login_failed_email = email
+            state.user               = null
+            var user_id              = ''
+            var user_pass            = ''
+        }
+        else {
+            state.login_failed_email = null
+            state.user               = results[0]
+            var user_id              = state.user.user_id
+            var user_pass            = state.user.user_pass
+        }
+
+        html = icon_or_loginprompt()
+
+        var usercookie = `${ conf.usercookie }=${ user_id   }`
+        var pwcookie   = `${ conf.pwcookie   }=${ user_pass }`
+        var d		   = new Date()
+        var decade	   = new Date(d.getFullYear()+10, d.getMonth(), d.getDate()).toUTCString()
+
+        // you must use the undocumented "array" feature of writeHead to set multiple cookies, because json
+        var headers = [
+            ['Content-Length' , html.length                               ],
+            ['Content-Type'   , 'text/html'                               ],
+            ['Expires'        , d.toUTCString()                           ],
+            ['Set-Cookie'     , `${usercookie}; Expires=${decade}; Path=/`],
+            ['Set-Cookie'     , `${pwcookie};   Expires=${decade}; Path=/`]
+        ] // do not use 'secure' parm with cookie or will be unable to test login in dev, bc dev is http only
+
+        res.writeHead(200, headers)
+        res.end(html)
+        if (db) db.release()
     }
 
     //////////////////////////////////////// end of pages; all html is below ////////////////////////////////////////
@@ -878,6 +869,7 @@ function render(state) { // The render function never does IO. It simply assembl
             <center>
             <a href='/'>home</a> &nbsp;
             <a href='#'>top</a> &nbsp;
+            <a href="/topics">topics</a> &nbsp;
             <a href="/users">users</a> &nbsp;
             <a href="/about">about</a> &nbsp;
             <a href='mailto:${ conf.admin_email }' >contact</a> &nbsp;
@@ -893,6 +885,6 @@ function render(state) { // The render function never does IO. It simply assembl
         return moment(Date.parse(gmt_date)).tz(utz).format('YYYY MMMM Do h:mma z')
     }
 
-    return pages[state.page]()
+    return pages[state.page](state)
 
 } // end of render
