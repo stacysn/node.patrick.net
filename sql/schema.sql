@@ -1,5 +1,4 @@
--- created with "mysqldump -d -ukillelea -p$mysql_password killelea" 
---
+-- create with: mysqldump -d -ukillelea -p$mysql_password killelea
 -- MySQL dump 10.13  Distrib 5.5.40-36.1, for debian-linux-gnu (i686)
 --
 -- Host: localhost    Database: killelea
@@ -56,7 +55,7 @@ CREATE TABLE `comments` (
   KEY `user_ID_index` (`comment_author`),
   KEY `comment_karma_index` (`comment_likes`),
   FULLTEXT KEY `comment_content_index` (`comment_content`)
-) ENGINE=MyISAM AUTO_INCREMENT=1405371 DEFAULT CHARSET=latin1;
+) ENGINE=MyISAM AUTO_INCREMENT=1411405 DEFAULT CHARSET=latin1;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -137,7 +136,7 @@ DROP TABLE IF EXISTS `onlines`;
 /*!40101 SET character_set_client = utf8 */;
 CREATE TABLE `onlines` (
   `online_user_id` bigint(20) unsigned NOT NULL,
-  `online_username` varchar(16) NOT NULL,
+  `online_username` varchar(40) NOT NULL,
   `online_last_view` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`online_user_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
@@ -178,7 +177,7 @@ CREATE TABLE `posts` (
   KEY `post_topic_index` (`post_topic`),
   KEY `post_private_index` (`post_private`),
   FULLTEXT KEY `post_title_content_index` (`post_title`,`post_content`)
-) ENGINE=MyISAM AUTO_INCREMENT=1305627 DEFAULT CHARSET=latin1;
+) ENGINE=MyISAM AUTO_INCREMENT=1306377 DEFAULT CHARSET=latin1;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -232,7 +231,7 @@ CREATE TABLE `referers` (
   UNIQUE KEY `uniqueness` (`referer_post_id`,`referer_url`),
   KEY `inbound_links_author_ID` (`referer_author_id`),
   KEY `inbound_links_post_ID` (`referer_post_id`)
-) ENGINE=InnoDB AUTO_INCREMENT=148755 DEFAULT CHARSET=latin1;
+) ENGINE=InnoDB AUTO_INCREMENT=161328 DEFAULT CHARSET=latin1;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -274,7 +273,7 @@ CREATE TABLE `shares` (
   PRIMARY KEY (`share_id`),
   KEY `share_sender_index` (`share_sender`),
   KEY `share_ip_index` (`share_ip`)
-) ENGINE=MyISAM AUTO_INCREMENT=3194 DEFAULT CHARSET=latin1;
+) ENGINE=MyISAM AUTO_INCREMENT=3197 DEFAULT CHARSET=latin1;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -309,6 +308,7 @@ CREATE TABLE `users` (
   `user_registered` datetime DEFAULT NULL,
   `user_activation_key` varchar(60) DEFAULT NULL,
   `user_name` varchar(250) DEFAULT NULL,
+  `user_previous_names` varchar(256) DEFAULT NULL,
   `user_last_comment_time` datetime DEFAULT NULL,
   `user_icon` varchar(160) DEFAULT NULL,
   `user_posts` int(11) unsigned DEFAULT '0',
@@ -344,7 +344,7 @@ CREATE TABLE `users` (
   KEY `user_comments_index` (`user_comments`),
   KEY `last_comment_ip_index` (`user_last_comment_ip`),
   KEY `realname_index` (`user_realname`)
-) ENGINE=MyISAM AUTO_INCREMENT=126719 DEFAULT CHARSET=latin1;
+) ENGINE=MyISAM AUTO_INCREMENT=126933 DEFAULT CHARSET=latin1;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -374,4 +374,4 @@ CREATE TABLE `whitelists` (
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2017-05-18 21:48:43
+-- Dump completed on 2017-05-25 18:35:19
