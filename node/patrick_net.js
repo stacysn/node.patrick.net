@@ -51,7 +51,7 @@ async function run(req, res) { // handle a single http request
         await set_user(state)
         await render(state)
     }
-    catch(e) { send_html(500, e.message, state) }
+    catch(e) { console.log(e); send_html(500, e.message, state) }
 }
 
 function get_connection_from_pool(state) {
@@ -159,7 +159,7 @@ function redirect(redirect_to, res, db) {
 function message(message, state) {
     state.page    = 'message'
     state.message =  message
-    send_html(200, render(state), state)
+    render(state)
 }
 
 function send_html(code, html, state) {
@@ -211,7 +211,7 @@ async function send_login_link(req, res, state, db) {
 
     if (results.changedRows) {
 
-        message('Please check your email for the login link', state, res, db)
+        message('Please check your email for the login link', state)
 
         let mailOptions = {
             from:    conf.admin_email,
@@ -225,7 +225,7 @@ async function send_login_link(req, res, state, db) {
             console.log('Message %s sent: %s', info.messageId, info.response);
         })
     }
-    else message(`Could not find user with email ${ state.post_data.user_email }`, state, res, db)
+    else message(`Could not find user with email ${ state.post_data.user_email }`, state)
 }
 
 String.prototype.linkify = function(ref) {
@@ -329,7 +329,7 @@ function render(state) {
 
             if (results.length) email = results[0].user_email
             else {
-                message(`Darn, that key has already been used. Please try 'forgot password' if you need to log in.</a>`, state, state.res, state.db)
+                message(`Darn, that key has already been used. Please try 'forgot password' if you need to log in.</a>`, state)
                 return
             }
 
@@ -343,7 +343,7 @@ function render(state) {
 
             state.user = null
             var d      = new Date()
-            var html   = loginprompt()
+            var html   = loginprompt(state)
 
             // you must use the undocumented "array" feature of res.writeHead to set multiple cookies, because json
             var headers = [
@@ -367,6 +367,8 @@ function render(state) {
                     text()
                 )
             )
+
+            send_html(200, content, state)
         },
 
         new_comment : async function() {
@@ -469,7 +471,7 @@ function render(state) {
 
             Object.keys(state.post_data).map(key => { state.post_data[key] = strip_tags(state.post_data[key]) })
 
-            if (!/^\w.*@.+\.\w+$/.test(state.post_data.user_email)) { message('Please go back and enter a valid email post',  state); return }
+            if (!/^\w.*@.+\.\w+$/.test(state.post_data.user_email)) return message('Please go back and enter a valid email',  state)
 
             send_login_link(state.req, state.res, state, state.db)
         },
@@ -478,7 +480,7 @@ function render(state) {
 
             Object.keys(state.post_data).map(key => { state.post_data[key] = strip_tags(state.post_data[key]) })
 
-            if (/\W/.test(state.post_data.user_name)) return message('Please go back and enter username consisting only of letters', state, state.res, state.db);
+            if (/\W/.test(state.post_data.user_name)) return message('Please go back and enter username consisting only of letters', state);
             if (!/^\w.*@.+\.\w+$/.test(state.post_data.user_email)) return message('Please go back and enter a valid email',  state)
 
             var results = await query('select * from users where user_email = ?', [state.post_data.user_email], state)
@@ -690,45 +692,6 @@ function render(state) {
         if (db) db.release()
     }
 
-    function loginprompt() {
-
-        return `
-            <div id='status' >
-                ${ state.login_failed_email ? 'login failed' : '' }
-                <form id='loginform' >
-                    <fieldset>
-                        <input id='email'    name='email'    placeholder='email'    type='text'     required >   
-                        <input id='password' name='password' placeholder='password' type='password' required >
-                    </fieldset>
-                    <fieldset>
-                        <input type='submit' id='submit' value='log in'
-                            onclick="$.post('/post_login', $('#loginform').serialize()).done(function(data) { $('#status').html(data) });return false">
-
-                        <a href='#' onclick="midpage.innerHTML = lostpwform.innerHTML;  return false" >forgot password</a>
-                        <a href='#' onclick="midpage.innerHTML = registerform.innerHTML; return false" >register</a>
-                    </fieldset>
-                </form>
-                <div style='display: none;' >
-                    ${ lostpwform()   }
-                    ${ registerform() }
-                </div>
-            </div>`
-    }
-
-    function lostpwform() {
-        var show = state.login_failed_email ? `value='${ state.login_failed_email }'` : `placeholder='email post'`
-
-        return `
-        <div id='lostpwform' >
-            <h1>reset password</h1>
-            <form action='/recoveryemail' method='post'>
-                <div class='form-group'><input type='text' name='user_email' ${ show } class='form-control' id='lost_pw_email' ></div>
-                <button type='submit' id='submit' class='btn btn-success btn-sm'>submit</button>
-            </form>
-            <script type="text/javascript">document.getElementById('lost_pw_email').focus();</script>
-        </div>`
-    }
-
     function midpage(...args) { // just an id so we can easily swap out the middle of the page
         return `<div id="midpage" >
             ${ args.join('') }
@@ -778,21 +741,6 @@ function render(state) {
             <button type='submit' id='submit' class='btn btn-success btn-sm'>submit</button>
         </form>
         <script type="text/javascript">document.getElementById('title').focus();</script>`
-    }
-
-    function registerform() {
-        return `
-        <div id='registerform' >
-            <h1>register</h1>
-            <form action='/registration' method='post'>
-            <div >
-                <div class='form-group'><input type='text' name='user_name' placeholder='choose username' class='form-control' id='user_name' ></div>
-                <div class='form-group'><input type='text' name='user_email'      placeholder='email post'   class='form-control'                      ></div>
-            </div>
-            <button type='submit' id='submit' class='btn btn-success btn-sm'>submit</button>
-            </form>
-            <script type="text/javascript">document.getElementById('user_name').focus();</script>
-        </div>`
     }
 
     function slugify(s) { // url-safe pretty chars only; not used for navigation, only for seo and humans
@@ -858,7 +806,7 @@ function footer(state) {
 
 function icon_or_loginprompt(state) {
     if (state.user) return id_box(state)
-    else            return loginprompt()
+    else            return loginprompt(state)
 }
 
 function id_box(state) {
@@ -871,6 +819,59 @@ function id_box(state) {
             <p>
             <a href='#' onclick="$.get('/logout', function(data) { $('#status').html(data) });return false">logout</a>
         </div>`
+}
+
+function loginprompt(state) {
+
+    return `
+        <div id='status' >
+            ${ state.login_failed_email ? 'login failed' : '' }
+            <form id='loginform' >
+                <fieldset>
+                    <input id='email'    name='email'    placeholder='email'    type='text'     required >   
+                    <input id='password' name='password' placeholder='password' type='password' required >
+                </fieldset>
+                <fieldset>
+                    <input type='submit' id='submit' value='log in'
+                        onclick="$.post('/post_login', $('#loginform').serialize()).done(function(data) { $('#status').html(data) });return false">
+                    <a href='#' onclick="midpage.innerHTML = lostpwform.innerHTML;  return false" >forgot password</a>
+                    <a href='#' onclick="midpage.innerHTML = registerform.innerHTML; return false" >register</a>
+                </fieldset>
+            </form>
+            <div style='display: none;' >
+                ${ lostpwform(state)   }
+                ${ registerform() }
+            </div>
+        </div>`
+}
+
+function lostpwform(state) {
+    var show = state.login_failed_email ? `value='${ state.login_failed_email }'` : `placeholder='email address'`
+
+    return `
+    <div id='lostpwform' >
+        <h1>reset password</h1>
+        <form action='/recoveryemail' method='post'>
+            <div class='form-group'><input type='text' name='user_email' ${ show } class='form-control' id='lost_pw_email' ></div>
+            <button type='submit' id='submit' class='btn btn-success btn-sm'>submit</button>
+        </form>
+        <script type="text/javascript">document.getElementById('lost_pw_email').focus();</script>
+    </div>`
+}
+
+function registerform() {
+    return `
+    <div id='registerform' >
+        <h1>register</h1>
+        <form action='/registration' method='post'>
+        <div >
+            <div class='form-group'><input type='text' name='user_name' placeholder='choose username' class='form-control' id='user_name' ></div>
+            <div class='form-group'><input type='text' name='user_email'      placeholder='email post'   class='form-control'                      ></div>
+        </div>
+        <button type='submit' id='submit' class='btn btn-success btn-sm'>submit</button>
+        </form>
+        <script type="text/javascript">document.getElementById('user_name').focus();</script>
+    </div>`
 }
 
 function topic_list(state) {
