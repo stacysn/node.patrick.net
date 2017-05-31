@@ -4,24 +4,24 @@ try { conf = require('./conf.json') } catch(e) { console.log(e.message); process
 
 cluster     = require('cluster')
 http        = require('http')
-moment      = require('moment-timezone') // via npm
-mysql       = require('mysql')           // via npm
-nodemailer  = require('nodemailer')      // via npm
+moment      = require('moment-timezone') // installed via npm
+mysql       = require('mysql')           // installed via npm
+nodemailer  = require('nodemailer')      // installed via npm
 os          = require('os')
 querystring = require('querystring')
 url         = require('url')
 
-var locks = {} // allow only one connection from db pool per ip post
+var locks = {} // global locks to allow only one db connection per ip; helps mitigate dos attacks
 
 pool = mysql.createPool(conf.db)
-pool.on('release', db => { // scan locks and delete the lock object which has db.threadId and any that are older than 2 seconds
+pool.on('release', db => { // delete the lock for the released db.threadId, and any locks that are older than 2 seconds
     Object.keys(locks).map(ip => {
         if (locks[ip].threadId == db.threadId || locks[ip].ts < (Date.now() - 2000)) delete locks[ip]
     })
 })
 
 if (cluster.isMaster) {
-    for (var i = 0; i < require('os').cpus().length; i++) cluster.fork();
+    for (var i = 0; i < require('os').cpus().length; i++) cluster.fork()
 
     cluster.on('exit', function(worker, code, signal) {
         console.log(`worker pid ${worker.process.pid} died with code ${code} from signal ${signal}, replacing that worker`)
@@ -29,19 +29,21 @@ if (cluster.isMaster) {
     })
 } else http.createServer(run).listen(conf.http_port)
 
+////////////////////////////////////////////////////////////////////////////////
 // end of top-level code; everything else is in a function
+////////////////////////////////////////////////////////////////////////////////
 
-async function run(req, res) {
+async function run(req, res) { // handle a single http request
 
     var state = { // start accumulation of state for this request
-        page    : url.parse(req.url).pathname.split('/')[1] || 'home',
+        page    : segments(req.url)[1] || 'home',
         queries : [],
         req     : req,
         res     : res,
     }
 
     try {
-        await connect_to_db(state)
+        await get_connection_from_pool(state)
         await block_countries(state)
         await block_nuked(state)
         await collect_post_data(state)
@@ -51,7 +53,7 @@ async function run(req, res) {
     catch(e) { send_html(500, e.message, state) }
 }
 
-function connect_to_db(state) {
+function get_connection_from_pool(state) {
 
     return new Promise(function(fulfill, reject) {
 
@@ -269,6 +271,10 @@ Array.prototype.sortByProp = function(p){
     })
 }
 
+function segments(path) { // return url path split up as array of cleaned \w strings
+    return url.parse(path).path.split('/').map(segment => segment.replace(/\W/g,''))
+}
+
 function render(state) {
 
     var pages = {
@@ -286,7 +292,7 @@ function render(state) {
 
         delete : async function() { // delete a comment
 
-            var comment_id = url.parse(state.req.url).path.split('/')[2].replace(/\D/g,'') // get comment db row number from url, eg 47 from /delete/47
+            var comment_id = segments(state.req.url)[2]
 
             if (!state.user) send_html(200, content, state) // do nothing if not logged in
 
@@ -414,7 +420,7 @@ function render(state) {
         post : async function() { // show a single post
 
             // get post's db row number from url, eg 47 from /post/47/slug-goes-here
-            var post_id = url.parse(state.req.url).path.split('/')[2].replace(/\D/g,'')
+            var post_id = segments(state.req.url)[2]
 
             var results = await query('select * from posts where post_id=?', [post_id], state)
 
@@ -493,7 +499,7 @@ function render(state) {
 
         topic : async function() {
 
-            var topic = url.parse(state.req.url).path.split('/')[2].replace(/\W/g,'') // like /topics/housing
+            var topic = segments(state.req.url)[2] // like /topics/housing
 
             let sql = 'select sql_calc_found_rows * from posts where post_topic = ? and post_approved=1 order by post_modified desc limit 0, 20'
 
@@ -531,7 +537,7 @@ function render(state) {
         users : async function() {
 
             try {
-                var user_name = url.parse(state.req.url).path.split('/')[2].replace(/\W/g,'') // like /users/Patrick
+                var user_name = segments(state.req.url)[2] // like /users/Patrick
                 var sql       = 'select * from users where user_name=?'
                 var sql_parms = [user_name]
             }
