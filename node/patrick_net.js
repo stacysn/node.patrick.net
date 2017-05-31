@@ -36,6 +36,7 @@ if (cluster.isMaster) {
 async function run(req, res) { // handle a single http request
 
     var state = { // start accumulation of state for this request
+        conf    : conf,
         page    : segments(req.url)[1] || 'home',
         queries : [],
         req     : req,
@@ -527,7 +528,18 @@ function render(state) {
             let content = await html(
                 midpage(
                     h1(),
-                    topic_list()
+                    topic_list(state)
+                )
+            )
+
+            send_html(200, content, state)
+        },
+
+        user  : async function() {
+
+            let content = await html(
+                midpage(
+                    await user_page(state)
                 )
             )
 
@@ -536,21 +548,9 @@ function render(state) {
 
         users : async function() {
 
-            try {
-                var user_name = segments(state.req.url)[2] // like /users/Patrick
-                var sql       = 'select * from users where user_name=?'
-                var sql_parms = [user_name]
-            }
-            catch(e) {
-                var sql       = 'select * from users limit 20' // no username given, so show them all
-                var sql_parms = null
-            }
-
-            state.users = await query(sql, sql_parms, state)
-
             let content = await html(
                 midpage(
-                    user_list()
+                    await user_list(state)
                 )
             )
 
@@ -576,7 +576,7 @@ function render(state) {
     }
 
     function comment(c) {
-        var u = c.user_name ? `<a href='/users/${c.user_name}'>${c.user_name}</a>` : 'anonymous'
+        var u = c.user_name ? `<a href='/user/${c.user_name}'>${c.user_name}</a>` : 'anonymous'
 
         if (state.user) {
             var del = state.user.user_id == c.comment_author ?
@@ -611,19 +611,6 @@ function render(state) {
         }
     }
 
-    function footer() {
-        return `
-            <p>
-            <center>
-            <a href='/'>home</a> &nbsp;
-            <a href='#'>top</a> &nbsp;
-            <a href="/topics">topics</a> &nbsp;
-            <a href="/users">users</a> &nbsp;
-            <a href="/about">about</a> &nbsp;
-            <a href='mailto:${ conf.admin_email }' >contact</a> &nbsp;
-            `
-    }
-
     function format_date(gmt_date) { // create localized date string from gmt date out of mysql
         var utz = state.user ? state.user.user_timezone : 'America/Los_Angeles'
         return moment(Date.parse(gmt_date)).tz(utz).format('YYYY MMMM Do h:mma z')
@@ -631,9 +618,9 @@ function render(state) {
 
     async function header() {
         return `<div class='comment' >
-            <div style='float:right' >${ icon_or_loginprompt() }</div>
+            <div style='float:right' >${ icon_or_loginprompt(state) }</div>
             <a href='/' ><h1 class='sitename' title='back to home page' >${ conf.domain }</h1></a><br>
-            ${ await top_topics() + '<br>' + new_post_button() }
+            ${ await top_topics(state) + '<br>' + new_post_button() }
             </div>`
     }
 
@@ -658,28 +645,11 @@ function render(state) {
                 <div class="container" >
                 ${ await header() }
                 ${ args.join('') }
-                ${ footer() }
+                ${ footer(state) }
                 </div>
             </body>
             <script async src="/jquery.min.js"></script><!-- ${'\n' + queries + '\n'} -->
             </html>`
-    }
-
-    function icon_or_loginprompt() {
-        if (state.user) return id_box()
-        else            return loginprompt()
-    }
-
-    function id_box() {
-
-        var img = user_icon(state.user)
-
-        return `
-            <div id='status' >
-                <a href='/users/${state.user.user_name}' >${img} ${state.user.user_name}</a>
-                <p>
-                <a href='#' onclick="$.get('/logout', function(data) { $('#status').html(data) });return false">logout</a>
-            </div>`
     }
 
     async function login(req, res, state, db, email, password) {
@@ -699,7 +669,7 @@ function render(state) {
             var user_pass            = state.user.user_pass
         }
 
-        html = icon_or_loginprompt()
+        html = icon_or_loginprompt(state)
 
         var usercookie = `${ conf.usercookie }=${ user_id   }`
         var pwcookie   = `${ conf.pwcookie   }=${ user_pass }`
@@ -734,8 +704,8 @@ function render(state) {
                         <input type='submit' id='submit' value='log in'
                             onclick="$.post('/post_login', $('#loginform').serialize()).done(function(data) { $('#status').html(data) });return false">
 
-                        <a href='#' onclick="document.getElementById('midpage').innerHTML = lostpwform.innerHTML;  return false" >forgot password</a>
-                        <a href='#' onclick="document.getElementById('midpage').innerHTML = registerform.innerHTML; return false" >register</a>
+                        <a href='#' onclick="midpage.innerHTML = lostpwform.innerHTML;  return false" >forgot password</a>
+                        <a href='#' onclick="midpage.innerHTML = registerform.innerHTML; return false" >register</a>
                     </fieldset>
                 </form>
                 <div style='display: none;' >
@@ -829,29 +799,35 @@ function render(state) {
         return s.replace(/\W/g,'-').toLowerCase().replace(/-+/,'-').replace(/^-+|-+$/,'')
     }
 
-    function tabs() {
-        return `<ul class='nav nav-tabs'>
-            <li class='active' > <a href='/?order=active'   title='most recent comments' >active</a></li>
-            <li                > <a href='/?order=comments' title='most comments'        >comments</a></li>
-            <li                > <a href='/?order=new'      title='newest'               >new</a></li>
-            <li                > <a href='/?order=private'  title='your private chats'   >private</a></li>
-            </ul>`
-    }
-
     function text() {
         return `${ state.text || '' }`
     }
 
-    function user_list() {
+    async function user_list(state) {
+
+        var sql       = 'select * from users limit 20'
+        var sql_parms = null
+
+        state.users = await query(sql, sql_parms, state)
+
+        var formatted = state.users.map( (item) => {
+            return `<div class="user" ><a href='/user/${ item.user_name }'>${ item.user_name }</a></div>`
+        })
+
+        return formatted.join('')
+    }
+
+    async function user_page(state) {
+
+        var user_name = segments(state.req.url)[2] // like /user/Patrick
+        var sql       = 'select * from users where user_name=?'
+        var sql_parms = [user_name]
+
+        state.users = await query(sql, sql_parms, state)
 
         if (state.users && state.users.length) {
             if (1 == state.users.length) {
-                return user_page(state.users[0])
-            }
-            else if (state.users.length > 1) {
-                var formatted = state.users.map( (item) => {
-                    return `<div class="user" ><a href='/users/${ item.user_name }'>${ item.user_name }</a></div>`
-                })
+                return format_user_page(state.users[0])
             }
         }
         else formatted = []
@@ -859,39 +835,78 @@ function render(state) {
         return formatted.join('')
     }
 
-	async function top_topics() {
-
-		state.top_topics =
-			await query('select post_topic, count(*) as c from posts where length(post_topic) > 0 group by post_topic order by c desc limit 3', null, state)
-
-        if (state.top_topics) {
-            var formatted = state.top_topics.map( (item) => {
-                return `<a href='/topic/${ item.post_topic }'>#${ item.post_topic }</a>`
-            })
-
-            return formatted.join(' ') + ` <a href='/topics/'>more&raquo;</a>`
-        }
-    }
-
-    function topic_list() {
-        if (state.topics) {
-            var formatted = state.topics.map( (item) => {
-                return `<a href='/topic/${ item.post_topic }'>#${ item.post_topic }</a>`
-            })
-
-            return formatted.join(' ')
-        }
-    }
-
-    function user_icon(u) {
-        return u.user_icon ? `<img src='${u.user_icon}' width='${u.user_icon_width}' height='${u.user_icon_height}' >` : ''
-    }
-
-    function user_page(u) {
-        var img = user_icon(u)
-        return `<center><a href='/users/${ u.user_name }' >${ img }</a><h2>${ u.user_name }</h2></p>joined ${ u.user_registered }</center>`
-    }
-
     return pages[state.page](state)
 
 } // end of render
+
+///////////////////////////////////////////////////////////////////////////////
+// components, things that output html
+///////////////////////////////////////////////////////////////////////////////
+
+function footer(state) {
+    return `
+        <p>
+        <center>
+        <a href='/'>home</a> &nbsp;
+        <a href='#'>top</a> &nbsp;
+        <a href="/topics">topics</a> &nbsp;
+        <a href="/users">users</a> &nbsp;
+        <a href="/about">about</a> &nbsp;
+        <a href='mailto:${ state.conf.admin_email }' >contact</a> &nbsp;
+        `
+}
+
+function icon_or_loginprompt(state) {
+    if (state.user) return id_box(state)
+    else            return loginprompt()
+}
+
+function id_box(state) {
+
+    var img = user_icon(state.user)
+
+    return `
+        <div id='status' >
+            <a href='/user/${state.user.user_name}' >${img} ${state.user.user_name}</a>
+            <p>
+            <a href='#' onclick="$.get('/logout', function(data) { $('#status').html(data) });return false">logout</a>
+        </div>`
+}
+
+function topic_list(state) {
+    if (state.topics) {
+        var formatted = state.topics.map( (item) => {
+            return `<a href='/topic/${ item.post_topic }'>#${ item.post_topic }</a>`
+        })
+
+        return formatted.join(' ')
+    }
+}
+
+async function top_topics(state) {
+
+    let top3 =
+        await query('select post_topic, count(*) as c from posts where length(post_topic) > 0 group by post_topic order by c desc limit 3', null, state)
+
+    var formatted = top3.map(item => `<a href='/topic/${ item.post_topic }'>#${ item.post_topic }</a>`)
+
+    return formatted.join(' ') + ` <a href='/topics/'>more&raquo;</a>`
+}
+
+function tabs() {
+    return `<ul class='nav nav-tabs'>
+        <li class='active' > <a href='/?order=active'   title='most recent comments'       >active</a></li>
+        <li                > <a href='/?order=comments' title='most comments in last week' >comments</a></li>
+        <li                > <a href='/?order=likes'    title='most likes in last week'    >private</a></li>
+        <li                > <a href='/?order=new'      title='newest'                     >new</a></li>
+        </ul>`
+}
+
+function user_icon(u) {
+    return u.user_icon ? `<img src='${u.user_icon}' width='${u.user_icon_width}' height='${u.user_icon_height}' >` : ''
+}
+
+function format_user_page(u) {
+    var img = user_icon(u)
+    return `<center><a href='/user/${ u.user_name }' >${ img }</a><h2>${ u.user_name }</h2></p>joined ${ u.user_registered }</center>`
+}
