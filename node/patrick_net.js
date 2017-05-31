@@ -46,7 +46,6 @@ async function run(req, res) {
         await block_nuked(state)
         await collect_post_data(state)
         await set_user(state)
-        await top_topics(state)
         await render(state)
     }
     catch(e) { send_html(500, e.message, state) }
@@ -62,7 +61,7 @@ function connect_to_db(state) {
 			state.ip = state.req.headers['x-forwarded-for']
 
 			// query or set a database lock for this ip; each ip is allowed only one outstanding connection at a time
-			if (locks[state.ip]) { send_html(403, 'Rate Limit Exceeded', state); console.log('Rate limit exceeded by state.ip'); return }
+			if (locks[state.ip]) { send_html(403, 'Rate Limit Exceeded', state); console.log(`Rate limit exceeded by ${ state.ip }`); return }
 			else {
 				locks[state.ip] = { // set the lock
 					threadId : db.threadId,
@@ -115,12 +114,6 @@ function collect_post_data(state) { // if there is any POST data, accumulate it 
         }
         else fulfill(state)
     })
-}
-
-async function top_topics(state) { // update state with whether they are logged in or not
-
-	state.top_topics =
-		await query('select post_topic, count(*) as c from posts where length(post_topic) > 0 group by post_topic order by c desc limit 3', null, state)
 }
 
 async function set_user(state) { // update state with whether they are logged in or not
@@ -281,20 +274,15 @@ function render(state) {
     var pages = {
 
         about : async function() {
-            state.message = `About ${ conf.domain }`
-            state.text = `${ conf.domain } is the bomb!`
 
-            let content = html(
+            let content = await html(
                 midpage(
-                    h1(),
-                    text()
+					about_this_site()
                 )
             )
 
             send_html(200, content, state)
         },
-
-        alert : () => { let content =  alert()                },
 
         delete : async function() { // delete a comment
 
@@ -310,16 +298,9 @@ function render(state) {
 
         home : async function () {
 
-            let sql = `select sql_calc_found_rows * from posts
-                       where post_modified > date_sub(now(), interval 7 day) and post_approved=1
-                       order by post_modified desc limit 0, 20`
-
-            state.posts = await query(sql, null, state)
-
-            let content = html(
-                alert(),
-                midpage(
-                    post_list()
+            let content = await html(
+                await midpage(
+                    await post_list()
                 )
             )
 
@@ -357,7 +338,7 @@ function render(state) {
             var d      = new Date()
             var html   = loginprompt()
 
-            // you must use the undocumented "array" feature of writeHead to set multiple cookies, because json
+            // you must use the undocumented "array" feature of res.writeHead to set multiple cookies, because json
             var headers = [
                 ['Content-Length' , html.length                               ],
                 ['Content-Type'   , 'text/html'                               ],
@@ -371,9 +352,9 @@ function render(state) {
             if (state.db) state.db.release()
         },
 
-        message : () => {
+        message : async function() {
 
-            let content = html(
+            let content = await html(
                 midpage(
                     h1(),
                     text()
@@ -393,9 +374,7 @@ function render(state) {
                 [state.ip], state)
 
             if (results.length && results[0].ago < 2) { // this ip already commented less than two seconds ago
-                state.page          = 'alert'
-                state.alert_content = 'You are posting comments too quickly! Please slow down.'
-                send_html(200, content, state)
+                send_html(200, alert('You are posting comments too quickly! Please slow down'), state)
             }
             else {
 
@@ -449,7 +428,7 @@ function render(state) {
 
                 if (results.length) state.comments = results
 
-                let content = html(
+                let content = await html(
                     midpage(
                         post(),
                         comment_list(),
@@ -470,7 +449,7 @@ function render(state) {
 
         postform : async function() {
 
-            let content = html(
+            let content = await html(
                 midpage(
                     postform()
                 )
@@ -521,10 +500,10 @@ function render(state) {
             state.posts = await query(sql, [topic], state)
             state.message = '#' + topic
         
-            let content = html(
+            let content = await html(
                 midpage(
                     h1(),
-                    post_list()
+                    await post_list()
                 )
             )
 
@@ -539,7 +518,7 @@ function render(state) {
 
             state.message = 'Topics'
         
-            let content = html(
+            let content = await html(
                 midpage(
                     h1(),
                     topic_list()
@@ -563,7 +542,7 @@ function render(state) {
 
             state.users = await query(sql, sql_parms, state)
 
-            let content = html(
+            let content = await html(
                 midpage(
                     user_list()
                 )
@@ -573,8 +552,21 @@ function render(state) {
         },
     }
 
-    function alert() {
-        return state.alert_content ? `<script type='text/javascript'> alert('${ state.alert_content }'); </script>` : ''
+    ////////////////////////////////////////////////////////////////////////////
+	// these are the components of a page
+    ////////////////////////////////////////////////////////////////////////////
+
+    function about_this_site() {
+        return `<h1>About ${ conf.domain }</h1>${ conf.domain } is the bomb!`
+    }
+
+
+    ////////////////////////////////////////////////////////////////////////////
+    // these are mere formatters which do not consider state, only their parm
+    ////////////////////////////////////////////////////////////////////////////
+
+    function alert(message) {
+        return `<script type='text/javascript'> alert('${ message }'); </script>`
     }
 
     function comment(c) {
@@ -631,11 +623,11 @@ function render(state) {
         return moment(Date.parse(gmt_date)).tz(utz).format('YYYY MMMM Do h:mma z')
     }
 
-    function header() {
+    async function header() {
         return `<div class='comment' >
             <div style='float:right' >${ icon_or_loginprompt() }</div>
             <a href='/' ><h1 class='sitename' title='back to home page' >${ conf.domain }</h1></a><br>
-            ${ top_topics() + '<br>' + new_post_button() }
+            ${ await top_topics() + '<br>' + new_post_button() }
             </div>`
     }
 
@@ -643,7 +635,7 @@ function render(state) {
         return `<h1>${ state.message }</h1>`
     }
 
-    function html(...args) {
+    async function html(...args) {
 
         var queries = state.queries.sortByProp('ms').map( (item) => { return `${ item.ms }ms ${ item.sql }` }).join('\n')
 
@@ -658,7 +650,7 @@ function render(state) {
             </head>
             <body>
                 <div class="container" >
-                ${ header() }
+                ${ await header() }
                 ${ args.join('') }
                 ${ footer() }
                 </div>
@@ -776,7 +768,13 @@ function render(state) {
         return `<a href="/post/${post.post_id}/${slug}">${post.post_title}</a>`
     }
 
-    function post_list() {
+    async function post_list() {
+
+		let sql = `select sql_calc_found_rows * from posts
+				   where post_modified > date_sub(now(), interval 7 day) and post_approved=1
+				   order by post_modified desc limit 0, 20`
+
+		state.posts = await query(sql, null, state)
 
         if (state.posts) {
             var formatted = state.posts.map( (item) => {
@@ -855,7 +853,11 @@ function render(state) {
         return formatted.join('')
     }
 
-    function top_topics() {
+	async function top_topics() {
+
+		state.top_topics =
+			await query('select post_topic, count(*) as c from posts where length(post_topic) > 0 group by post_topic order by c desc limit 3', null, state)
+
         if (state.top_topics) {
             var formatted = state.top_topics.map( (item) => {
                 return `<a href='/topic/${ item.post_topic }'>#${ item.post_topic }</a>`
