@@ -92,6 +92,10 @@ async function block_nuked(state) { // block nuked users, usually spammers
     if (results[0].c) throw { code : 404, message : 'Not Found', }
 }
 
+async function top3(state) { // pick out top 3 topics, to put in header
+    return await query('select post_topic, count(*) as c from posts where length(post_topic) > 0 group by post_topic order by c desc limit 3', null, state)
+}
+
 function collect_post_data(state) { // if there is any POST data, accumulate it and append it to req object
 
     return new Promise(function(fulfill, reject) {
@@ -282,6 +286,8 @@ function render(state) {
 
         about : async function() {
 
+            state.top3 = await top3(state)
+
             let content = await html(
                 midpage(
 					about_this_site()
@@ -304,6 +310,8 @@ function render(state) {
         },
 
         home : async function () {
+
+            state.top3 = await top3(state)
 
             let content = await html(
                 await midpage(
@@ -360,6 +368,8 @@ function render(state) {
         },
 
         message : async function() {
+
+            state.top3 = await top3(state)
 
             let content = await html(
                 midpage(
@@ -431,6 +441,8 @@ function render(state) {
             else {
                 state.post = results[0]
 
+                state.top3 = await top3(state)
+
                 // now pick up the comment list for this post
                 var results = await query('select * from comments left join users on comment_author=user_id where comment_post_id = ? order by comment_date',
                     [post_id], state)
@@ -457,6 +469,8 @@ function render(state) {
         },
 
         postform : async function() {
+
+            state.top3 = await top3(state)
 
             let content = await html(
                 midpage(
@@ -509,6 +523,8 @@ function render(state) {
             state.posts = await query(sql, [topic], state)
             state.message = '#' + topic
         
+            state.top3 = await top3(state)
+
             let content = await html(
                 midpage(
                     h1(),
@@ -527,6 +543,8 @@ function render(state) {
 
             state.message = 'Topics'
         
+            state.top3 = await top3(state)
+
             let content = await html(
                 midpage(
                     h1(),
@@ -537,11 +555,19 @@ function render(state) {
             send_html(200, content, state)
         },
 
-        user  : async function() {
+        user : async function() {
+
+            var user_name = segments(state.req.url)[2] // like /user/Patrick
+            var sql       = 'select * from users where user_name=?'
+            var sql_parms = [user_name]
+
+            state.users = await query(sql, sql_parms, state)
+
+            state.top3 = await top3(state)
 
             let content = await html(
                 midpage(
-                    await user_page(state)
+                    await user_info(state)
                 )
             )
 
@@ -549,6 +575,8 @@ function render(state) {
         },
 
         users : async function() {
+
+            state.top3 = await top3(state)
 
             let content = await html(
                 midpage(
@@ -558,20 +586,13 @@ function render(state) {
 
             send_html(200, content, state)
         },
-    }
 
-    ////////////////////////////////////////////////////////////////////////////
-	// these are the components of a page
-    ////////////////////////////////////////////////////////////////////////////
+    } // end of pages
 
     function about_this_site() {
         return `<h1>About ${ conf.domain }</h1>${ conf.domain } is the bomb!`
     }
 
-
-    ////////////////////////////////////////////////////////////////////////////
-    // these are mere formatters which do not consider state, only their parm
-    ////////////////////////////////////////////////////////////////////////////
 
     function alert(message) {
         return `<script type='text/javascript'> alert('${ message }'); </script>`
@@ -765,149 +786,133 @@ function render(state) {
         return formatted.join('')
     }
 
-    async function user_page(state) {
+    function user_icon(u) {
+        return u.user_icon ? `<img src='${u.user_icon}' width='${u.user_icon_width}' height='${u.user_icon_height}' >` : ''
+    }
 
-        var user_name = segments(state.req.url)[2] // like /user/Patrick
-        var sql       = 'select * from users where user_name=?'
-        var sql_parms = [user_name]
-
-        state.users = await query(sql, sql_parms, state)
+    function user_info() {
 
         if (state.users && state.users.length) {
-            if (1 == state.users.length) {
-                return format_user_page(state.users[0])
-            }
+            let u = state.users[0]
+
+            var img = user_icon(u)
+            return `<center><a href='/user/${ u.user_name }' >${ img }</a><h2>${ u.user_name }</h2></p>joined ${ u.user_registered }</center>`
         }
         else formatted = []
 
         return formatted.join('')
     }
 
-    return pages[state.page](state)
+    function icon_or_loginprompt() {
+        if (state.user) return id_box(state)
+        else            return loginprompt(state)
+    }
+
+    function id_box() {
+
+        var img = user_icon(state.user)
+
+        return `
+            <div id='status' >
+                <a href='/user/${state.user.user_name}' >${img} ${state.user.user_name}</a>
+                <p>
+                <a href='#' onclick="$.get('/logout', function(data) { $('#status').html(data) });return false">logout</a>
+            </div>`
+    }
+
+    function loginprompt() {
+
+        return `
+            <div id='status' >
+                ${ state.login_failed_email ? 'login failed' : '' }
+                <form id='loginform' >
+                    <fieldset>
+                        <input id='email'    name='email'    placeholder='email'    type='text'     required >   
+                        <input id='password' name='password' placeholder='password' type='password' required >
+                    </fieldset>
+                    <fieldset>
+                        <input type='submit' id='submit' value='log in'
+                            onclick="$.post('/post_login', $('#loginform').serialize()).done(function(data) { $('#status').html(data) });return false">
+                        <a href='#' onclick="midpage.innerHTML = lostpwform.innerHTML;  return false" >forgot password</a>
+                        <a href='#' onclick="midpage.innerHTML = registerform.innerHTML; return false" >register</a>
+                    </fieldset>
+                </form>
+                <div style='display: none;' >
+                    ${ lostpwform(state)   }
+                    ${ registerform() }
+                </div>
+            </div>`
+    }
+
+    function lostpwform() {
+        var show = state.login_failed_email ? `value='${ state.login_failed_email }'` : `placeholder='email address'`
+
+        return `
+        <div id='lostpwform' >
+            <h1>reset password</h1>
+            <form action='/recoveryemail' method='post'>
+                <div class='form-group'><input type='text' name='user_email' ${ show } class='form-control' id='lost_pw_email' ></div>
+                <button type='submit' id='submit' class='btn btn-success btn-sm'>submit</button>
+            </form>
+            <script type="text/javascript">document.getElementById('lost_pw_email').focus();</script>
+        </div>`
+    }
+
+    function registerform() {
+        return `
+        <div id='registerform' >
+            <h1>register</h1>
+            <form action='/registration' method='post'>
+            <div >
+                <div class='form-group'><input type='text' name='user_name' placeholder='choose username' class='form-control' id='user_name' ></div>
+                <div class='form-group'><input type='text' name='user_email'      placeholder='email post'   class='form-control'                      ></div>
+            </div>
+            <button type='submit' id='submit' class='btn btn-success btn-sm'>submit</button>
+            </form>
+            <script type="text/javascript">document.getElementById('user_name').focus();</script>
+        </div>`
+    }
+
+    function footer() {
+        return `
+            <p>
+            <center>
+            <a href='/'>home</a> &nbsp;
+            <a href='#'>top</a> &nbsp;
+            <a href="/topics">topics</a> &nbsp;
+            <a href="/users">users</a> &nbsp;
+            <a href="/about">about</a> &nbsp;
+            <a href='mailto:${ state.conf.admin_email }' >contact</a> &nbsp;
+            `
+    }
+
+    function tabs() {
+        return `<ul class='nav nav-tabs'>
+            <li class='active' > <a href='/?order=active'   title='most recent comments'       >active</a></li>
+            <li                > <a href='/?order=comments' title='most comments in last week' >comments</a></li>
+            <li                > <a href='/?order=likes'    title='most likes in last week'    >private</a></li>
+            <li                > <a href='/?order=new'      title='newest'                     >new</a></li>
+            </ul>`
+    }
+
+
+    function topic_list() {
+        if (state.topics) {
+            var formatted = state.topics.map( (item) => {
+                return `<a href='/topic/${ item.post_topic }'>#${ item.post_topic }</a>`
+            })
+
+            return formatted.join(' ')
+        }
+    }
+
+    function top_topics() {
+
+        var formatted = state.top3.map(item => `<a href='/topic/${ item.post_topic }'>#${ item.post_topic }</a>`)
+
+        return formatted.join(' ') + ` <a href='/topics/'>more&raquo;</a>`
+    }
+
+    pages[state.page](state)
 
 } // end of render
-
-///////////////////////////////////////////////////////////////////////////////
-// components, things that output html
-///////////////////////////////////////////////////////////////////////////////
-
-function footer(state) {
-    return `
-        <p>
-        <center>
-        <a href='/'>home</a> &nbsp;
-        <a href='#'>top</a> &nbsp;
-        <a href="/topics">topics</a> &nbsp;
-        <a href="/users">users</a> &nbsp;
-        <a href="/about">about</a> &nbsp;
-        <a href='mailto:${ state.conf.admin_email }' >contact</a> &nbsp;
-        `
-}
-
-function icon_or_loginprompt(state) {
-    if (state.user) return id_box(state)
-    else            return loginprompt(state)
-}
-
-function id_box(state) {
-
-    var img = user_icon(state.user)
-
-    return `
-        <div id='status' >
-            <a href='/user/${state.user.user_name}' >${img} ${state.user.user_name}</a>
-            <p>
-            <a href='#' onclick="$.get('/logout', function(data) { $('#status').html(data) });return false">logout</a>
-        </div>`
-}
-
-function loginprompt(state) {
-
-    return `
-        <div id='status' >
-            ${ state.login_failed_email ? 'login failed' : '' }
-            <form id='loginform' >
-                <fieldset>
-                    <input id='email'    name='email'    placeholder='email'    type='text'     required >   
-                    <input id='password' name='password' placeholder='password' type='password' required >
-                </fieldset>
-                <fieldset>
-                    <input type='submit' id='submit' value='log in'
-                        onclick="$.post('/post_login', $('#loginform').serialize()).done(function(data) { $('#status').html(data) });return false">
-                    <a href='#' onclick="midpage.innerHTML = lostpwform.innerHTML;  return false" >forgot password</a>
-                    <a href='#' onclick="midpage.innerHTML = registerform.innerHTML; return false" >register</a>
-                </fieldset>
-            </form>
-            <div style='display: none;' >
-                ${ lostpwform(state)   }
-                ${ registerform() }
-            </div>
-        </div>`
-}
-
-function lostpwform(state) {
-    var show = state.login_failed_email ? `value='${ state.login_failed_email }'` : `placeholder='email address'`
-
-    return `
-    <div id='lostpwform' >
-        <h1>reset password</h1>
-        <form action='/recoveryemail' method='post'>
-            <div class='form-group'><input type='text' name='user_email' ${ show } class='form-control' id='lost_pw_email' ></div>
-            <button type='submit' id='submit' class='btn btn-success btn-sm'>submit</button>
-        </form>
-        <script type="text/javascript">document.getElementById('lost_pw_email').focus();</script>
-    </div>`
-}
-
-function registerform() {
-    return `
-    <div id='registerform' >
-        <h1>register</h1>
-        <form action='/registration' method='post'>
-        <div >
-            <div class='form-group'><input type='text' name='user_name' placeholder='choose username' class='form-control' id='user_name' ></div>
-            <div class='form-group'><input type='text' name='user_email'      placeholder='email post'   class='form-control'                      ></div>
-        </div>
-        <button type='submit' id='submit' class='btn btn-success btn-sm'>submit</button>
-        </form>
-        <script type="text/javascript">document.getElementById('user_name').focus();</script>
-    </div>`
-}
-
-function topic_list(state) {
-    if (state.topics) {
-        var formatted = state.topics.map( (item) => {
-            return `<a href='/topic/${ item.post_topic }'>#${ item.post_topic }</a>`
-        })
-
-        return formatted.join(' ')
-    }
-}
-
-async function top_topics(state) {
-
-    let top3 =
-        await query('select post_topic, count(*) as c from posts where length(post_topic) > 0 group by post_topic order by c desc limit 3', null, state)
-
-    var formatted = top3.map(item => `<a href='/topic/${ item.post_topic }'>#${ item.post_topic }</a>`)
-
-    return formatted.join(' ') + ` <a href='/topics/'>more&raquo;</a>`
-}
-
-function tabs() {
-    return `<ul class='nav nav-tabs'>
-        <li class='active' > <a href='/?order=active'   title='most recent comments'       >active</a></li>
-        <li                > <a href='/?order=comments' title='most comments in last week' >comments</a></li>
-        <li                > <a href='/?order=likes'    title='most likes in last week'    >private</a></li>
-        <li                > <a href='/?order=new'      title='newest'                     >new</a></li>
-        </ul>`
-}
-
-function user_icon(u) {
-    return u.user_icon ? `<img src='${u.user_icon}' width='${u.user_icon_width}' height='${u.user_icon_height}' >` : ''
-}
-
-function format_user_page(u) {
-    var img = user_icon(u)
-    return `<center><a href='/user/${ u.user_name }' >${ img }</a><h2>${ u.user_name }</h2></p>joined ${ u.user_registered }</center>`
-}
