@@ -33,7 +33,7 @@ if (cluster.isMaster) {
 // end of top-level code; everything else is in a function
 ////////////////////////////////////////////////////////////////////////////////
 
-async function run(req, res) { // handle a single http request
+function run(req, res) { // handle a single http request
 
     var state = { // start accumulation of state for this request
         conf    : conf,
@@ -43,15 +43,7 @@ async function run(req, res) { // handle a single http request
         res     : res,
     }
 
-    try {
-        await get_connection_from_pool(state)
-        await block_countries(state)
-        await block_nuked(state)
-        await collect_post_data(state)
-        await set_user(state)
-        await render(state)
-    }
-    catch(e) { console.log(e); send_html(500, e.message, state) }
+    render(state)
 }
 
 function get_connection_from_pool(state) {
@@ -82,14 +74,14 @@ async function block_countries(state) { // block entire countries like Russia be
     var results = await query('select country_evil from countries where inet_aton(?) >= country_start and inet_aton(?) <= country_end',
                                 [state.ip, state.ip], state)
 
-    if (results.length && results[0].country_evil) throw { code : 404, message : 'Not Found', }
+    if (results.length && results[0].country_evil) throw { code : 403, message : 'permission denied' }
 }
 
 async function block_nuked(state) { // block nuked users, usually spammers
 
     var results = await query('select count(*) as c from nukes where nuke_ip = ?', [state.ip], state)
 
-    if (results[0].c) throw { code : 404, message : 'Not Found', }
+    if (results[0].c) throw { code : 403, message : 'permission denied' }
 }
 
 async function top3(state) { // pick out top 3 topics, to put in header
@@ -280,7 +272,7 @@ function segments(path) { // return url path split up as array of cleaned \w str
     return url.parse(path).path.split('/').map(segment => segment.replace(/\W/g,''))
 }
 
-function render(state) {
+async function render(state) {
 
     var pages = {
 
@@ -288,7 +280,7 @@ function render(state) {
 
             state.top3 = await top3(state)
 
-            let content = await html(
+            let content = html(
                 midpage(
 					about_this_site()
                 )
@@ -311,11 +303,16 @@ function render(state) {
 
         home : async function () {
 
+            let sql = `select sql_calc_found_rows * from posts
+                       where post_modified > date_sub(now(), interval 7 day) and post_approved=1
+                       order by post_modified desc limit 0, 20`
+
+            state.posts = await query(sql, null, state)
             state.top3 = await top3(state)
 
             let content = await html(
-                await midpage(
-                    await post_list()
+                midpage(
+                    post_list()
                 )
             )
 
@@ -371,7 +368,7 @@ function render(state) {
 
             state.top3 = await top3(state)
 
-            let content = await html(
+            let content = html(
                 midpage(
                     h1(),
                     text()
@@ -449,7 +446,7 @@ function render(state) {
 
                 if (results.length) state.comments = results
 
-                let content = await html(
+                let content = html(
                     midpage(
                         post(),
                         comment_list(),
@@ -472,7 +469,7 @@ function render(state) {
 
             state.top3 = await top3(state)
 
-            let content = await html(
+            let content = html(
                 midpage(
                     postform()
                 )
@@ -525,10 +522,10 @@ function render(state) {
         
             state.top3 = await top3(state)
 
-            let content = await html(
+            let content = html(
                 midpage(
                     h1(),
-                    await post_list()
+                    post_list()
                 )
             )
 
@@ -545,7 +542,7 @@ function render(state) {
         
             state.top3 = await top3(state)
 
-            let content = await html(
+            let content = html(
                 midpage(
                     h1(),
                     topic_list(state)
@@ -565,9 +562,9 @@ function render(state) {
 
             state.top3 = await top3(state)
 
-            let content = await html(
+            let content = html(
                 midpage(
-                    await user_info(state)
+                    user_info()
                 )
             )
 
@@ -578,16 +575,16 @@ function render(state) {
 
             state.top3 = await top3(state)
 
-            let content = await html(
+            let content = html(
                 midpage(
-                    await user_list(state)
+                    user_list(state)
                 )
             )
 
             send_html(200, content, state)
         },
 
-    } // end of pages
+    } // end of pages /////////////////////////////////////////////////////////
 
     function about_this_site() {
         return `<h1>About ${ conf.domain }</h1>${ conf.domain } is the bomb!`
@@ -639,11 +636,11 @@ function render(state) {
         return moment(Date.parse(gmt_date)).tz(utz).format('YYYY MMMM Do h:mma z')
     }
 
-    async function header() {
+    function header() {
         return `<div class='comment' >
             <div style='float:right' >${ icon_or_loginprompt(state) }</div>
             <a href='/' ><h1 class='sitename' title='back to home page' >${ conf.domain }</h1></a><br>
-            ${ await top_topics(state) + '<br>' + new_post_button() }
+            ${ top_topics() + '<br>' + new_post_button() }
             </div>`
     }
 
@@ -651,7 +648,7 @@ function render(state) {
         return `<h1>${ state.message }</h1>`
     }
 
-    async function html(...args) {
+    function html(...args) {
 
         var queries = state.queries.sortByProp('ms').map( (item) => { return `${ item.ms }ms ${ item.sql }` }).join('\n')
 
@@ -666,9 +663,9 @@ function render(state) {
             </head>
             <body>
                 <div class="container" >
-                ${ await header() }
+                ${ header() }
                 ${ args.join('') }
-                ${ footer(state) }
+                ${ footer() }
                 </div>
             </body>
             <script async src="/jquery.min.js"></script><!-- ${'\n' + queries + '\n'} -->
@@ -728,13 +725,7 @@ function render(state) {
         return `<a href="/post/${post.post_id}/${slug}">${post.post_title}</a>`
     }
 
-    async function post_list() {
-
-		let sql = `select sql_calc_found_rows * from posts
-				   where post_modified > date_sub(now(), interval 7 day) and post_approved=1
-				   order by post_modified desc limit 0, 20`
-
-		state.posts = await query(sql, null, state)
+    function post_list() {
 
         if (state.posts) {
             var formatted = state.posts.map( (item) => {
@@ -913,6 +904,21 @@ function render(state) {
         return formatted.join(' ') + ` <a href='/topics/'>more&raquo;</a>`
     }
 
-    pages[state.page](state)
+    if (typeof pages[state.page] === 'function') { // hit the db iff the request is for a valid request
+        try {
+            await get_connection_from_pool(state)
+            await block_countries(state)
+            await block_nuked(state)
+            await collect_post_data(state)
+            await set_user(state)
+            await pages[state.page](state)
+        }
+        catch(e) { console.log(e); send_html(500, e.message, state) }
+    }
+    else {
+        let err = `${ state.req.url } is not a valid request`
+        console.log(err)
+        send_html(404, err, state)
+    }
 
 } // end of render
