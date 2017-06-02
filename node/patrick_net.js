@@ -84,9 +84,17 @@ async function block_nuked(state) { // block nuked users, usually spammers
     if (results[0].c) throw { code : 403, message : 'permission denied' }
 }
 
-async function top3(state) { // pick out top 3 topics, to put in header
-    return await query('select post_topic, count(*) as c from posts where length(post_topic) > 0 group by post_topic order by c desc limit 3', null, state)
+async function header_data(state) { // data that the page header needs to render
+	return {
+        comments : (await query(`select count(*) as c from comments`,                                      null, state))[0].c, // int
+        onlines  :  await query(`select * from onlines order by online_username`,                          null, state),       // obj
+        posts    : (await query(`select count(*) as c from posts`,                                         null, state))[0].c, // int
+        top3     :  await query(`select post_topic, count(*) as c from posts
+                                where length(post_topic) > 0 group by post_topic order by c desc limit 3`, null, state),       // obj
+        tot      : (await query(`select count(*) as c from users`,                                         null, state))[0].c, // int
+	}
 }
+
 
 function collect_post_data(state) { // if there is any POST data, accumulate it and append it to req object
 
@@ -131,6 +139,12 @@ async function set_user(state) { // update state with whether they are logged in
 
         if (0 == results.length) state.user = null
         else                     state.user = results[0]
+
+		// update users currently online for display in header
+        await query(`delete from onlines where online_last_view < date_sub(now(), interval 5 minute)`, null, state)
+        await query(`insert into onlines (online_user_id, online_username, online_last_view) values (?, ?, now())
+	                 on duplicate key update online_last_view=now()`, [state.user.user_id, state.user.user_name], state)
+
     }
     catch(e) { // no valid cookie
         state.user = null
@@ -278,7 +292,7 @@ async function render(state) {
 
         about : async function() {
 
-            state.top3 = await top3(state)
+            state.header_data = await header_data(state)
 
             let content = html(
                 midpage(
@@ -303,12 +317,13 @@ async function render(state) {
 
         home : async function () {
 
+            state.header_data = await header_data(state)
+
             let sql = `select sql_calc_found_rows * from posts
                        where post_modified > date_sub(now(), interval 7 day) and post_approved=1
                        order by post_modified desc limit 0, 20`
 
             state.posts = await query(sql, null, state)
-            state.top3 = await top3(state)
 
             let content = await html(
                 midpage(
@@ -366,7 +381,7 @@ async function render(state) {
 
         message : async function() {
 
-            state.top3 = await top3(state)
+            state.header_data = await header_data(state)
 
             let content = html(
                 midpage(
@@ -438,7 +453,7 @@ async function render(state) {
             else {
                 state.post = results[0]
 
-                state.top3 = await top3(state)
+                state.header_data = await header_data(state)
 
                 // now pick up the comment list for this post
                 var results = await query('select * from comments left join users on comment_author=user_id where comment_post_id = ? order by comment_date',
@@ -468,6 +483,7 @@ async function render(state) {
         postform : async function() {
 
             state.top3 = await top3(state)
+            state.header_data = await header_data(state)
 
             let content = html(
                 midpage(
@@ -520,7 +536,7 @@ async function render(state) {
             state.posts = await query(sql, [topic], state)
             state.message = '#' + topic
         
-            state.top3 = await top3(state)
+            state.header_data = await header_data(state)
 
             let content = html(
                 midpage(
@@ -540,12 +556,12 @@ async function render(state) {
 
             state.message = 'Topics'
         
-            state.top3 = await top3(state)
+            state.header_data = await header_data(state)
 
             let content = html(
                 midpage(
                     h1(),
-                    topic_list(state)
+                    topic_list()
                 )
             )
 
@@ -558,9 +574,8 @@ async function render(state) {
             var sql       = 'select * from users where user_name=?'
             var sql_parms = [user_name]
 
-            state.users = await query(sql, sql_parms, state)
-
-            state.top3 = await top3(state)
+            state.users       = await query(sql, sql_parms, state)
+            state.header_data = await header_data(state)
 
             let content = html(
                 midpage(
@@ -573,11 +588,15 @@ async function render(state) {
 
         users : async function() {
 
-            state.top3 = await top3(state)
+            state.header_data = await header_data(state)
+
+            var sql       = 'select * from users limit 20'
+            var sql_parms = null
+            state.users = await query(sql, sql_parms, state)
 
             let content = html(
                 midpage(
-                    user_list(state)
+                    user_list()
                 )
             )
 
@@ -593,6 +612,16 @@ async function render(state) {
 
     function alert(message) {
         return `<script type='text/javascript'> alert('${ message }'); </script>`
+    }
+
+    function brag() {
+
+        var online_list = state.header_data.onlines.map(u => `<a href='/user/${u.online_username}'>${u.online_username}</a>`).join(', ')
+
+        return `${ state.header_data.comments.toLocaleString('en') } comments in
+                ${ state.header_data.posts.toLocaleString('en') } posts by
+                <a href='/users'>${ state.header_data.tot.toLocaleString('en') } registered users</a>,
+                ${ state.header_data.onlines.length } online now: ${ online_list }`
     }
 
     function comment(c) {
@@ -637,10 +666,11 @@ async function render(state) {
     }
 
     function header() {
+
         return `<div class='comment' >
             <div style='float:right' >${ icon_or_loginprompt(state) }</div>
             <a href='/' ><h1 class='sitename' title='back to home page' >${ conf.domain }</h1></a><br>
-            ${ top_topics() + '<br>' + new_post_button() }
+            ${ top_topics() + '<br>' + brag() + '<br>' + new_post_button() }
             </div>`
     }
 
@@ -763,12 +793,7 @@ async function render(state) {
         return `${ state.text || '' }`
     }
 
-    async function user_list(state) {
-
-        var sql       = 'select * from users limit 20'
-        var sql_parms = null
-
-        state.users = await query(sql, sql_parms, state)
+    function user_list() {
 
         var formatted = state.users.map( (item) => {
             return `<div class="user" ><a href='/user/${ item.user_name }'>${ item.user_name }</a></div>`
@@ -898,9 +923,7 @@ async function render(state) {
     }
 
     function top_topics() {
-
-        var formatted = state.top3.map(item => `<a href='/topic/${ item.post_topic }'>#${ item.post_topic }</a>`)
-
+        var formatted = state.header_data.top3.map(item => `<a href='/topic/${ item.post_topic }'>#${ item.post_topic }</a>`)
         return formatted.join(' ') + ` <a href='/topics/'>more&raquo;</a>`
     }
 
