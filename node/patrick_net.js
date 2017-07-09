@@ -11,10 +11,10 @@ os          = require('os')
 querystring = require('querystring')
 url         = require('url')
 
-var locks = {} // global locks to allow only one db connection per ip; helps mitigate dos attacks
+locks = {} // global locks to allow only one db connection per ip; helps mitigate dos attacks
 
 pool = mysql.createPool(conf.db)
-pool.on('release', db => { // delete the lock for the released db.threadId, and any locks that are older than 2 seconds
+pool.on('release', db => { // delete the lock for the released db.threadId, and any locks that are older than 2000 milliseconds
     Object.keys(locks).map(ip => {
         if (locks[ip].threadId == db.threadId || locks[ip].ts < (Date.now() - 2000)) delete locks[ip]
     })
@@ -50,22 +50,22 @@ function get_connection_from_pool(state) {
 
     return new Promise(function(fulfill, reject) {
 
-		pool.getConnection(function(err, db) {
+        pool.getConnection(function(err, db) {
 
             state.db = db
-			state.ip = state.req.headers['x-forwarded-for']
+            state.ip = state.req.headers['x-forwarded-for']
 
-			// query or set a database lock for this ip; each ip is allowed only one outstanding connection at a time
-			if (locks[state.ip]) { send_html(403, 'Rate Limit Exceeded', state); console.log(`Rate limit exceeded by ${ state.ip }`); return }
-			else {
-				locks[state.ip] = { // set the lock
-					threadId : db.threadId,
-					ts       : Date.now()
-				}
-			}
+            // query or set a database lock for this ip; each ip is allowed only one outstanding connection at a time
+            if (locks[state.ip]) { send_html(403, 'Rate Limit Exceeded', state); console.log(`Rate limit exceeded by ${ state.ip }`); return }
+            else {
+                locks[state.ip] = { // set the lock
+                    threadId : db.threadId,
+                    ts       : Date.now()
+                }
+            }
 
             fulfill(state)
-		})
+        })
     })
 }
 
@@ -85,14 +85,14 @@ async function block_nuked(state) { // block nuked users, usually spammers
 }
 
 async function header_data(state) { // data that the page header needs to render
-	return {
+    return {
         comments : (await query(`select count(*) as c from comments`,                                      null, state))[0].c, // int
         onlines  :  await query(`select * from onlines order by online_username`,                          null, state),       // obj
         posts    : (await query(`select count(*) as c from posts`,                                         null, state))[0].c, // int
         top3     :  await query(`select post_topic, count(*) as c from posts
                                 where length(post_topic) > 0 group by post_topic order by c desc limit 3`, null, state),       // obj
         tot      : (await query(`select count(*) as c from users`,                                         null, state))[0].c, // int
-	}
+    }
 }
 
 
@@ -137,17 +137,17 @@ async function set_user(state) { // update state with whether they are logged in
 
         var results = await query('select * from users where user_id = ? and user_pass = ?', [pairs[conf.usercookie], pairs[conf.pwcookie]], state)
 
-        if (0 == results.length) state.user = null
-        else                     state.user = results[0]
+        if (0 == results.length) state.current_user = null
+        else                     state.current_user = results[0]
 
-		// update users currently online for display in header
+        // update users currently online for display in header
         await query(`delete from onlines where online_last_view < date_sub(now(), interval 5 minute)`, null, state)
         await query(`insert into onlines (online_user_id, online_username, online_last_view) values (?, ?, now())
-	                 on duplicate key update online_last_view=now()`, [state.user.user_id, state.user.user_name], state)
+                     on duplicate key update online_last_view=now()`, [state.current_user.user_id, state.current_user.user_name], state)
 
     }
     catch(e) { // no valid cookie
-        state.user = null
+        state.current_user = null
     }
 }
 
@@ -296,7 +296,7 @@ async function render(state) {
 
             let content = html(
                 midpage(
-					about_this_site()
+                    about_this_site()
                 )
             )
 
@@ -307,10 +307,10 @@ async function render(state) {
 
             var comment_id = segments(state.req.url)[2]
 
-            if (!state.user) send_html(200, content, state) // do nothing if not logged in
+            if (!state.current_user) send_html(200, content, state) // do nothing if not logged in
 
             // delete comment only if current user is comment_author
-            await query('delete from comments where comment_id = ? and comment_author = ?', [comment_id, state.user.user_id], state)
+            await query('delete from comments where comment_id = ? and comment_author = ?', [comment_id, state.current_user.user_id], state)
 
             send_html(200, '', state)
         },
@@ -319,13 +319,58 @@ async function render(state) {
 
             state.header_data = await header_data(state)
 
+            let current_user_id = state.current_user ? state.current_user.user_id : 0
+
+            // left joins to also get the post's viewing and voting data for the current user if there is one
             let sql = `select sql_calc_found_rows * from posts
+                       left join postviews on postview_post_id=post_id and postview_user_id= ?
+                       left join postvotes on postvote_post_id=post_id and postvote_user_id= ?
                        where post_modified > date_sub(now(), interval 7 day) and post_approved=1
                        order by post_modified desc limit 0, 20`
 
-            state.posts = await query(sql, null, state)
+            state.posts = await query(sql, [current_user_id, current_user_id], state)
 
-            let content = await html(
+            if (state.current_user) { // if the user is logged in, get the last view times and votes for each post into state
+                let pidl = state.posts.map(p => p.post_id)
+
+                let sql = `select postview_last_view, postview_post_id from postviews where postview_user_id= ? and postview_post_id in ( ? )`
+                let views = await query(sql, [state.current_user.user_id, pidl], state) // use raw array for pidl, not string joined on comma, w is quoted
+
+                let sql2 = `select * from postvotes where postvote_post_id in ( ? )`
+                let votes = await query(sql2, [pidl], state) // use raw array for pidl, not string joined on comma, w is quoted
+
+                state.posts = state.posts.map(p => {
+                    views.forEach(function(value) { if (p.post_id == value.postview_post_id) p.postview_last_view = value.postview_last_view })
+                    votes.forEach(function(value) {
+                        if (p.post_id == value.postvote_post_id) {
+                            //p.postvote_up   = value.up
+                            //p.postvote_down = value.down
+                        }
+                    })
+                    return p
+                })
+
+/*
+				$net = intval($post->post_likes) - intval($post->post_dislikes);
+
+				if ( is_user_logged_in() ) {
+					intval($votes->postvote_up)   ? $upgrey   = "style='color: grey; pointer-events: none;' title='you liked this'    " : "";
+					intval($votes->postvote_down) ? $downgrey = "style='color: grey; pointer-events: none;' title='you disliked this' " : "";
+
+					$likelink    = "href='#' $upgrey   onclick=\"postlike('post_$post->post_id');return false;\" ";
+					$dislikelink = "href='#' $downgrey onclick=\"postdislike('post_$post->post_id');return false;\" ";
+				}
+				else {
+					$likelink    = "href='/login.php?action=registerform'";
+					$dislikelink = "href='/login.php?action=registerform'";
+				}
+
+				return "<div class='arrowbox' ><a $likelink >&#9650;</a><br><span id='post_$post->post_id' />$net</span><br><a $dislikelink >&#9660;</a></div>";
+
+*/
+            }
+
+            let content = html(
                 midpage(
                     post_list()
                 )
@@ -361,9 +406,9 @@ async function render(state) {
 
         logout : async function() {
 
-            state.user = null
-            var d      = new Date()
-            var html   = loginprompt(state)
+            state.current_user = null
+            var d              = new Date()
+            var html           = loginprompt(state)
 
             // you must use the undocumented "array" feature of res.writeHead to set multiple cookies, because json
             var headers = [
@@ -409,14 +454,14 @@ async function render(state) {
             }
             else {
 
-                post_data.comment_author   = state.user ? state.user.user_id : 0
+                post_data.comment_author   = state.current_user ? state.current_user.user_id : 0
                 post_data.comment_content  = post_data.comment_content.linkify() // linkify, imagify, etc
                 post_data.comment_dislikes = 0
                 post_data.comment_likes    = 0
                 post_data.comment_approved = 1
                 post_data.comment_date     = new Date().toISOString().slice(0, 19).replace('T', ' ') // mysql datetime format
 
-                await query('update users set user_last_comment_ip = ? where user_id = ?', [state.ip, state.user.user_id], state)
+                await query('update users set user_last_comment_ip = ? where user_id = ?', [state.ip, state.current_user.user_id], state)
                 await query('update posts set post_modified = ? where post_id = ?', [post_data.comment_date, post_data.comment_post_id], state)
 
                 var results = await query('insert into comments set ?', post_data, state)
@@ -574,7 +619,7 @@ async function render(state) {
             var sql       = 'select * from users where user_name=?'
             var sql_parms = [user_name]
 
-            state.users       = await query(sql, sql_parms, state)
+            state.current_users       = await query(sql, sql_parms, state)
             state.header_data = await header_data(state)
 
             let content = html(
@@ -592,7 +637,7 @@ async function render(state) {
 
             var sql       = 'select * from users limit 20'
             var sql_parms = null
-            state.users = await query(sql, sql_parms, state)
+            state.current_users = await query(sql, sql_parms, state)
 
             let content = html(
                 midpage(
@@ -627,8 +672,8 @@ async function render(state) {
     function comment(c) {
         var u = c.user_name ? `<a href='/user/${c.user_name}'>${c.user_name}</a>` : 'anonymous'
 
-        if (state.user) {
-            var del = state.user.user_id == c.comment_author ?
+        if (state.current_user) {
+            var del = state.current_user.user_id == c.comment_author ?
                 `<a href='#' onclick="$.get('/delete/${ c.comment_id }', function() { $('#${ c.comment_id }').remove() });return false">delete</a>` : ''
         }
 
@@ -661,7 +706,7 @@ async function render(state) {
     }
 
     function format_date(gmt_date) { // create localized date string from gmt date out of mysql
-        var utz = state.user ? state.user.user_timezone : 'America/Los_Angeles'
+        var utz = state.current_user ? state.current_user.user_timezone : 'America/Los_Angeles'
         return moment(Date.parse(gmt_date)).tz(utz).format('YYYY MMMM Do h:mma z')
     }
 
@@ -708,23 +753,23 @@ async function render(state) {
 
         if (0 == results.length) {
             state.login_failed_email = email
-            state.user               = null
+            state.current_user       = null
             var user_id              = ''
             var user_pass            = ''
         }
         else {
             state.login_failed_email = null
-            state.user               = results[0]
-            var user_id              = state.user.user_id
-            var user_pass            = state.user.user_pass
+            state.current_user       = results[0]
+            var user_id              = state.current_user.user_id
+            var user_pass            = state.current_user.user_pass
         }
 
         html = icon_or_loginprompt(state)
 
         var usercookie = `${ conf.usercookie }=${ user_id   }`
         var pwcookie   = `${ conf.pwcookie   }=${ user_pass }`
-        var d		   = new Date()
-        var decade	   = new Date(d.getFullYear()+10, d.getMonth(), d.getDate()).toUTCString()
+        var d           = new Date()
+        var decade       = new Date(d.getFullYear()+10, d.getMonth(), d.getDate()).toUTCString()
 
         // you must use the undocumented "array" feature of writeHead to set multiple cookies, because json
         var headers = [
@@ -747,7 +792,7 @@ async function render(state) {
     }
 
     function new_post_button() {
-        return '<a href="/postform" class="btn btn-success btn-sm" title="start writing about a new post" ><b>new post</b></a>'
+        return '<a href="/postform" class="btn btn-success btn-sm" title="start a new post" ><b>new post</b></a>'
     }
 
     function post_link(post) {
@@ -757,15 +802,99 @@ async function render(state) {
 
     function post_list() {
 
+        // format and display a list of posts from whatever source; pass in only a limited number, because all of them will display
+
         if (state.posts) {
-            var formatted = state.posts.map( (item) => {
-                var link = post_link(item)
-                return `<div class="post" >${ link }</div>`
+            var formatted = state.posts.map(post => {
+                var link = post_link(post)
+
+                if (!state.current_user && post.post_title.match(/thunderdome/gi)) return '' // don't show thunderdome posts to non-logged-in users
+                if (!state.current_user && post.post_nsfw)                         return '' // don't show porn posts to non-logged-in users
+
+                return `<div class="post" >${ link } ${ post.postview_last_view } ${ post.post_likes } ${ post.post_dislikes }</div>`
             })
         }
         else formatted = []
 
         return formatted.join('')
+        /*
+                print get_like_dislike($post);
+
+                $unread      = ''; // reset for each post
+                $post_title  = $post->post_title;
+                $post_views  = number_format($post->post_views);
+                $post_author = get_author_name( $post->post_author );
+                $path        = post_id2path($post->post_id);
+
+                if ( is_user_logged_in() ) {
+                    if (!$last_view[$post->post_id])
+                        $unread = "<a href='$path' ><IMG SRC='/content/unread_post.gif' width='45' height='16' title='You never read this one' ></a> &nbsp;";
+                    else {
+                        $unread = unread_comments_icon($post, $..., $last_view);
+                    }
+                }
+
+                $outbound_ref = '';
+                if ($external_link = get_external_link($post->post_content)) {
+
+                    $host = parse_url($external_link)['host'];
+                    $host = $host ? $host : 'patrick.net';
+
+                    $outbound_ref = " <a href='$external_link' target='_blank' title='original story at $host' ><img src='/images/ext_link.png'></a>";
+                }
+
+                if (!$current_user->user_hide_post_list_photos) {
+                    $src = get_first_image($post->post_content);
+                    if ($src) {
+                        if ($post->post_nsfw)
+                            print "<div class='icon' ><a href='$path' ><img src='/images/nsfw.png' border=0 width=100 align=top hspace=5 vspace=5 ></a></div>";
+                        else
+                            print "<div class='icon' ><a href='$path' ><img src='$src' border=0 width=100 align=top hspace=5 vspace=5 ></a></div>";
+                    }
+                }
+
+                print "<a href='$path' ><b><font size='+1' $red >$post_title</font></b></a>$outbound_ref " . share_post($post) . '<br>';
+
+                $dt_ts = new DateTime($post->post_date);
+                $dt_ts->setTimeZone(new DateTimeZone('America/Los_Angeles')); // for now, california time for all users
+                //$when = $dt_ts->format('D M j, Y');
+                //$when = rel_time($post->post_date); // override the above line as experiment
+
+                if ($tag = text2hashtag($post->post_content)) {
+
+                    $tlink = " in <a href='/topics/$tag' >#$tag</a>";
+
+                    if (0 == strlen($post->post_topic)) { // if post_topic not yet set for this post, set it to the tag now
+                        $sql = "update posts set post_topic = '$tag' where post_id=$post->post_id";
+                        $db->query($sql);
+                    }
+                }
+                else $tlink = '';
+
+                print "by " . name_posts($post->post_author) . $tlink . ' &nbsp; ';
+
+
+                $post_comments = number_format(intval($post->post_comments));
+                $ago = rel_time($post->post_modified);
+
+                $s = $post->post_comments == 1 ? "" : "s";
+                $path = post_id2path($post->post_id);
+
+                if ($post->post_comments)
+                    print "<a href='$path'>$post_comments&nbsp;comment$s</a>, latest <a href='$path#comment-$post->post_latest_comment_id' >$ago</a>";
+                else
+                    print "Posted $ago";
+
+                print " $unread <br>";
+
+                $content = $post->post_content;
+                list($content, $more_wc) = first_words( strip_tags($content), 30 );
+                if ($more_wc) $content .= "... ";
+                if ($content) print "<font size='-1'>$content</font>";
+                print "</div>";
+            }
+        }
+        */
     }
 
     function post() {
@@ -820,17 +949,17 @@ async function render(state) {
     }
 
     function icon_or_loginprompt() {
-        if (state.user) return id_box(state)
-        else            return loginprompt(state)
+        if (state.current_user) return id_box(state)
+        else                    return loginprompt(state)
     }
 
     function id_box() {
 
-        var img = user_icon(state.user)
+        var img = user_icon(state.current_user)
 
         return `
             <div id='status' >
-                <a href='/user/${state.user.user_name}' >${img} ${state.user.user_name}</a>
+                <a href='/user/${state.current_user.user_name}' >${img} ${state.current_user.user_name}</a>
                 <p>
                 <a href='#' onclick="$.get('/logout', function(data) { $('#status').html(data) });return false">logout</a>
             </div>`
