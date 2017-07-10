@@ -330,46 +330,6 @@ async function render(state) {
 
             state.posts = await query(sql, [current_user_id, current_user_id], state)
 
-            if (state.current_user) { // if the user is logged in, get the last view times and votes for each post into state
-                let pidl = state.posts.map(p => p.post_id)
-
-                let sql = `select postview_last_view, postview_post_id from postviews where postview_user_id= ? and postview_post_id in ( ? )`
-                let views = await query(sql, [state.current_user.user_id, pidl], state) // use raw array for pidl, not string joined on comma, w is quoted
-
-                let sql2 = `select * from postvotes where postvote_post_id in ( ? )`
-                let votes = await query(sql2, [pidl], state) // use raw array for pidl, not string joined on comma, w is quoted
-
-                state.posts = state.posts.map(p => {
-                    views.forEach(function(value) { if (p.post_id == value.postview_post_id) p.postview_last_view = value.postview_last_view })
-                    votes.forEach(function(value) {
-                        if (p.post_id == value.postvote_post_id) {
-                            //p.postvote_up   = value.up
-                            //p.postvote_down = value.down
-                        }
-                    })
-                    return p
-                })
-
-/*
-				$net = intval($post->post_likes) - intval($post->post_dislikes);
-
-				if ( is_user_logged_in() ) {
-					intval($votes->postvote_up)   ? $upgrey   = "style='color: grey; pointer-events: none;' title='you liked this'    " : "";
-					intval($votes->postvote_down) ? $downgrey = "style='color: grey; pointer-events: none;' title='you disliked this' " : "";
-
-					$likelink    = "href='#' $upgrey   onclick=\"postlike('post_$post->post_id');return false;\" ";
-					$dislikelink = "href='#' $downgrey onclick=\"postdislike('post_$post->post_id');return false;\" ";
-				}
-				else {
-					$likelink    = "href='/login.php?action=registerform'";
-					$dislikelink = "href='/login.php?action=registerform'";
-				}
-
-				return "<div class='arrowbox' ><a $likelink >&#9650;</a><br><span id='post_$post->post_id' />$net</span><br><a $dislikelink >&#9660;</a></div>";
-
-*/
-            }
-
             let content = html(
                 midpage(
                     post_list()
@@ -811,7 +771,26 @@ async function render(state) {
                 if (!state.current_user && post.post_title.match(/thunderdome/gi)) return '' // don't show thunderdome posts to non-logged-in users
                 if (!state.current_user && post.post_nsfw)                         return '' // don't show porn posts to non-logged-in users
 
-                return `<div class="post" >${ link } ${ post.postview_last_view } ${ post.post_likes } ${ post.post_dislikes }</div>`
+				net = post.post_likes - post.post_dislikes
+
+				if ( state.current_user ) {
+					var upgrey   = post.postvote_up   ? `style='color: grey; pointer-events: none;' title='you liked this'    ` : ``;
+					var downgrey = post.postvote_down ? `style='color: grey; pointer-events: none;' title='you disliked this' ` : ``;
+
+					var likelink    = `href='#' ${upgrey}   onclick="postlike('post_${post.post_id}');   return false;" `;
+					var dislikelink = `href='#' ${downgrey} onclick="postdislike('post_${post.post_id}');return false;" `;
+				}
+				else {
+					var likelink    = `href='/login.php?action=registerform'`;
+					var dislikelink = `href='/login.php?action=registerform'`;
+				}
+
+                return `<div class='post' >
+                    <div class='arrowbox' >
+                        <a ${likelink} >&#9650;</a><br><span id='post_${post.post_id}' />${net}</span><br><a ${dislikelink} >&#9660;</a>
+                    </div>
+                    ${link} ${post.postview_last_view} ${net}
+                </div>`
             })
         }
         else formatted = []
@@ -925,7 +904,7 @@ async function render(state) {
     function user_list() {
 
         var formatted = state.users.map( (item) => {
-            return `<div class="user" ><a href='/user/${ item.user_name }'>${ item.user_name }</a></div>`
+            return `<div class='user' ><a href='/user/${ item.user_name }'>${ item.user_name }</a></div>`
         })
 
         return formatted.join('')
