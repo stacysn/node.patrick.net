@@ -950,8 +950,12 @@ async function render(state) {
         return formatted.join('')
     }
 
-    function user_icon(u) {
-        return u.user_icon ? `<img src='${u.user_icon}' width='${u.user_icon_width}' height='${u.user_icon_height}' >` : ''
+    function user_icon(u, scale=1) {
+
+        user_icon_width  = Math.round(u.user_icon_width  * scale)
+        user_icon_height = Math.round(u.user_icon_height * scale)
+
+        return u.user_icon ? `<img src='${u.user_icon}' width='${user_icon_width}' height='${user_icon_height}' >` : ''
     }
 
     function user_info() {
@@ -974,7 +978,7 @@ async function render(state) {
 
     function id_box() {
 
-        var img = user_icon(state.current_user)
+        var img = user_icon(state.current_user, 0.5) // scale image down
 
         return `
             <div id='status' >
