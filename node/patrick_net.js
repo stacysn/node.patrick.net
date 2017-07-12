@@ -16,7 +16,10 @@ locks = {} // global locks to allow only one db connection per ip; helps mitigat
 pool = mysql.createPool(conf.db)
 pool.on('release', db => { // delete the lock for the released db.threadId, and any locks that are older than 2000 milliseconds
     Object.keys(locks).map(ip => {
-        if (locks[ip].threadId == db.threadId || locks[ip].ts < (Date.now() - 2000)) delete locks[ip]
+        if (locks[ip].threadId == db.threadId || locks[ip].ts < (Date.now() - 2000)) {
+            delete locks[ip]
+            console.log(`unlock for ${ ip }`)
+        }
     })
 })
 
@@ -56,12 +59,17 @@ function get_connection_from_pool(state) {
             state.ip = state.req.headers['x-forwarded-for']
 
             // query or set a database lock for this ip; each ip is allowed only one outstanding connection at a time
-            if (locks[state.ip]) { send_html(403, 'Rate Limit Exceeded', state); console.log(`Rate limit exceeded by ${ state.ip }`); return }
+            if (locks[state.ip]) {
+                send_html(403, 'Rate Limit Exceeded', state)
+                console.log(`Rate limit exceeded by ${ state.ip } by asking for ${ state.req.url }`)
+                return
+            }
             else {
                 locks[state.ip] = { // set the lock
                     threadId : db.threadId,
                     ts       : Date.now()
                 }
+                console.log(`dblock for ${ state.ip } when asking for ${ state.req.url }`)
             }
 
             fulfill(state)
@@ -166,12 +174,6 @@ function redirect(redirect_to, res, db) {
     if (db) db.release()
 }
 
-function message(message, state) {
-    state.page    = 'message'
-    state.message =  message
-    render(state)
-}
-
 function send_html(code, html, state) {
 
     var headers =  {
@@ -211,17 +213,18 @@ function get_transporter() {
     })
 }
 
-async function send_login_link(req, res, state, db) {
+async function send_login_link(state) {
 
-    baseurl  = (/localdev/.test(os.hostname())) ? conf.baseurl_dev : conf.baseurl // conf.baseurl_dev is for testing email
+	if (!/^\w.*@.+\.\w+$/.test(state.post_data.user_email)) return 'Please go back and enter a valid email'
+
+    baseurl  = (/^dev\./.test(os.hostname())) ? conf.baseurl_dev : conf.baseurl // conf.baseurl_dev is for testing email
+    console.log(`baseurl is ${baseurl}`)
     key      = md5(Date.now() + conf.nonce_secret)
     key_link = `${ baseurl }/key_login?key=${ key }`
 
     var results = await query('update users set user_activation_key=? where user_email=?', [key, state.post_data.user_email], state)
 
     if (results.changedRows) {
-
-        message('Please check your email for the login link', state)
 
         let mailOptions = {
             from:    conf.admin_email,
@@ -231,11 +234,13 @@ async function send_login_link(req, res, state, db) {
         }
 
         get_transporter().sendMail(mailOptions, (error, info) => {
-            if (error) { db.release(); throw error }
-            console.log('Message %s sent: %s', info.messageId, info.response);
+            if (error) console.log('error in send_login_link: ' + error)
+            else       console.log('send_login_link %s sent: %s', info.messageId, info.response);
         })
+
+        return 'Please check your email for the login link'
     }
-    else message(`Could not find user with email ${ state.post_data.user_email }`, state)
+    else return `Could not find user with email ${ state.post_data.user_email }`
 }
 
 String.prototype.linkify = function(ref) {
@@ -283,7 +288,7 @@ Array.prototype.sortByProp = function(p){
 }
 
 function segments(path) { // return url path split up as array of cleaned \w strings
-    return url.parse(path).path.split('/').map(segment => segment.replace(/\W/g,''))
+    return url.parse(path).path.replace(/\?.*/,'').split('/').map(segment => segment.replace(/\W/g,''))
 }
 
 async function render(state) {
@@ -321,7 +326,7 @@ async function render(state) {
 
             let current_user_id = state.current_user ? state.current_user.user_id : 0
 
-            // left joins to also get the post's viewing and voting data for the current user if there is one
+            // left joins to also get each post's viewing and voting data for the current user if there is one
             let sql = `select sql_calc_found_rows * from posts
                        left join postviews on postview_post_id=post_id and postview_user_id= ?
                        left join postvotes on postvote_post_id=post_id and postvote_user_id= ?
@@ -344,24 +349,31 @@ async function render(state) {
             key      = url.parse(state.req.url, true).query.key
             password = md5(Date.now() + conf.nonce_secret).substring(0, 6)
 
-            // unfortunately a copy of home page sql
-            state.posts         = await query('select * from posts order by post_modified desc limit 20', null, state)
-            state.alert_content = `Your password is ${ password } and you are now logged in`
-            state.message       = 'Increasing fair play for buyers and sellers'
-            state.page          = 'home' // key_login generates home page html
+            state.message = `Your password is ${ password } and you are now logged in`
 
             var results = await query('select user_email from users where user_activation_key = ?', [key], state)
 
-            if (results.length) email = results[0].user_email
-            else {
-                message(`Darn, that key has already been used. Please try 'forgot password' if you need to log in.</a>`, state)
-                return
+            if (results.length) {
+                email = results[0].user_email
+
+                // erase key so it cannot be used again, and set new password
+                await query('update users set user_activation_key=null, user_pass=? where user_activation_key=?', [md5(password), key], state)
+
+                login(state.req, state.res, state, state.db, email, password)
             }
+            else {
+                state.header_data = await header_data(state)
+                state.message     = `Darn, that key has already been used. Please try 'forgot password' if you need to log in.`
 
-            // erase key so it cannot be used again, and set new password
-            await query('update users set user_activation_key=null, user_pass=? where user_activation_key=?', [md5(password), key], state)
+                let content = html(
+                    midpage(
+                        h1(),
+                        text()
+                    )
+                )
 
-            login(state.req, state.res, state, state.db, email, password)
+                send_html(200, content, state)
+            }
         },
 
         logout : async function() {
@@ -384,20 +396,6 @@ async function render(state) {
             if (state.db) state.db.release()
         },
 
-        message : async function() {
-
-            state.header_data = await header_data(state)
-
-            let content = html(
-                midpage(
-                    h1(),
-                    text()
-                )
-            )
-
-            send_html(200, content, state)
-        },
-
         new_comment : async function() {
 
             post_data = state.post_data
@@ -410,7 +408,8 @@ async function render(state) {
                 [state.ip], state)
 
             if (results.length && results[0].ago < 2) { // this ip already commented less than two seconds ago
-                send_html(200, alert('You are posting comments too quickly! Please slow down'), state)
+                state.message = 'You are posting comments too quickly! Please slow down'
+                send_html(200, alert(), state)
             }
             else {
 
@@ -487,7 +486,6 @@ async function render(state) {
 
         postform : async function() {
 
-            state.top3 = await top3(state)
             state.header_data = await header_data(state)
 
             let content = html(
@@ -501,35 +499,55 @@ async function render(state) {
 
         recoveryemail : async function() {
 
+            state.header_data = await header_data(state)
+
             Object.keys(state.post_data).map(key => { state.post_data[key] = strip_tags(state.post_data[key]) })
 
-            if (!/^\w.*@.+\.\w+$/.test(state.post_data.user_email)) return message('Please go back and enter a valid email',  state)
+            state.message = await send_login_link(state)
 
-            send_login_link(state.req, state.res, state, state.db)
+            let content = html(
+                midpage(
+                    h1(),
+                    text()
+                )
+            )
+
+            send_html(200, content, state)
         },
 
         registration : async function() {
 
             Object.keys(state.post_data).map(key => { state.post_data[key] = strip_tags(state.post_data[key]) })
 
-            if (/\W/.test(state.post_data.user_name)) return message('Please go back and enter username consisting only of letters', state);
-            if (!/^\w.*@.+\.\w+$/.test(state.post_data.user_email)) return message('Please go back and enter a valid email',  state)
+            if (/\W/.test(state.post_data.user_name))               state.message = 'Please go back and enter username consisting only of letters'
+            if (!/^\w.*@.+\.\w+$/.test(state.post_data.user_email)) state.message = 'Please go back and enter a valid email'
 
-            var results = await query('select * from users where user_email = ?', [state.post_data.user_email], state)
+			if (!state.message) { // no error yet
 
-            if (results[0]) {
-                message(`That email is already registered. Please use the "forgot password" link above.</a>`, state)
-                return
-            }
-            else {
-                var results = await query('select * from users where user_name = ?', [state.post_data.user_name], state)
+				var results = await query('select * from users where user_email = ?', [state.post_data.user_email], state)
 
-                if (results[0]) return message(`That user name is already registered. Please choose a different one.</a>`, state)
-                else {
-                    await query('insert into users set ?', state.post_data, state)
-                    send_login_link(state.req, state.res, state, state.db)
-                }
-            }
+				if (results[0]) {
+					state.message = `That email is already registered. Please use the "forgot password" link above.</a>`
+				}
+				else {
+					let results = await query('select * from users where user_name = ?', [state.post_data.user_name], state)
+
+					if (results[0]) state.message = `That user name is already registered. Please choose a different one.</a>`
+					else {
+						await query('insert into users set ?', state.post_data, state)
+						state.message = await send_login_link(state)
+					}
+				}
+			}
+
+            let content = html(
+                midpage(
+                    h1(),
+                    text()
+                )
+            )
+
+            send_html(200, content, state)
         },
 
         topic : async function() {
@@ -579,8 +597,8 @@ async function render(state) {
             var sql       = 'select * from users where user_name=?'
             var sql_parms = [user_name]
 
-            state.current_users       = await query(sql, sql_parms, state)
-            state.header_data = await header_data(state)
+            state.current_users = await query(sql, sql_parms, state)
+            state.header_data   = await header_data(state)
 
             let content = html(
                 midpage(
@@ -615,8 +633,8 @@ async function render(state) {
     }
 
 
-    function alert(message) {
-        return `<script type='text/javascript'> alert('${ message }'); </script>`
+    function alert() {
+        return `<script type='text/javascript'> alert('${ state.message }'); </script>`
     }
 
     function brag() {
@@ -724,16 +742,38 @@ async function render(state) {
             var user_pass            = state.current_user.user_pass
         }
 
-        html = icon_or_loginprompt(state)
+        if ('post_login' == state.page) var content = icon_or_loginprompt(state)
+        if ('key_login'  == state.page) {
+
+            state.header_data = await header_data(state)
+
+            var current_user_id = state.current_user ? state.current_user.user_id : 0
+
+            // left joins to also get each post's viewing and voting data for the current user if there is one
+            let sql = `select sql_calc_found_rows * from posts
+                       left join postviews on postview_post_id=post_id and postview_user_id= ?
+                       left join postvotes on postvote_post_id=post_id and postvote_user_id= ?
+                       where post_modified > date_sub(now(), interval 7 day) and post_approved=1
+                       order by post_modified desc limit 0, 20`
+
+            state.posts = await query(sql, [current_user_id, current_user_id], state)
+
+            var content = html(
+                midpage(
+                    alert(),
+                    post_list()
+                )
+            )
+        }
 
         var usercookie = `${ conf.usercookie }=${ user_id   }`
         var pwcookie   = `${ conf.pwcookie   }=${ user_pass }`
-        var d           = new Date()
-        var decade       = new Date(d.getFullYear()+10, d.getMonth(), d.getDate()).toUTCString()
+        var d          = new Date()
+        var decade     = new Date(d.getFullYear()+10, d.getMonth(), d.getDate()).toUTCString()
 
         // you must use the undocumented "array" feature of writeHead to set multiple cookies, because json
         var headers = [
-            ['Content-Length' , html.length                               ],
+            ['Content-Length' , content.length                            ],
             ['Content-Type'   , 'text/html'                               ],
             ['Expires'        , d.toUTCString()                           ],
             ['Set-Cookie'     , `${usercookie}; Expires=${decade}; Path=/`],
@@ -741,7 +781,7 @@ async function render(state) {
         ] // do not use 'secure' parm with cookie or will be unable to test login in dev, bc dev is http only
 
         res.writeHead(200, headers)
-        res.end(html)
+        res.end(content)
         if (db) db.release()
     }
 
@@ -774,15 +814,15 @@ async function render(state) {
 				net = post.post_likes - post.post_dislikes
 
 				if ( state.current_user ) {
-					var upgrey   = post.postvote_up   ? `style='color: grey; pointer-events: none;' title='you liked this'    ` : ``;
-					var downgrey = post.postvote_down ? `style='color: grey; pointer-events: none;' title='you disliked this' ` : ``;
+					var upgrey   = post.postvote_up   ? `style='color: grey; pointer-events: none;' title='you liked this'    ` : ``
+					var downgrey = post.postvote_down ? `style='color: grey; pointer-events: none;' title='you disliked this' ` : ``
 
-					var likelink    = `href='#' ${upgrey}   onclick="postlike('post_${post.post_id}');   return false;" `;
-					var dislikelink = `href='#' ${downgrey} onclick="postdislike('post_${post.post_id}');return false;" `;
+					var likelink    = `href='#' ${upgrey}   onclick='postlike('post_${post.post_id}');   return false;'`
+					var dislikelink = `href='#' ${downgrey} onclick='postdislike('post_${post.post_id}');return false;'`
 				}
 				else {
-					var likelink    = `href='/login.php?action=registerform'`;
-					var dislikelink = `href='/login.php?action=registerform'`;
+					var likelink    = `href='#' onclick='midpage.innerHTML = registerform.innerHTML; return false'`
+					var dislikelink = `href='#' onclick='midpage.innerHTML = registerform.innerHTML; return false'`
 				}
 
                 return `<div class='post' >
@@ -989,7 +1029,7 @@ async function render(state) {
             <form action='/registration' method='post'>
             <div >
                 <div class='form-group'><input type='text' name='user_name' placeholder='choose username' class='form-control' id='user_name' ></div>
-                <div class='form-group'><input type='text' name='user_email'      placeholder='email post'   class='form-control'                      ></div>
+                <div class='form-group'><input type='text' name='user_email'      placeholder='email'     class='form-control'                ></div>
             </div>
             <button type='submit' id='submit' class='btn btn-success btn-sm'>submit</button>
             </form>
@@ -1035,7 +1075,7 @@ async function render(state) {
         return formatted.join(' ') + ` <a href='/topics/'>more&raquo;</a>`
     }
 
-    if (typeof pages[state.page] === 'function') { // hit the db iff the request is for a valid request
+    if (typeof pages[state.page] === 'function') { // hit the db iff the request is for a valid url
         try {
             await get_connection_from_pool(state)
             await block_countries(state)
@@ -1047,7 +1087,7 @@ async function render(state) {
         catch(e) { console.log(e); send_html(500, e.message, state) }
     }
     else {
-        let err = `${ state.req.url } is not a valid request`
+        let err = `${ state.req.url } is not a valid url`
         console.log(err)
         send_html(404, err, state)
     }
