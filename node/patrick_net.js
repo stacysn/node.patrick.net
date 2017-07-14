@@ -166,6 +166,13 @@ function md5(str) {
     return hash.digest('hex')
 }
 
+function digits(s) { // return just the digits from a string
+
+    if (!s) return ''
+
+    return s.replace(/\D/g,'')
+}
+
 function strip_tags(s) {
     return s.replace(/(<([^>]+)>)/g,'')
 }
@@ -223,9 +230,9 @@ String.prototype.linkify = function(ref) {
     var emailpostPattern = /[\w.]+@[a-zA-Z_-]+?(?:\.[a-zA-Z]{2,6})+/gim;
 
     return this
-        .replace(urlPattern,          '<a href="$&">$&</a>')
-        .replace(pseudoUrlPattern,    '$1<a href="http://$2">$2</a>')
-        .replace(imagePattern,        '><img src="$1"><') // it's already a link because of urlPattern above
+        .replace(urlPattern,       '<a href="$&">$&</a>')
+        .replace(pseudoUrlPattern, '$1<a href="http://$2">$2</a>')
+        .replace(imagePattern,     '><img src="$1"><') // it's already a link because of urlPattern above
         .replace(emailpostPattern, '<a href="mailto:$&">$&</a>')
 }
 
@@ -236,7 +243,7 @@ function query(sql, sql_parms, state) {
 
         var get_results = function (error, results, fields, timing) { // callback to give to state.db.query()
 
-            //console.log(query.sql)
+            console.log(query.sql)
 
             if (error) { state.db.release(); reject(error) }
 
@@ -318,8 +325,8 @@ async function render(state) {
 
         key_login : async function() {
 
-            key      = url.parse(state.req.url, true).query.key
-            password = md5(Date.now() + conf.nonce_secret).substring(0, 6)
+			let key      = _GET('key')
+            let password = md5(Date.now() + conf.nonce_secret).substring(0, 6)
 
             state.header_data = await header_data(state)
 
@@ -428,7 +435,7 @@ async function render(state) {
 
                 state.header_data = await header_data(state)
                 state.post        = results[0]
-                state.comments    = await post_comment_list(state.post.post_id) // pick up the comment list for this post
+                state.comments    = await post_comment_list(state.post) // pick up the comment list for this post
 
                 let content = html(
                     midpage(
@@ -522,17 +529,17 @@ async function render(state) {
 
         since : async function() { // given a post_id and epoch timestamp, redirect to post's first comment after that timestamp
 
-            // these will die on replace() if parm is not defined and that's the right thing to do
-            let post_id = url.parse(state.req.url, true).query.p.replace(/\D/g,'')
-            let when    = url.parse(state.req.url, true).query.when.replace(/\D/g,'')
+            // these will die on replace() if p or when is not defined and that's the right thing to do
+			let p    = digits(_GET('p'))
+            let when = digits(_GET('when'))
 
 			let results = await query(`select comment_id from comments
 									   where comment_post_id = ? and comment_approved > 0 and comment_date > from_UNIXTIME(?)
-									   order by comment_date limit 1`, [post_id, when], state)
+									   order by comment_date limit 1`, [p, when], state)
 
 			let c = results[0].comment_id
 
-            redirect(`/post/${post_id}?c=${c}#comment-${c}`)
+            redirect(`/post/${p}?c=${c}#comment-${c}`)
         },
 
         topic : async function() {
@@ -668,6 +675,10 @@ async function render(state) {
         }
     }
 
+	function _GET(parm) { // given a string, return the GET parameter by that name
+		return url.parse(state.req.url, true).query[parm]
+	}
+
     function format_date(gmt_date) { // create localized date string from gmt date out of mysql
         var utz = state.current_user ? state.current_user.user_timezone : 'America/Los_Angeles'
         return moment(Date.parse(gmt_date)).tz(utz).format('YYYY MMMM Do h:mma z')
@@ -779,10 +790,44 @@ async function render(state) {
         return '<a href="/postform" class="btn btn-success btn-sm" title="start a new post" ><b>new post</b></a>'
     }
 
-    async function post_comment_list(post_id) {
+    async function post_comment_list(post) {
 
-        let results = await query('select * from comments left join users on comment_author=user_id where comment_post_id=? order by comment_date',
-            [post_id], state)
+		// If page is not set, show the 40 most recent comments. Same as page 0.
+		// If page is set, show that page, counting backwards from most recent.
+		// So page 1 would be the 40 comments before the most recent.
+
+		// If we were passed a 'c' parm, then calculate the page from that, overriding any page parm.
+		// This allows permalinks regardless of page number.
+
+        let page = 0 // default to first page of comments
+
+		if (_GET('c')) {
+			var c = digits(_GET('c'))
+			// Get all the comments, sorted from greatest to least.
+			// What page of 40 from the end is our comment in? Start counting with page 0 being the most recent comments.
+			let results = await query(`select floor(count(*)/40 - 0.01) as f from comments
+                                where comment_post_id=? and comment_id >= ? order by comment_id`, [post.post_id, c], state)
+
+            if (results[0]) page = results[0].f
+		}
+
+		if (!page) page = digits(_GET('page')) // if page is not set from c above, use _GET('page')
+		if (!page) page = 0
+
+		let start = post.post_comments - 40 * (page + 1)
+		if (start < 0) start = 0
+
+		// if this gets too slow as user_adhom_comments increases, try a left join, or just start deleting old adhom comments
+		let sql = `select sql_calc_found_rows * from comments
+                  left join users on comment_author=user_id
+				  where comment_post_id = ?
+				  and comment_adhom_when is null
+				  order by comment_date limit ?, 40`
+
+        let results = await query(sql, [post.post_id, start], state)
+
+        //let results = await query('select * from comments left join users on comment_author=user_id where comment_post_id=? order by comment_date',
+        //    [post.post_id], state)
 
         if (results.length) return results
     }
