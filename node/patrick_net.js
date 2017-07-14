@@ -424,20 +424,11 @@ async function render(state) {
 
             if (0 == results.length) send_html(404, `No post with id "${post_id}"`)
             else {
-                state.post = results[0]
+                let current_user_id = state.current_user ? state.current_user.user_id : 0
 
                 state.header_data = await header_data(state)
-
-                // pick up the comment list for this post
-                var results = await query('select * from comments left join users on comment_author=user_id where comment_post_id = ? order by comment_date',
-                    [post_id], state)
-
-                if (results.length) state.comments = results
-
-				if (state.current_user) {
-					await query(`insert into postviews (postview_user_id, postview_post_id, postview_last_view)
-                                 values (?, ?, now()) on duplicate key update postview_last_view=now()`, [state.current_user.user_id, post_id], state)
-                }
+                state.post        = results[0]
+                state.comments    = await post_comment_list(state.post.post_id) // pick up the comment list for this post
 
                 let content = html(
                     midpage(
@@ -448,6 +439,11 @@ async function render(state) {
                 )
 
                 send_html(200, content)
+
+				if (state.current_user) {
+					await query(`insert into postviews (postview_user_id, postview_post_id, postview_last_view)
+                                 values (?, ?, now()) on duplicate key update postview_last_view=now()`, [state.current_user.user_id, post_id], state)
+                }
             }
         },
 
@@ -528,11 +524,11 @@ async function render(state) {
 
             // these will die on replace() if parm is not defined and that's the right thing to do
             let post_id = url.parse(state.req.url, true).query.p.replace(/\D/g,'')
-            let since   = url.parse(state.req.url, true).query.since.replace(/\D/g,'')
+            let when    = url.parse(state.req.url, true).query.when.replace(/\D/g,'')
 
 			let results = await query(`select comment_id from comments
 									   where comment_post_id = ? and comment_approved > 0 and comment_date > from_UNIXTIME(?)
-									   order by comment_date limit 1`, [post_id, since], state)
+									   order by comment_date limit 1`, [post_id, when], state)
 
 			let c = results[0].comment_id
 
@@ -783,6 +779,14 @@ async function render(state) {
         return '<a href="/postform" class="btn btn-success btn-sm" title="start a new post" ><b>new post</b></a>'
     }
 
+    async function post_comment_list(post_id) {
+
+        let results = await query('select * from comments left join users on comment_author=user_id where comment_post_id=? order by comment_date',
+            [post_id], state)
+
+        if (results.length) return results
+    }
+
     function post_link(post) {
         let path = post_path(post)
         return `<a href='${path}'>${post.post_title}</a>`
@@ -938,8 +942,7 @@ async function render(state) {
 
 		if (modified > last_viewed) {
 
-			let path = post_path(post)
-			let unread = `<a href='${path}?since=${last_viewed}' ><img src='/content/unread_comments.gif' width='19' height='18' title='View unread comments'></A>`
+			let unread = `<a href='/since?p=${post.post_id}&when=${last_viewed}' ><img src='/content/unread_comments.gif' width='19' height='18' title='View unread comments'></A>`
 
 			return unread
 		}
