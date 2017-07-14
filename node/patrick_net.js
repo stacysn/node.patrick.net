@@ -53,24 +53,24 @@ function get_connection_from_pool(state) {
 
     return new Promise(function(fulfill, reject) {
 
+        // query or set a database lock for this ip; each ip is allowed only one outstanding connection at a time
+        state.ip = state.req.headers['x-forwarded-for']
+
+        if (locks[state.ip]) {
+            //send_html(403, 'Rate Limit Exceeded')
+            console.log(`Rate limit exceeded by ${ state.ip } by asking for ${ state.req.url }`)
+            reject(state)
+        }
+
         pool.getConnection(function(err, db) {
 
             state.db = db
-            state.ip = state.req.headers['x-forwarded-for']
 
-            // query or set a database lock for this ip; each ip is allowed only one outstanding connection at a time
-            if (locks[state.ip]) {
-                send_html(403, 'Rate Limit Exceeded', state)
-                console.log(`Rate limit exceeded by ${ state.ip } by asking for ${ state.req.url }`)
-                return
+            locks[state.ip] = { // set the lock
+                threadId : db.threadId,
+                ts       : Date.now()
             }
-            else {
-                locks[state.ip] = { // set the lock
-                    threadId : db.threadId,
-                    ts       : Date.now()
-                }
-                console.log(`dblock for ${ state.ip } when asking for ${ state.req.url }`)
-            }
+            console.log(`dblock for ${ state.ip } when asking for ${ state.req.url }`)
 
             fulfill(state)
         })
@@ -157,34 +157,6 @@ async function set_user(state) { // update state with whether they are logged in
     catch(e) { // no valid cookie
         state.current_user = null
     }
-}
-
-function redirect(redirect_to, res, db) {
-
-    var message = `Redirecting to ${ redirect_to }`
-
-    var headers =  {
-        'Location'       : redirect_to,
-        'Content-Length' : message.length,
-        'Expires'        : new Date().toUTCString()
-    }
-
-    res.writeHead(303, headers)
-    res.end(message)
-    if (db) db.release()
-}
-
-function send_html(code, html, state) {
-
-    var headers =  {
-        'Content-Type'   : 'text/html',
-        'Content-Length' : html.length,
-        'Expires'        : new Date().toUTCString()
-    }
-
-    state.res.writeHead(code, headers)
-    state.res.end(html)
-    if (state.db) state.db.release()
 }
 
 function md5(str) {
@@ -305,19 +277,19 @@ async function render(state) {
                 )
             )
 
-            send_html(200, content, state)
+            send_html(200, content)
         },
 
         delete : async function() { // delete a comment
 
             var comment_id = segments(state.req.url)[2]
 
-            if (!state.current_user) send_html(200, content, state) // do nothing if not logged in
+            if (!state.current_user) send_html(200, content) // do nothing if not logged in
 
             // delete comment only if current user is comment_author
             await query('delete from comments where comment_id = ? and comment_author = ?', [comment_id, state.current_user.user_id], state)
 
-            send_html(200, '', state)
+            send_html(200, '')
         },
 
         home : async function () {
@@ -341,7 +313,7 @@ async function render(state) {
                 )
             )
 
-            send_html(200, content, state)
+            send_html(200, content)
         },
 
         key_login : async function() {
@@ -349,7 +321,7 @@ async function render(state) {
             key      = url.parse(state.req.url, true).query.key
             password = md5(Date.now() + conf.nonce_secret).substring(0, 6)
 
-            state.message = `Your password is ${ password } and you are now logged in`
+            state.header_data = await header_data(state)
 
             var results = await query('select user_email from users where user_activation_key = ?', [key], state)
 
@@ -359,10 +331,9 @@ async function render(state) {
                 // erase key so it cannot be used again, and set new password
                 await query('update users set user_activation_key=null, user_pass=? where user_activation_key=?', [md5(password), key], state)
 
-                login(state.req, state.res, state, state.db, email, password)
+                login(state, email, password)
             }
             else {
-                state.header_data = await header_data(state)
                 state.message     = `Darn, that key has already been used. Please try 'forgot password' if you need to log in.`
 
                 let content = html(
@@ -372,7 +343,7 @@ async function render(state) {
                     )
                 )
 
-                send_html(200, content, state)
+                send_html(200, content)
             }
         },
 
@@ -401,7 +372,7 @@ async function render(state) {
             post_data = state.post_data
             Object.keys(post_data).map(key => { post_data[key] = strip_tags(post_data[key]) })
 
-            if (!post_data.comment_content) { send_html(200, '', state); return } // empty comment
+            if (!post_data.comment_content) { send_html(200, ''); return } // empty comment
 
             // rate limit by user's ip address
             var results = await query('select (unix_timestamp(now()) - unix_timestamp(user_last_comment_time)) as ago from users where user_last_comment_time is not null and user_last_comment_ip = ? order by user_last_comment_time desc limit 1',
@@ -409,7 +380,7 @@ async function render(state) {
 
             if (results.length && results[0].ago < 2) { // this ip already commented less than two seconds ago
                 state.message = 'You are posting comments too quickly! Please slow down'
-                send_html(200, alert(), state)
+                send_html(200, alert())
             }
             else {
 
@@ -422,15 +393,14 @@ async function render(state) {
 
                 await query('update users set user_last_comment_ip = ? where user_id = ?', [state.ip, state.current_user.user_id], state)
                 await query('update posts set post_modified = ? where post_id = ?', [post_data.comment_date, post_data.comment_post_id], state)
-
-                var results = await query('insert into comments set ?', post_data, state)
+                await query('insert into comments set ?', post_data, state)
 
                 // now select the inserted row so that we pick up the comment_date time and user data for displaying the comment
                 var results = await query('select * from comments left join users on comment_author=user_id where comment_id = ?', [results.insertId], state)
 
                 if (results.length) state.comment = results[0]
 
-                send_html(200, comment(state.comment), state)
+                send_html(200, comment(state.comment))
             }
         },
 
@@ -441,29 +411,33 @@ async function render(state) {
 
             post_data.post_approved = 1 // create a function to check content before approving!
 
-            var results = await query('insert into posts set ?, post_modified=now()', post_data, state)
+            await query('insert into posts set ?, post_modified=now()', post_data, state)
 
-            redirect(`/post/${results.insertId}`, state.res, state.db)
+            redirect(`/post/${results.insertId}`)
         },
 
         post : async function() { // show a single post
 
-            // get post's db row number from url, eg 47 from /post/47/slug-goes-here
-            var post_id = segments(state.req.url)[2]
+            let post_id = segments(state.req.url)[2] // get post's db row number from url, eg 47 from /post/47/slug-goes-here
 
             var results = await query('select * from posts where post_id=?', [post_id], state)
 
-            if (0 == results.length) send_html(404, `No post with id "${post_id}"`, state)
+            if (0 == results.length) send_html(404, `No post with id "${post_id}"`)
             else {
                 state.post = results[0]
 
                 state.header_data = await header_data(state)
 
-                // now pick up the comment list for this post
+                // pick up the comment list for this post
                 var results = await query('select * from comments left join users on comment_author=user_id where comment_post_id = ? order by comment_date',
                     [post_id], state)
 
                 if (results.length) state.comments = results
+
+				if (state.current_user) {
+					await query(`insert into postviews (postview_user_id, postview_post_id, postview_last_view)
+                                 values (?, ?, now()) on duplicate key update postview_last_view=now()`, [state.current_user.user_id, post_id], state)
+                }
 
                 let content = html(
                     midpage(
@@ -473,7 +447,7 @@ async function render(state) {
                     )
                 )
 
-                send_html(200, content, state)
+                send_html(200, content)
             }
         },
 
@@ -481,7 +455,7 @@ async function render(state) {
             email    = state.post_data.email
             password = state.post_data.password
 
-            login(state.req, state.res, state, state.db, email, password)
+            login(state, email, password)
         },
 
         postform : async function() {
@@ -494,7 +468,7 @@ async function render(state) {
                 )
             )
 
-            send_html(200, content, state)
+            send_html(200, content)
         },
 
         recoveryemail : async function() {
@@ -512,7 +486,7 @@ async function render(state) {
                 )
             )
 
-            send_html(200, content, state)
+            send_html(200, content)
         },
 
         registration : async function() {
@@ -547,7 +521,22 @@ async function render(state) {
                 )
             )
 
-            send_html(200, content, state)
+            send_html(200, content)
+        },
+
+        since : async function() { // given a post_id and epoch timestamp, redirect to post's first comment after that timestamp
+
+            // these will die on replace() if parm is not defined and that's the right thing to do
+            let post_id = url.parse(state.req.url, true).query.p.replace(/\D/g,'')
+            let since   = url.parse(state.req.url, true).query.since.replace(/\D/g,'')
+
+			let results = await query(`select comment_id from comments
+									   where comment_post_id = ? and comment_approved > 0 and comment_date > from_UNIXTIME(?)
+									   order by comment_date limit 1`, [post_id, since], state)
+
+			let c = results[0].comment_id
+
+            redirect(`/post/${post_id}?c=${c}#comment-${c}`)
         },
 
         topic : async function() {
@@ -568,7 +557,7 @@ async function render(state) {
                 )
             )
 
-            send_html(200, content, state)
+            send_html(200, content)
         },
 
         topics : async function () {
@@ -588,7 +577,7 @@ async function render(state) {
                 )
             )
 
-            send_html(200, content, state)
+            send_html(200, content)
         },
 
         user : async function() {
@@ -606,7 +595,7 @@ async function render(state) {
                 )
             )
 
-            send_html(200, content, state)
+            send_html(200, content)
         },
 
         users : async function() {
@@ -623,7 +612,7 @@ async function render(state) {
                 )
             )
 
-            send_html(200, content, state)
+            send_html(200, content)
         },
 
     } // end of pages /////////////////////////////////////////////////////////
@@ -725,7 +714,7 @@ async function render(state) {
             </html>`
     }
 
-    async function login(req, res, state, db, email, password) {
+    async function login(state, email, password) {
 
         var results = await query('select * from users where user_email = ? and user_pass = ?', [email, md5(password)], state)
 
@@ -745,8 +734,6 @@ async function render(state) {
         if ('post_login' == state.page) var content = icon_or_loginprompt(state)
         if ('key_login'  == state.page) {
 
-            state.header_data = await header_data(state)
-
             var current_user_id = state.current_user ? state.current_user.user_id : 0
 
             // left joins to also get each post's viewing and voting data for the current user if there is one
@@ -757,6 +744,7 @@ async function render(state) {
                        order by post_modified desc limit 0, 20`
 
             state.posts = await query(sql, [current_user_id, current_user_id], state)
+            state.message = `Your password is ${ password } and you are now logged in`
 
             var content = html(
                 midpage(
@@ -780,9 +768,9 @@ async function render(state) {
             ['Set-Cookie'     , `${pwcookie};   Expires=${decade}; Path=/`]
         ] // do not use 'secure' parm with cookie or will be unable to test login in dev, bc dev is http only
 
-        res.writeHead(200, headers)
-        res.end(content)
-        if (db) db.release()
+        state.res.writeHead(200, headers)
+        state.res.end(content)
+        if (state.db) state.db.release()
     }
 
     function midpage(...args) { // just an id so we can easily swap out the middle of the page
@@ -796,8 +784,13 @@ async function render(state) {
     }
 
     function post_link(post) {
-        slug = slugify(`${post.post_title}`)
-        return `<a href="/post/${post.post_id}/${slug}">${post.post_title}</a>`
+        let path = post_path(post)
+        return `<a href='${path}'>${post.post_title}</a>`
+    }
+
+    function post_path(post) {
+        let slug = slugify(`${post.post_title}`)
+        return `/post/${post.post_id}/${slug}`
     }
 
     function post_list() {
@@ -806,14 +799,22 @@ async function render(state) {
 
         if (state.posts) {
             var formatted = state.posts.map(post => {
+
                 var link = post_link(post)
+                var path = post_path(post)
 
                 if (!state.current_user && post.post_title.match(/thunderdome/gi)) return '' // don't show thunderdome posts to non-logged-in users
                 if (!state.current_user && post.post_nsfw)                         return '' // don't show porn posts to non-logged-in users
 
 				net = post.post_likes - post.post_dislikes
 
-				if ( state.current_user ) {
+				if (state.current_user) { // user is logged in
+
+                    if (!post.postview_last_view)
+                        var unread = `<a href='${path}' ><img src='/content/unread_post.gif' width='45' height='16' title='You never read this one' ></a>`
+                    else 
+                        var unread = unread_comments_icon(post, post.postview_last_view) // last view by this user, from left join
+
 					var upgrey   = post.postvote_up   ? `style='color: grey; pointer-events: none;' title='you liked this'    ` : ``
 					var downgrey = post.postvote_down ? `style='color: grey; pointer-events: none;' title='you disliked this' ` : ``
 
@@ -825,11 +826,13 @@ async function render(state) {
 					var dislikelink = `href='#' onclick='midpage.innerHTML = registerform.innerHTML; return false'`
 				}
 
+
                 return `<div class='post' >
                     <div class='arrowbox' >
                         <a ${likelink} >&#9650;</a><br><span id='post_${post.post_id}' />${net}</span><br><a ${dislikelink} >&#9660;</a>
                     </div>
-                    ${link} ${post.postview_last_view} ${net}
+                    ${link} ${post.postview_last_view} ${post.post_comments} comments ${unread}
+
                 </div>`
             })
         }
@@ -837,21 +840,7 @@ async function render(state) {
 
         return formatted.join('')
         /*
-                print get_like_dislike($post);
 
-                $unread      = ''; // reset for each post
-                $post_title  = $post->post_title;
-                $post_views  = number_format($post->post_views);
-                $post_author = get_author_name( $post->post_author );
-                $path        = post_id2path($post->post_id);
-
-                if ( is_user_logged_in() ) {
-                    if (!$last_view[$post->post_id])
-                        $unread = "<a href='$path' ><IMG SRC='/content/unread_post.gif' width='45' height='16' title='You never read this one' ></a> &nbsp;";
-                    else {
-                        $unread = unread_comments_icon($post, $..., $last_view);
-                    }
-                }
 
                 $outbound_ref = '';
                 if ($external_link = get_external_link($post->post_content)) {
@@ -940,6 +929,22 @@ async function render(state) {
     function text() {
         return `${ state.text || '' }`
     }
+
+	function unread_comments_icon(post, last_view) { // return the blinky icon if there are unread comments in a post
+
+		// if post_modified > last time they viewed this post, then give them a link to earliest unread comment
+		let last_viewed = Date.parse(last_view) / 1000
+		let modified    = Date.parse(post.post_modified) / 1000
+
+		if (modified > last_viewed) {
+
+			let path = post_path(post)
+			let unread = `<a href='${path}?since=${last_viewed}' ><img src='/content/unread_comments.gif' width='19' height='18' title='View unread comments'></A>`
+
+			return unread
+		}
+		else return ''
+	}
 
     function user_list() {
 
@@ -1054,6 +1059,21 @@ async function render(state) {
             `
     }
 
+	function redirect(redirect_to) {
+
+		var message = `Redirecting to ${ redirect_to }`
+
+		var headers =  {
+			'Location'       : redirect_to,
+			'Content-Length' : message.length,
+			'Expires'        : new Date().toUTCString()
+		}
+
+		state.res.writeHead(303, headers)
+		state.res.end(message)
+		if (state.db) state.db.release()
+	}
+
     function tabs() {
         return `<ul class='nav nav-tabs'>
             <li class='active' > <a href='/?order=active'   title='most recent comments'       >active</a></li>
@@ -1079,6 +1099,32 @@ async function render(state) {
         return formatted.join(' ') + ` <a href='/topics/'>more&raquo;</a>`
     }
 
+	function die(message) { // errors that normal user will never see
+
+		var headers =  {
+			'Content-Length' : message.length,
+			'Expires'        : new Date().toUTCString()
+		}
+
+		state.res.writeHead(303, headers)
+		state.res.end(message)
+		console.log(message)
+		if (state.db) state.db.release()
+	}
+
+	function send_html(code, html) {
+
+		var headers =  {
+			'Content-Type'   : 'text/html',
+			'Content-Length' : html.length,
+			'Expires'        : new Date().toUTCString()
+		}
+
+		state.res.writeHead(code, headers)
+		state.res.end(html)
+		if (state.db) state.db.release()
+	}
+
     if (typeof pages[state.page] === 'function') { // hit the db iff the request is for a valid url
         try {
             await get_connection_from_pool(state)
@@ -1088,12 +1134,12 @@ async function render(state) {
             await set_user(state)
             await pages[state.page](state)
         }
-        catch(e) { console.log(e); send_html(500, e.message, state) }
+        catch(e) { console.log(e); send_html(500, e.message) }
     }
     else {
         let err = `${ state.req.url } is not a valid url`
         console.log(err)
-        send_html(404, err, state)
+        send_html(404, err)
     }
 
 } // end of render
