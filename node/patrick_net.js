@@ -121,7 +121,7 @@ function collect_post_data(state) { // if there is any POST data, accumulate it 
             })
 
             state.req.on('end', function () {
-                var post_data   = querystring.parse(body)
+                var post_data = querystring.parse(body)
                 Object.keys(post_data).map(function(key) { post_data[key] = post_data[key].trim() }) // trim all top level values, should all be strings
                 state.post_data = post_data
                 fulfill(state)
@@ -234,6 +234,32 @@ String.prototype.linkify = function(ref) {
         .replace(pseudoUrlPattern, '$1<a href="http://$2">$2</a>')
         .replace(imagePattern,     '><img src="$1"><') // it's already a link because of urlPattern above
         .replace(emailpostPattern, '<a href="mailto:$&">$&</a>')
+}
+
+function brandit(url) { // add ref=[domain name] to a url
+
+    if (!url) return
+
+    if (!new RegExp(conf.domain).test(url)) { // brand it iff url does not already have conf.domain in it somewhere
+
+        let matches = null
+
+        if (matches = url.match(/(.*)\?(.*)/)) { // if E parms, add in ref=conf.domain as first one to make it visible and harder to remove
+            let loc         = matches[1]
+            let querystring = matches[2]
+            url = `${loc}?ref=${conf.domain}&${querystring}`
+        }
+        else if (matches = url.match(/(.*)#(.*)/)) { // if no parms, but E hash tag, add in brand BEFORE that
+            let loc        = matches[1]
+            let hashstring = matches[2]
+            url = `${loc}?ref=${conf.domain}#${hashstring}`
+        }
+        else { // Otherwise, we're the only parm.
+            url = url + '?ref=conf.domain'
+        }
+    }
+
+    return url
 }
 
 function query(sql, sql_parms, state) {
@@ -875,6 +901,7 @@ async function render(state) {
 					var dislikelink = `href='#' onclick='midpage.innerHTML = registerform.innerHTML; return false'`
 				}
 
+                let outbound_ref = ''
 
                 return `<div class='post' >
                     <div class='arrowbox' >
@@ -889,9 +916,6 @@ async function render(state) {
 
         return formatted.join('')
         /*
-
-
-                $outbound_ref = '';
                 if ($external_link = get_external_link($post->post_content)) {
 
                     $host = parse_url($external_link)['host'];
