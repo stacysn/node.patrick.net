@@ -670,10 +670,10 @@ async function render(state) {
 
         if (state.current_user) {
             var del = state.current_user.user_id == c.comment_author ?
-                `<a href='#' onclick="$.get('/delete/${ c.comment_id }', function() { $('#${ c.comment_id }').remove() });return false">delete</a>` : ''
+                `<a href='#' onclick="$.get('/delete/${ c.comment_id }', function() { $('#comment-${ c.comment_id }').remove() });return false">delete</a>` : ''
         }
 
-        return `<div class="comment" id="${ c.comment_id }" >${ u } ${ format_date(c.comment_date) } ${ del }<br>${ c.comment_content }</div>`
+        return `<div class="comment" id="comment-${ c.comment_id }" >${ u } ${ format_date(c.comment_date) } ${ del }<br>${ c.comment_content }</div>`
     }
 
     function commentbox() {
@@ -915,73 +915,13 @@ async function render(state) {
         else formatted = []
 
         return formatted.join('')
-        /*
-                if ($external_link = get_external_link($post->post_content)) {
-
-                    $host = parse_url($external_link)['host'];
-                    $host = $host ? $host : 'patrick.net';
-
-                    $outbound_ref = " <a href='$external_link' target='_blank' title='original story at $host' ><img src='/images/ext_link.png'></a>";
-                }
-
-                if (!$current_user->user_hide_post_list_photos) {
-                    $src = get_first_image($post->post_content);
-                    if ($src) {
-                        if ($post->post_nsfw)
-                            print "<div class='icon' ><a href='$path' ><img src='/images/nsfw.png' border=0 width=100 align=top hspace=5 vspace=5 ></a></div>";
-                        else
-                            print "<div class='icon' ><a href='$path' ><img src='$src' border=0 width=100 align=top hspace=5 vspace=5 ></a></div>";
-                    }
-                }
-
-                print "<a href='$path' ><b><font size='+1' $red >$post_title</font></b></a>$outbound_ref " . share_post($post) . '<br>';
-
-                $dt_ts = new DateTime($post->post_date);
-                $dt_ts->setTimeZone(new DateTimeZone('America/Los_Angeles')); // for now, california time for all users
-                //$when = $dt_ts->format('D M j, Y');
-                //$when = rel_time($post->post_date); // override the above line as experiment
-
-                if ($tag = text2hashtag($post->post_content)) {
-
-                    $tlink = " in <a href='/topics/$tag' >#$tag</a>";
-
-                    if (0 == strlen($post->post_topic)) { // if post_topic not yet set for this post, set it to the tag now
-                        $sql = "update posts set post_topic = '$tag' where post_id=$post->post_id";
-                        $db->query($sql);
-                    }
-                }
-                else $tlink = '';
-
-                print "by " . name_posts($post->post_author) . $tlink . ' &nbsp; ';
-
-
-                $post_comments = number_format(intval($post->post_comments));
-                $ago = rel_time($post->post_modified);
-
-                $s = $post->post_comments == 1 ? "" : "s";
-                $path = post_id2path($post->post_id);
-
-                if ($post->post_comments)
-                    print "<a href='$path'>$post_comments&nbsp;comment$s</a>, latest <a href='$path#comment-$post->post_latest_comment_id' >$ago</a>";
-                else
-                    print "Posted $ago";
-
-                print " $unread <br>";
-
-                $content = $post->post_content;
-                list($content, $more_wc) = first_words( strip_tags($content), 30 );
-                if ($more_wc) $content .= "... ";
-                if ($content) print "<font size='-1'>$content</font>";
-                print "</div>";
-            }
-        }
-        */
     }
 
-    function post() {
-        var link = post_link(state.post)
+    function post() { // format a single post for display
+        let icon = user_icon(state.current_user)
+        let link = post_link(state.post)
 
-        return `<div class='comment' ><h1>${ link }</h1>${ state.post.post_content }</div>`
+        return `<div class='comment' >${icon} <h1>${ link }</h1>${ state.post.post_content }</div>`
     }
 
     function postform() { // need to add conditional display of user-name chooser for non-logged in users
@@ -1032,7 +972,9 @@ async function render(state) {
         user_icon_width  = Math.round(u.user_icon_width  * scale)
         user_icon_height = Math.round(u.user_icon_height * scale)
 
-        return u.user_icon ? `<img src='${u.user_icon}' width='${user_icon_width}' height='${user_icon_height}' >` : ''
+        let left_align=` align='left' hspace='5' vspace='2' `;
+
+        return u.user_icon ? `<img src='${u.user_icon}' width='${user_icon_width}' height='${user_icon_height}' ${left_align} >` : ''
     }
 
     function user_info() {
