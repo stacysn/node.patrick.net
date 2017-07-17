@@ -255,7 +255,7 @@ function brandit(url) { // add ref=[domain name] to a url
             url = `${loc}?ref=${conf.domain}#${hashstring}`
         }
         else { // Otherwise, we're the only parm.
-            url = url + '?ref=conf.domain'
+            url = url + `?ref=${conf.domain}`
         }
     }
 
@@ -269,7 +269,7 @@ function query(sql, sql_parms, state) {
 
         var get_results = function (error, results, fields, timing) { // callback to give to state.db.query()
 
-            console.log(query.sql)
+            //console.log(query.sql)
 
             if (error) { state.db.release(); reject(error) }
 
@@ -451,14 +451,14 @@ async function render(state) {
 
         post : async function() { // show a single post
 
-            let post_id = segments(state.req.url)[2] // get post's db row number from url, eg 47 from /post/47/slug-goes-here
+			let current_user_id = state.current_user ? state.current_user.user_id : 0
+            let post_id         = segments(state.req.url)[2] // get post's db row number from url, eg 47 from /post/47/slug-goes-here
 
-            var results = await query('select * from posts where post_id=?', [post_id], state)
+            var results = await query('select * from posts left join postvotes on postvote_post_id=post_id and postvote_user_id=? where post_id=?',
+							          [current_user_id, post_id], state)
 
             if (0 == results.length) send_html(404, `No post with id "${post_id}"`)
             else {
-                let current_user_id = state.current_user ? state.current_user.user_id : 0
-
                 state.header_data = await header_data(state)
                 state.post        = results[0]
                 state.comments    = await post_comment_list(state.post) // pick up the comment list for this post
@@ -868,9 +868,28 @@ async function render(state) {
         return `/post/${post.post_id}/${slug}`
     }
 
-    function post_list() {
+    function arrowbox(post) { // output html for vote up/down arrows; takes a post left joined on user's votes for that post
 
-        // format and display a list of posts from whatever source; pass in only a limited number, because all of them will display
+        net = post.post_likes - post.post_dislikes
+
+        if (state.current_user) { // user is logged in
+            var upgrey   = post.postvote_up   ? `style='color: grey; pointer-events: none;' title='you liked this'    ` : ``
+            var downgrey = post.postvote_down ? `style='color: grey; pointer-events: none;' title='you disliked this' ` : ``
+
+            var likelink    = `href='#' ${upgrey}   onclick="postlike('post_${post.post_id}');   return false;"`
+            var dislikelink = `href='#' ${downgrey} onclick="postdislike('post_${post.post_id}');return false;"`
+        }
+        else {
+            var likelink    = `href='#' onclick="midpage.innerHTML = registerform.innerHTML; return false;"`
+            var dislikelink = `href='#' onclick="midpage.innerHTML = registerform.innerHTML; return false;"`
+        }
+
+        return `<div class='arrowbox' >
+                <a ${likelink} >&#9650;</a><br><span id='post_${post.post_id}' />${net}</span><br><a ${dislikelink} >&#9660;</a>
+                </div>`
+    }
+
+    function post_list() { // format and display a list of posts from whatever source; pass in only a limited number, because all of them will display
 
         if (state.posts) {
             var formatted = state.posts.map(post => {
@@ -884,32 +903,18 @@ async function render(state) {
 				net = post.post_likes - post.post_dislikes
 
 				if (state.current_user) { // user is logged in
-
                     if (!post.postview_last_view)
                         var unread = `<a href='${path}' ><img src='/content/unread_post.gif' width='45' height='16' title='You never read this one' ></a>`
                     else 
                         var unread = unread_comments_icon(post, post.postview_last_view) // last view by this user, from left join
-
-					var upgrey   = post.postvote_up   ? `style='color: grey; pointer-events: none;' title='you liked this'    ` : ``
-					var downgrey = post.postvote_down ? `style='color: grey; pointer-events: none;' title='you disliked this' ` : ``
-
-					var likelink    = `href='#' ${upgrey}   onclick='postlike('post_${post.post_id}');   return false;'`
-					var dislikelink = `href='#' ${downgrey} onclick='postdislike('post_${post.post_id}');return false;'`
 				}
 				else {
-					var likelink    = `href='#' onclick='midpage.innerHTML = registerform.innerHTML; return false'`
-					var dislikelink = `href='#' onclick='midpage.innerHTML = registerform.innerHTML; return false'`
+                    var unread = ''
 				}
 
-                let outbound_ref = ''
+                let arrowbox_html = arrowbox(post)
 
-                return `<div class='post' >
-                    <div class='arrowbox' >
-                        <a ${likelink} >&#9650;</a><br><span id='post_${post.post_id}' />${net}</span><br><a ${dislikelink} >&#9660;</a>
-                    </div>
-                    ${link} ${post.postview_last_view} ${post.post_comments} comments ${unread}
-
-                </div>`
+                return `<div class='post' >${arrowbox_html} ${link} ${post.postview_last_view} ${post.post_comments} comments ${unread} </div>`
             })
         }
         else formatted = []
@@ -918,10 +923,11 @@ async function render(state) {
     }
 
     function post() { // format a single post for display
-        let icon = user_icon(state.current_user)
-        let link = post_link(state.post)
+		let arrowbox_html = arrowbox(state.post)
+        let icon          = user_icon(state.current_user)
+        let link          = post_link(state.post)
 
-        return `<div class='comment' >${icon} <h1>${ link }</h1>${ state.post.post_content }</div>`
+        return `<div class='comment' >${arrowbox_html} ${icon} <h1>${ link }</h1>${ state.post.post_content }</div>`
     }
 
     function postform() { // need to add conditional display of user-name chooser for non-logged in users
@@ -1070,6 +1076,33 @@ async function render(state) {
             <a href="/users">users</a> &nbsp;
             <a href="/about">about</a> &nbsp;
             <a href='mailto:${ state.conf.admin_email }' >contact</a> &nbsp;
+			<script>
+			function tweet(content) {
+				$.get( "/tweet.php?comment_id="+content.split("_")[1], function(data) {
+					document.getElementById(content).innerHTML = data;
+				});
+			}
+			function like(content) {
+				$.get( "/like.php?comment_id="+content.split("_")[1], function(data) {
+					document.getElementById(content).innerHTML = data;
+				});
+			}
+			function dislike(content) {
+				$.get( "/dislike.php?comment_id="+content.split("_")[1], function(data) {
+					document.getElementById(content).innerHTML = data;
+				});
+			}
+			function postlike(content) { // For whole post instead of just one comment.
+				$.get( "/like.php?post_id="+content.split("_")[1], function(data) {
+					document.getElementById(content).innerHTML = data;
+				});
+			}
+			function postdislike(content) { // For whole post instead of just one comment.
+				$.get( "/dislike.php?post_id="+content.split("_")[1], function(data) {
+					document.getElementById(content).innerHTML = data;
+				});
+			}
+			</script>
             `
     }
 
