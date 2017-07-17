@@ -454,13 +454,17 @@ async function render(state) {
 			let current_user_id = state.current_user ? state.current_user.user_id : 0
             let post_id         = segments(state.req.url)[2] // get post's db row number from url, eg 47 from /post/47/slug-goes-here
 
-            var results = await query('select * from posts left join postvotes on postvote_post_id=post_id and postvote_user_id=? where post_id=?',
+            var results = await query(`select * from posts
+                                       left join postvotes on postvote_post_id=post_id and postvote_user_id=?
+                                       left join users on user_id=post_author
+                                       where post_id=?`,
 							          [current_user_id, post_id], state)
+
+            state.post = results[0]
 
             if (0 == results.length) send_html(404, `No post with id "${post_id}"`)
             else {
                 state.header_data = await header_data(state)
-                state.post        = results[0]
                 state.comments    = await post_comment_list(state.post) // pick up the comment list for this post
 
                 let content = html(
@@ -615,12 +619,13 @@ async function render(state) {
             var sql       = 'select * from users where user_name=?'
             var sql_parms = [user_name]
 
-            state.current_users = await query(sql, sql_parms, state)
+            let results = await query(sql, sql_parms, state)
+            let u = results[0]
             state.header_data   = await header_data(state)
 
             let content = html(
                 midpage(
-                    user_info()
+                    user_info(u)
                 )
             )
 
@@ -633,7 +638,7 @@ async function render(state) {
 
             var sql       = 'select * from users limit 20'
             var sql_parms = null
-            state.current_users = await query(sql, sql_parms, state)
+            state.users = await query(sql, sql_parms, state)
 
             let content = html(
                 midpage(
@@ -924,10 +929,21 @@ async function render(state) {
 
     function post() { // format a single post for display
 		let arrowbox_html = arrowbox(state.post)
-        let icon          = user_icon(state.current_user)
+        let icon          = user_icon(state.post) // state.post will have all the user fields in it bc of left join with post
         let link          = post_link(state.post)
 
-        return `<div class='comment' >${arrowbox_html} ${icon} <h1>${ link }</h1>${ state.post.post_content }</div>`
+        return `<div class='comment' >${arrowbox_html} ${icon} <h2 style='display:inline' >${ link }</h2>
+		<p>By ${user_link(state.post)}
+        ${ state.post.post_content }</div>`
+/*
+		print "<p>By " . name_posts($u->user_id);
+		print ' ';
+		print follow($u->user_id);
+		print ' &nbsp; ';
+		print zdate($post->post_date);
+		print ' &nbsp; ';
+*/
+
     }
 
     function postform() { // need to add conditional display of user-name chooser for non-logged in users
@@ -964,36 +980,34 @@ async function render(state) {
 		else return ''
 	}
 
+    function user_link(u) {
+		return `<a href='/user/${ u.user_name }'>${ u.user_name }</a>`
+	}
+
     function user_list() {
 
         var formatted = state.users.map( (item) => {
-            return `<div class='user' ><a href='/user/${ item.user_name }'>${ item.user_name }</a></div>`
+            let l = user_link(item)
+            return `<div class='user' >${l}</div>`
         })
 
         return formatted.join('')
     }
 
-    function user_icon(u, scale=1) {
+    function user_icon(u, scale=1) { // clickable icon for this user if they have icon
 
         user_icon_width  = Math.round(u.user_icon_width  * scale)
         user_icon_height = Math.round(u.user_icon_height * scale)
 
-        let left_align=` align='left' hspace='5' vspace='2' `;
-
-        return u.user_icon ? `<img src='${u.user_icon}' width='${user_icon_width}' height='${user_icon_height}' ${left_align} >` : ''
+        return u.user_icon ?
+                `<a href='/user/${ u.user_name }'><img src='${u.user_icon}' width='${user_icon_width}' height='${user_icon_height}'
+                    align='left' hspace='5' vspace='2' ></a>`
+                : ''
     }
 
-    function user_info() {
-
-        if (state.users && state.users.length) {
-            let u = state.users[0]
-
-            var img = user_icon(u)
-            return `<center><a href='/user/${ u.user_name }' >${ img }</a><h2>${ u.user_name }</h2></p>joined ${ u.user_registered }</center>`
-        }
-        else formatted = []
-
-        return formatted.join('')
+    function user_info(u) {
+        var img = user_icon(u)
+        return `<center><a href='/user/${ u.user_name }' >${ img }</a><h2>${ u.user_name }</h2></p>joined ${ u.user_registered }</center>`
     }
 
     function icon_or_loginprompt() {
