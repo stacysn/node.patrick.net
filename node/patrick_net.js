@@ -148,6 +148,8 @@ async function set_user(state) { // update state with whether they are logged in
         if (0 == results.length) state.current_user = null
         else                     state.current_user = results[0]
 
+        await set_relations(state)
+
         // update users currently online for display in header
         await query(`delete from onlines where online_last_view < date_sub(now(), interval 5 minute)`, null, state)
         await query(`insert into onlines (online_user_id, online_username, online_last_view) values (?, ?, now())
@@ -156,6 +158,39 @@ async function set_user(state) { // update state with whether they are logged in
     }
     catch(e) { // no valid cookie
         state.current_user = null
+    }
+}
+
+async function set_relations(state) { // update state object with their relationships to other users
+    // todo: eventually cache this data so we don't do the query on each hit
+    if (state.current_user) {
+
+        let non_trivial = `rel_my_friend > 0 or rel_i_ban > 0 or rel_i_follow > 0`
+        let my_pov      = `select * from relationships where rel_self_id = ? and (${non_trivial})`
+        let other_pov   = `select rel_self_id   as t2_self_id,
+                                  rel_other_id  as t2_other_id,
+                                  rel_i_follow  as follows_me,
+                                  rel_i_ban     as bans_me,
+                                  rel_my_friend as likes_me
+                                  from relationships where rel_other_id = ? and (${non_trivial})`
+
+        // we have to both left join and right join to pick up cases where one side has relation but other does not
+        let sql = `select * from (${my_pov}) as t1 left join  (${other_pov}) as t2 on t1.rel_other_id = t2.t2_self_id
+                   union
+                   select * from (${my_pov}) as t1 right join (${other_pov}) as t2 on t1.rel_other_id = t2.t2_self_id`
+
+        var results2 = await query(sql, Array(4).fill(state.current_user.user_id), state)
+
+        // now renumber array as object using user_ids to make later access easy
+
+        state.current_user.relationships = {}
+
+        for (var i = 0; i < results2.length; ++i) {
+            if (results2[i].rel_other_id)
+                state.current_user.relationships[results2[i].rel_other_id] = results2[i]
+            else
+                state.current_user.relationships[results2[i].t2_self_id]   = results2[i] // for cases where other has rel with me, but not i with him
+        }
     }
 }
 
@@ -271,7 +306,10 @@ function query(sql, sql_parms, state) {
 
             //console.log(query.sql)
 
-            if (error) { state.db.release(); reject(error) }
+            if (error) {
+                console.log(error)
+                reject(error)
+            }
 
             state.queries.push({
                 sql : query.sql,
@@ -933,7 +971,7 @@ async function render(state) {
         let link          = post_link(state.post)
 
         return `<div class='comment' >${arrowbox_html} ${icon} <h2 style='display:inline' >${ link }</h2>
-		<p>By ${user_link(state.post)}
+		<p>By ${user_link(state.post)} ${follow_button(state.post)}
         ${ state.post.post_content }</div>`
 /*
 		print "<p>By " . name_posts($u->user_id);
@@ -1080,6 +1118,23 @@ async function render(state) {
         </div>`
     }
 
+	function follow_button(f) { // f is the user to follow, a row from users table
+
+		let b = '<button type="button" class="btn btn-default btn-xs">follow</button>';
+
+		if (state.current_user) {
+			if (state.current_user.relationships[f.user_id].rel_i_follow) {
+				return `following (<a href='/users?followers=${f.user_id}'>${f.user_followers}</a>)
+						<a href='/unfollow?unfollow=${f.user_id}' title='Stop getting new posts by ${f.user_name}' >x</a>`
+			}
+			else {
+				let s = f.user_followers ? ` (<a href='/users?followers_of=${f.user_name}'>${f.user_followers}</a>)` : ''
+				return `<a href='/follow?follow=${f.user_id}' title='Get new posts from ${f.user_name} by email' >${b}</a> ${s}`
+			}
+		}
+		else return `<a href='/login?action=registerform' title='Register to get emails of new posts by ${f.user_name}' >${b}</a>`
+	}
+
     function footer() {
         return `
             <p>
@@ -1092,27 +1147,27 @@ async function render(state) {
             <a href='mailto:${ state.conf.admin_email }' >contact</a> &nbsp;
 			<script>
 			function tweet(content) {
-				$.get( "/tweet.php?comment_id="+content.split("_")[1], function(data) {
+				$.get( "/tweet?comment_id="+content.split("_")[1], function(data) {
 					document.getElementById(content).innerHTML = data;
 				});
 			}
 			function like(content) {
-				$.get( "/like.php?comment_id="+content.split("_")[1], function(data) {
+				$.get( "/like?comment_id="+content.split("_")[1], function(data) {
 					document.getElementById(content).innerHTML = data;
 				});
 			}
 			function dislike(content) {
-				$.get( "/dislike.php?comment_id="+content.split("_")[1], function(data) {
+				$.get( "/dislike?comment_id="+content.split("_")[1], function(data) {
 					document.getElementById(content).innerHTML = data;
 				});
 			}
 			function postlike(content) { // For whole post instead of just one comment.
-				$.get( "/like.php?post_id="+content.split("_")[1], function(data) {
+				$.get( "/like?post_id="+content.split("_")[1], function(data) {
 					document.getElementById(content).innerHTML = data;
 				});
 			}
 			function postdislike(content) { // For whole post instead of just one comment.
-				$.get( "/dislike.php?post_id="+content.split("_")[1], function(data) {
+				$.get( "/dislike?post_id="+content.split("_")[1], function(data) {
 					document.getElementById(content).innerHTML = data;
 				});
 			}
