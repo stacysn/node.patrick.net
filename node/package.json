@@ -1,14 +1,15 @@
 {
-  "name": "whatdidyoubid.com",
+  "name": "patrick.net",
   "version": "1.0.0",
-  "description": "Site where house buyers can say what they bid, to prevent realtor fraud",
-  "main": "app.js",
+  "description": "free form forum",
+  "main": "patrick_net.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "author": "Patrick Killelea",
   "license": "ISC",
   "dependencies": {
+    "cheerio": "^1.0.0-rc.2",
     "moment-timezone": "^0.5.13",
     "mysql": "^2.5.4",
     "nodemailer": "^4.0.1"

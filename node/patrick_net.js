@@ -3,6 +3,7 @@
 try { conf = require('./conf.json') } catch(e) { console.log(e.message); process.exit(1) } // conf.json is required
 
 cluster     = require('cluster')
+cheerio     = require('cheerio')         // installed via npm
 http        = require('http')
 moment      = require('moment-timezone') // installed via npm
 mysql       = require('mysql')           // installed via npm
@@ -515,7 +516,7 @@ async function render(state) {
 
                 send_html(200, content)
 
-				if (state.current_user) {
+				if (state.current_user) { // log the time that this user has seen this post
 					await query(`insert into postviews (postview_user_id, postview_post_id, postview_last_view)
                                  values (?, ?, now()) on duplicate key update postview_last_view=now()`, [state.current_user.user_id, post_id], state)
                 }
@@ -932,13 +933,24 @@ async function render(state) {
                 </div>`
     }
 
+    function get_first_image(post) {
+
+		const c = cheerio.load(post.post_content)
+		if (c('img').length) {
+			if (post.post_nsfw)
+				return `<div class='icon' ><a href='${post_path(post)}' ><img src='/images/nsfw.png' border=0 width=100 align=top hspace=5 vspace=5 ></a></div>`;
+			else
+				return `<div class='icon' ><a href='${post_path(post)}' ><img src='${c('img').attr('src')}' border=0 width=100 align=top hspace=5 vspace=5 ></a></div>`;
+		}
+		else return ''
+	}
+
     function post_list() { // format and display a list of posts from whatever source; pass in only a limited number, because all of them will display
 
         if (state.posts) {
             var formatted = state.posts.map(post => {
 
                 var link = post_link(post)
-                var path = post_path(post)
 
                 if (!state.current_user && post.post_title.match(/thunderdome/gi)) return '' // don't show thunderdome posts to non-logged-in users
                 if (!state.current_user && post.post_nsfw)                         return '' // don't show porn posts to non-logged-in users
@@ -947,7 +959,7 @@ async function render(state) {
 
 				if (state.current_user) { // user is logged in
                     if (!post.postview_last_view)
-                        var unread = `<a href='${path}' ><img src='/content/unread_post.gif' width='45' height='16' title='You never read this one' ></a>`
+                        var unread = `<a href='${post_path(post)}' ><img src='/content/unread_post.gif' width='45' height='16' title='You never read this one' ></a>`
                     else 
                         var unread = unread_comments_icon(post, post.postview_last_view) // last view by this user, from left join
 				}
@@ -956,8 +968,9 @@ async function render(state) {
 				}
 
                 let arrowbox_html = arrowbox(post)
+				let imgdiv = state.current_user.user_hide_post_list_photos ? '' : get_first_image(post)
 
-                return `<div class='post' >${arrowbox_html} ${link} ${post.postview_last_view} ${post.post_comments} comments ${unread} </div>`
+                return `<div class='post' >${arrowbox_html}${imgdiv}${link} ${post.postview_last_view} ${post.post_comments} comments ${unread} </div>`
             })
         }
         else formatted = []
