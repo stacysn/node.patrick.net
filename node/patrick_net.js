@@ -2,19 +2,20 @@
 
 try { conf = require('./conf.json') } catch(e) { console.log(e.message); process.exit(1) } // conf.json is required
 
-cluster     = require('cluster')
-cheerio     = require('cheerio')         // installed via npm
-http        = require('http')
-moment      = require('moment-timezone') // installed via npm
-mysql       = require('mysql')           // installed via npm
-nodemailer  = require('nodemailer')      // installed via npm
-os          = require('os')
-querystring = require('querystring')
-url         = require('url')
+// globals are capitalized
+CLUSTER     = require('cluster')
+CHEERIO     = require('cheerio')         // installed via npm
+HTTP        = require('http')
+MOMENT      = require('moment-timezone') // installed via npm
+MYSQL       = require('mysql')           // installed via npm
+NODEMAILER  = require('nodemailer')      // installed via npm
+OS          = require('os')
+QUERYSTRING = require('querystring')
+URL         = require('url')
 
 locks = {} // global locks to allow only one db connection per ip; helps mitigate dos attacks
 
-pool = mysql.createPool(conf.db)
+pool = MYSQL.createPool(conf.db)
 pool.on('release', db => { // delete the lock for the released db.threadId, and any locks that are older than 2000 milliseconds
     Object.keys(locks).map(ip => {
         if (locks[ip].threadId == db.threadId || locks[ip].ts < (Date.now() - 2000)) {
@@ -24,14 +25,14 @@ pool.on('release', db => { // delete the lock for the released db.threadId, and 
     })
 })
 
-if (cluster.isMaster) {
-    for (var i = 0; i < require('os').cpus().length; i++) cluster.fork()
+if (CLUSTER.isMaster) {
+    for (var i = 0; i < OS.cpus().length; i++) CLUSTER.fork()
 
-    cluster.on('exit', function(worker, code, signal) {
+    CLUSTER.on('exit', function(worker, code, signal) {
         console.log(`worker pid ${worker.process.pid} died with code ${code} from signal ${signal}, replacing that worker`)
-        cluster.fork()
+        CLUSTER.fork()
     })
-} else http.createServer(run).listen(conf.http_port)
+} else HTTP.createServer(run).listen(conf.http_port)
 
 ////////////////////////////////////////////////////////////////////////////////
 // end of top-level code; everything else is in a function
@@ -122,7 +123,7 @@ function collect_post_data(state) { // if there is any POST data, accumulate it 
             })
 
             state.req.on('end', function () {
-                var post_data = querystring.parse(body)
+                var post_data = QUERYSTRING.parse(body)
                 Object.keys(post_data).map(function(key) { post_data[key] = post_data[key].trim() }) // trim all top level values, should all be strings
                 state.post_data = post_data
                 fulfill(state)
@@ -214,7 +215,7 @@ function strip_tags(s) {
 }
 
 function get_transporter() {
-    return nodemailer.createTransport({
+    return NODEMAILER.createTransport({
         host:   conf.email.host,
         port:   conf.email.port,
         secure: false, // do not use TLS
@@ -232,7 +233,7 @@ async function send_login_link(state) {
 
 	if (!/^\w.*@.+\.\w+$/.test(state.post_data.user_email)) return 'Please go back and enter a valid email'
 
-    baseurl  = (/^dev\./.test(os.hostname())) ? conf.baseurl_dev : conf.baseurl // conf.baseurl_dev is for testing email
+    baseurl  = (/^dev\./.test(OS.hostname())) ? conf.baseurl_dev : conf.baseurl // conf.baseurl_dev is for testing email
     console.log(`baseurl is ${baseurl}`)
     key      = md5(Date.now() + conf.nonce_secret)
     key_link = `${ baseurl }/key_login?key=${ key }`
@@ -332,7 +333,7 @@ Array.prototype.sortByProp = function(p){
 }
 
 function segments(path) { // return url path split up as array of cleaned \w strings
-    return url.parse(path).path.replace(/\?.*/,'').split('/').map(segment => segment.replace(/\W/g,''))
+    return URL.parse(path).path.replace(/\?.*/,'').split('/').map(segment => segment.replace(/\W/g,''))
 }
 
 async function render(state) {
@@ -746,12 +747,12 @@ async function render(state) {
     }
 
 	function _GET(parm) { // given a string, return the GET parameter by that name
-		return url.parse(state.req.url, true).query[parm]
+		return URL.parse(state.req.url, true).query[parm]
 	}
 
     function format_date(gmt_date) { // create localized date string from gmt date out of mysql
         var utz = state.current_user ? state.current_user.user_timezone : 'America/Los_Angeles'
-        return moment(Date.parse(gmt_date)).tz(utz).format('YYYY MMMM Do h:mma z')
+        return MOMENT(Date.parse(gmt_date)).tz(utz).format('YYYY MMMM Do h:mma z')
     }
 
     function header() {
@@ -935,12 +936,12 @@ async function render(state) {
 
     function get_external_link(post) {
 
-		const c = cheerio.load(post.post_content)
+		const c = CHEERIO.load(post.post_content)
 		if (c('a').length) {
             let extlink = c('a').attr('href')
-            let host = url.parse(extlink).host
+            let host = URL.parse(extlink).host
 
-            if (!(['http:', 'https:'].indexOf(url.parse(extlink).protocol) > -1)) return '' // ignore invalid protocols
+            if (!(['http:', 'https:'].indexOf(URL.parse(extlink).protocol) > -1)) return '' // ignore invalid protocols
             if (new RegExp(conf.domain).test(host))                               return '' // ignore links back to own domain
 
             return `<a href='${brandit(extlink)}' target='_blank' title='original story at ${host}' ><img src='/images/ext_link.png'></a>`
@@ -950,7 +951,7 @@ async function render(state) {
 
     function get_first_image(post) {
 
-		const c = cheerio.load(post.post_content)
+		const c = CHEERIO.load(post.post_content)
 		if (c('img').length) {
 			if (post.post_nsfw)
 				return `<div class='icon' ><a href='${post_path(post)}' ><img src='/images/nsfw.png' border=0 width=100 align=top hspace=5 vspace=5 ></a></div>`
