@@ -214,6 +214,11 @@ function strip_tags(s) {
     return s.replace(/(<([^>]+)>)/g,'')
 }
 
+function text2hashtag(text) { // given some text, pull out first hashtag as link
+  if (matches = text.match(/[\s>]#(\w{1,32})/)) return `in <a href='/topic/${matches[1]}'>#${matches[1]}</a>`
+  else                          return ''
+}
+
 function get_transporter() {
     return NODEMAILER.createTransport({
         host:   conf.email.host,
@@ -231,7 +236,7 @@ function get_transporter() {
 
 async function send_login_link(state) {
 
-	if (!/^\w.*@.+\.\w+$/.test(state.post_data.user_email)) return 'Please go back and enter a valid email'
+  if (!/^\w.*@.+\.\w+$/.test(state.post_data.user_email)) return 'Please go back and enter a valid email'
 
     baseurl  = (/^dev\./.test(OS.hostname())) ? conf.baseurl_dev : conf.baseurl // conf.baseurl_dev is for testing email
     console.log(`baseurl is ${baseurl}`)
@@ -375,6 +380,7 @@ async function render(state) {
             let sql = `select sql_calc_found_rows * from posts
                        left join postviews on postview_post_id=post_id and postview_user_id= ?
                        left join postvotes on postvote_post_id=post_id and postvote_user_id= ?
+                       left join users     on user_id=post_author
                        where post_modified > date_sub(now(), interval 7 day) and post_approved=1
                        order by post_modified desc limit 0, 20`
 
@@ -391,7 +397,7 @@ async function render(state) {
 
         key_login : async function() {
 
-			let key      = _GET('key')
+      let key      = _GET('key')
             let password = md5(Date.now() + conf.nonce_secret).substring(0, 6)
 
             state.header_data = await header_data(state)
@@ -491,14 +497,14 @@ async function render(state) {
 
         post : async function() { // show a single post
 
-			let current_user_id = state.current_user ? state.current_user.user_id : 0
+      let current_user_id = state.current_user ? state.current_user.user_id : 0
             let post_id         = segments(state.req.url)[2] // get post's db row number from url, eg 47 from /post/47/slug-goes-here
 
             var results = await query(`select * from posts
                                        left join postvotes on postvote_post_id=post_id and postvote_user_id=?
                                        left join users on user_id=post_author
                                        where post_id=?`,
-							          [current_user_id, post_id], state)
+                        [current_user_id, post_id], state)
 
             state.post = results[0]
 
@@ -517,8 +523,8 @@ async function render(state) {
 
                 send_html(200, content)
 
-				if (state.current_user) { // log the time that this user has seen this post
-					await query(`insert into postviews (postview_user_id, postview_post_id, postview_last_view)
+        if (state.current_user) { // log the time that this user has seen this post
+          await query(`insert into postviews (postview_user_id, postview_post_id, postview_last_view)
                                  values (?, ?, now()) on duplicate key update postview_last_view=now()`, [state.current_user.user_id, post_id], state)
                 }
             }
@@ -569,23 +575,23 @@ async function render(state) {
             if (/\W/.test(state.post_data.user_name))               state.message = 'Please go back and enter username consisting only of letters'
             if (!/^\w.*@.+\.\w+$/.test(state.post_data.user_email)) state.message = 'Please go back and enter a valid email'
 
-			if (!state.message) { // no error yet
+      if (!state.message) { // no error yet
 
-				var results = await query('select * from users where user_email = ?', [state.post_data.user_email], state)
+        var results = await query('select * from users where user_email = ?', [state.post_data.user_email], state)
 
-				if (results[0]) {
-					state.message = `That email is already registered. Please use the "forgot password" link above.</a>`
-				}
-				else {
-					let results = await query('select * from users where user_name = ?', [state.post_data.user_name], state)
+        if (results[0]) {
+          state.message = `That email is already registered. Please use the "forgot password" link above.</a>`
+        }
+        else {
+          let results = await query('select * from users where user_name = ?', [state.post_data.user_name], state)
 
-					if (results[0]) state.message = `That user name is already registered. Please choose a different one.</a>`
-					else {
-						await query('insert into users set ?', state.post_data, state)
-						state.message = await send_login_link(state)
-					}
-				}
-			}
+          if (results[0]) state.message = `That user name is already registered. Please choose a different one.</a>`
+          else {
+            await query('insert into users set ?', state.post_data, state)
+            state.message = await send_login_link(state)
+          }
+        }
+      }
 
             let content = html(
                 midpage(
@@ -600,14 +606,14 @@ async function render(state) {
         since : async function() { // given a post_id and epoch timestamp, redirect to post's first comment after that timestamp
 
             // these will die on replace() if p or when is not defined and that's the right thing to do
-			let p    = digits(_GET('p'))
+      let p    = digits(_GET('p'))
             let when = digits(_GET('when'))
 
-			let results = await query(`select comment_id from comments
-									   where comment_post_id = ? and comment_approved > 0 and comment_date > from_UNIXTIME(?)
-									   order by comment_date limit 1`, [p, when], state)
+      let results = await query(`select comment_id from comments
+                     where comment_post_id = ? and comment_approved > 0 and comment_date > from_UNIXTIME(?)
+                     order by comment_date limit 1`, [p, when], state)
 
-			let c = results[0].comment_id
+      let c = results[0].comment_id
 
             redirect(`/post/${p}?c=${c}#comment-${c}`)
         },
@@ -616,7 +622,9 @@ async function render(state) {
 
             var topic = segments(state.req.url)[2] // like /topics/housing
 
-            let sql = 'select sql_calc_found_rows * from posts where post_topic = ? and post_approved=1 order by post_modified desc limit 0, 20'
+            let sql = `select sql_calc_found_rows * from posts
+                       left join users on user_id=post_author
+             where post_topic = ? and post_approved=1 order by post_modified desc limit 0, 20`
 
             state.posts = await query(sql, [topic], state)
             state.message = '#' + topic
@@ -746,9 +754,9 @@ async function render(state) {
         }
     }
 
-	function _GET(parm) { // given a string, return the GET parameter by that name
-		return URL.parse(state.req.url, true).query[parm]
-	}
+  function _GET(parm) { // given a string, return the GET parameter by that name
+    return URL.parse(state.req.url, true).query[parm]
+  }
 
     function format_date(gmt_date) { // create localized date string from gmt date out of mysql
         var utz = state.current_user ? state.current_user.user_timezone : 'America/Los_Angeles'
@@ -818,6 +826,7 @@ async function render(state) {
             let sql = `select sql_calc_found_rows * from posts
                        left join postviews on postview_post_id=post_id and postview_user_id= ?
                        left join postvotes on postvote_post_id=post_id and postvote_user_id= ?
+                       left join users     on user_id=post_author
                        where post_modified > date_sub(now(), interval 7 day) and post_approved=1
                        order by post_modified desc limit 0, 20`
 
@@ -863,37 +872,37 @@ async function render(state) {
 
     async function post_comment_list(post) {
 
-		// If page is not set, show the 40 most recent comments. Same as page 0.
-		// If page is set, show that page, counting backwards from most recent.
-		// So page 1 would be the 40 comments before the most recent.
+    // If page is not set, show the 40 most recent comments. Same as page 0.
+    // If page is set, show that page, counting backwards from most recent.
+    // So page 1 would be the 40 comments before the most recent.
 
-		// If we were passed a 'c' parm, then calculate the page from that, overriding any page parm.
-		// This allows permalinks regardless of page number.
+    // If we were passed a 'c' parm, then calculate the page from that, overriding any page parm.
+    // This allows permalinks regardless of page number.
 
         let page = 0 // default to first page of comments
 
-		if (_GET('c')) {
-			var c = digits(_GET('c'))
-			// Get all the comments, sorted from greatest to least.
-			// What page of 40 from the end is our comment in? Start counting with page 0 being the most recent comments.
-			let results = await query(`select floor(count(*)/40 - 0.01) as f from comments
+    if (_GET('c')) {
+      var c = digits(_GET('c'))
+      // Get all the comments, sorted from greatest to least.
+      // What page of 40 from the end is our comment in? Start counting with page 0 being the most recent comments.
+      let results = await query(`select floor(count(*)/40 - 0.01) as f from comments
                                 where comment_post_id=? and comment_id >= ? order by comment_id`, [post.post_id, c], state)
 
             if (results[0]) page = results[0].f
-		}
+    }
 
-		if (!page) page = digits(_GET('page')) // if page is not set from c above, use _GET('page')
-		if (!page) page = 0
+    if (!page) page = digits(_GET('page')) // if page is not set from c above, use _GET('page')
+    if (!page) page = 0
 
-		let start = post.post_comments - 40 * (page + 1)
-		if (start < 0) start = 0
+    let start = post.post_comments - 40 * (page + 1)
+    if (start < 0) start = 0
 
-		// if this gets too slow as user_adhom_comments increases, try a left join, or just start deleting old adhom comments
-		let sql = `select sql_calc_found_rows * from comments
+    // if this gets too slow as user_adhom_comments increases, try a left join, or just start deleting old adhom comments
+    let sql = `select sql_calc_found_rows * from comments
                   left join users on comment_author=user_id
-				  where comment_post_id = ?
-				  and comment_adhom_when is null
-				  order by comment_date limit ?, 40`
+          where comment_post_id = ?
+          and comment_adhom_when is null
+          order by comment_date limit ?, 40`
 
         let results = await query(sql, [post.post_id, start], state)
 
@@ -936,8 +945,9 @@ async function render(state) {
 
     function get_external_link(post) {
 
-		const c = CHEERIO.load(post.post_content)
-		if (c('a').length) {
+        const c = CHEERIO.load(post.post_content)
+
+        if (c('a').length) {
             let extlink = c('a').attr('href')
             let host = URL.parse(extlink).host
 
@@ -946,20 +956,20 @@ async function render(state) {
 
             return `<a href='${brandit(extlink)}' target='_blank' title='original story at ${host}' ><img src='/images/ext_link.png'></a>`
         }
-		else return ''
-	}
+        else return ''
+    }
 
     function get_first_image(post) {
 
-		const c = CHEERIO.load(post.post_content)
-		if (c('img').length) {
-			if (post.post_nsfw)
-				return `<div class='icon' ><a href='${post_path(post)}' ><img src='/images/nsfw.png' border=0 width=100 align=top hspace=5 vspace=5 ></a></div>`
-			else
-				return `<div class='icon' ><a href='${post_path(post)}' ><img src='${c('img').attr('src')}' border=0 width=100 align=top hspace=5 vspace=5 ></a></div>`
-		}
-		else return ''
-	}
+        const c = CHEERIO.load(post.post_content)
+        if (c('img').length) {
+          if (post.post_nsfw)
+            return `<div class='icon' ><a href='${post_path(post)}' ><img src='/images/nsfw.png' border=0 width=100 align=top hspace=5 vspace=5 ></a></div>`
+          else
+            return `<div class='icon' ><a href='${post_path(post)}' ><img src='${c('img').attr('src')}' border=0 width=100 align=top hspace=5 vspace=5 ></a></div>`
+        }
+        else return ''
+    }
 
     function post_list() { // format and display a list of posts from whatever source; pass in only a limited number, because all of them will display
 
@@ -971,24 +981,32 @@ async function render(state) {
                 if (!state.current_user && post.post_title.match(/thunderdome/gi)) return '' // don't show thunderdome posts to non-logged-in users
                 if (!state.current_user && post.post_nsfw)                         return '' // don't show porn posts to non-logged-in users
 
-				net = post.post_likes - post.post_dislikes
+                net = post.post_likes - post.post_dislikes
 
-				if (state.current_user) { // user is logged in
+                if (state.current_user) { // user is logged in
                     if (!post.postview_last_view)
                         var unread = `<a href='${post_path(post)}' ><img src='/content/unread_post.gif' width='45' height='16' title='You never read this one' ></a>`
                     else 
                         var unread = unread_comments_icon(post, post.postview_last_view) // last view by this user, from left join
-				}
-				else {
-                    var unread = ''
-				}
+                }
+                else var unread = ''
 
+                let ago           = MOMENT(post.post_modified).fromNow();
+                let hashlink      = text2hashtag(post.post_content)
+                let imgdiv        = state.current_user.user_hide_post_list_photos ? '' : get_first_image(post)
                 let arrowbox_html = arrowbox(post)
-				let imgdiv = state.current_user.user_hide_post_list_photos ? '' : get_first_image(post)
-                let extlink = get_external_link(post)
+                let extlink       = get_external_link(post)
 
-                return `<div class='post' >${arrowbox_html}${imgdiv}<b><font size='+1'>${link}</font></b> ${extlink}<br>
-                        ${post.postview_last_view} ${post.post_comments} comments ${unread} </div>`
+                if (post.post_comments) {
+				    let s = (post.post_comments == 1) ? '' : 's';
+                    let path = post_path(post)
+				    // should add commas to post_comments here
+                    var latest = `<a href='${path}'>${post.post_comments}&nbsp;comment${s}</a>, latest <a href='${path}#comment-${post.post_latest_comment_id}' >${ago}</a>`
+                }
+                else var latest = `Posted ${ago}`
+
+                return `<div class='post' >${arrowbox_html}${imgdiv}<b><font size='+1'>${link}</font></b> ${extlink}<br>by 
+                        <a href='/user/${ post.user_name }'>${ post.user_name }</a> ${hashlink} &nbsp; ${latest} ${unread} </div>`
             })
         }
         else formatted = []
@@ -997,22 +1015,22 @@ async function render(state) {
     }
 
     function post() { // format a single post for display
-		let arrowbox_html = arrowbox(state.post)
+
+        let arrowbox_html = arrowbox(state.post)
         let icon          = user_icon(state.post) // state.post will have all the user fields in it bc of left join with post
         let link          = post_link(state.post)
 
         return `<div class='comment' >${arrowbox_html} ${icon} <h2 style='display:inline' >${ link }</h2>
-		<p>By ${user_link(state.post)} ${follow_button(state.post)}
-        ${ state.post.post_content }</div>`
-/*
-		print "<p>By " . name_posts($u->user_id);
-		print ' ';
-		print follow($u->user_id);
-		print ' &nbsp; ';
-		print zdate($post->post_date);
-		print ' &nbsp; ';
-*/
-
+                <p>By ${user_link(state.post)} ${follow_button(state.post)}
+                    ${ state.post.post_content }</div>`
+                /*
+                    print "<p>By " . name_posts($u->user_id);
+                    print ' ';
+                    print follow($u->user_id);
+                    print ' &nbsp; ';
+                    print zdate($post->post_date);
+                    print ' &nbsp; ';
+                */
     }
 
     function postform() { // need to add conditional display of user-name chooser for non-logged in users
@@ -1034,24 +1052,24 @@ async function render(state) {
         return `${ state.text || '' }`
     }
 
-	function unread_comments_icon(post, last_view) { // return the blinky icon if there are unread comments in a post
+  function unread_comments_icon(post, last_view) { // return the blinky icon if there are unread comments in a post
 
-		// if post_modified > last time they viewed this post, then give them a link to earliest unread comment
-		let last_viewed = Date.parse(last_view) / 1000
-		let modified    = Date.parse(post.post_modified) / 1000
+    // if post_modified > last time they viewed this post, then give them a link to earliest unread comment
+    let last_viewed = Date.parse(last_view) / 1000
+    let modified    = Date.parse(post.post_modified) / 1000
 
-		if (modified > last_viewed) {
+    if (modified > last_viewed) {
 
-			let unread = `<a href='/since?p=${post.post_id}&when=${last_viewed}' ><img src='/content/unread_comments.gif' width='19' height='18' title='View unread comments'></A>`
+      let unread = `<a href='/since?p=${post.post_id}&when=${last_viewed}' ><img src='/content/unread_comments.gif' width='19' height='18' title='View unread comments'></A>`
 
-			return unread
-		}
-		else return ''
-	}
+      return unread
+    }
+    else return ''
+  }
 
     function user_link(u) {
-		return `<a href='/user/${ u.user_name }'>${ u.user_name }</a>`
-	}
+    return `<a href='/user/${ u.user_name }'>${ u.user_name }</a>`
+  }
 
     function user_list() {
 
@@ -1149,22 +1167,23 @@ async function render(state) {
         </div>`
     }
 
-	function follow_button(f) { // f is the user to follow, a row from users table
+  function follow_button(f) { // f is the user to follow, a row from users table
 
-		let b = '<button type="button" class="btn btn-default btn-xs">follow</button>';
+    let b = '<button type="button" class="btn btn-default btn-xs">follow</button>';
 
-		if (state.current_user) {
-			if (state.current_user.relationships[f.user_id].rel_i_follow) {
-				return `following (<a href='/users?followers=${f.user_id}'>${f.user_followers}</a>)
-						<a href='/unfollow?unfollow=${f.user_id}' title='Stop getting new posts by ${f.user_name}' >x</a>`
-			}
-			else {
-				let s = f.user_followers ? ` (<a href='/users?followers_of=${f.user_name}'>${f.user_followers}</a>)` : ''
-				return `<a href='/follow?follow=${f.user_id}' title='Get new posts from ${f.user_name} by email' >${b}</a> ${s}`
-			}
-		}
-		else return `<a href='/login?action=registerform' title='Register to get emails of new posts by ${f.user_name}' >${b}</a>`
-	}
+    if (state.current_user) {
+      if (state.current_user.relationships[f.user_id] &&
+          state.current_user.relationships[f.user_id].rel_i_follow) {
+        return `following (<a href='/users?followers=${f.user_id}'>${f.user_followers}</a>)
+            <a href='/unfollow?unfollow=${f.user_id}' title='Stop getting new posts by ${f.user_name}' >x</a>`
+      }
+      else {
+        let s = f.user_followers ? ` (<a href='/users?followers_of=${f.user_name}'>${f.user_followers}</a>)` : ''
+        return `<a href='/follow?follow=${f.user_id}' title='Get new posts from ${f.user_name} by email' >${b}</a> ${s}`
+      }
+    }
+    else return `<a href='/login?action=registerform' title='Register to get emails of new posts by ${f.user_name}' >${b}</a>`
+  }
 
     function footer() {
         return `
@@ -1176,50 +1195,50 @@ async function render(state) {
             <a href="/users">users</a> &nbsp;
             <a href="/about">about</a> &nbsp;
             <a href='mailto:${ state.conf.admin_email }' >contact</a> &nbsp;
-			<script>
-			function tweet(content) {
-				$.get( "/tweet?comment_id="+content.split("_")[1], function(data) {
-					document.getElementById(content).innerHTML = data;
-				});
-			}
-			function like(content) {
-				$.get( "/like?comment_id="+content.split("_")[1], function(data) {
-					document.getElementById(content).innerHTML = data;
-				});
-			}
-			function dislike(content) {
-				$.get( "/dislike?comment_id="+content.split("_")[1], function(data) {
-					document.getElementById(content).innerHTML = data;
-				});
-			}
-			function postlike(content) { // For whole post instead of just one comment.
-				$.get( "/like?post_id="+content.split("_")[1], function(data) {
-					document.getElementById(content).innerHTML = data;
-				});
-			}
-			function postdislike(content) { // For whole post instead of just one comment.
-				$.get( "/dislike?post_id="+content.split("_")[1], function(data) {
-					document.getElementById(content).innerHTML = data;
-				});
-			}
-			</script>
+      <script>
+      function tweet(content) {
+        $.get( "/tweet?comment_id="+content.split("_")[1], function(data) {
+          document.getElementById(content).innerHTML = data;
+        });
+      }
+      function like(content) {
+        $.get( "/like?comment_id="+content.split("_")[1], function(data) {
+          document.getElementById(content).innerHTML = data;
+        });
+      }
+      function dislike(content) {
+        $.get( "/dislike?comment_id="+content.split("_")[1], function(data) {
+          document.getElementById(content).innerHTML = data;
+        });
+      }
+      function postlike(content) { // For whole post instead of just one comment.
+        $.get( "/like?post_id="+content.split("_")[1], function(data) {
+          document.getElementById(content).innerHTML = data;
+        });
+      }
+      function postdislike(content) { // For whole post instead of just one comment.
+        $.get( "/dislike?post_id="+content.split("_")[1], function(data) {
+          document.getElementById(content).innerHTML = data;
+        });
+      }
+      </script>
             `
     }
 
-	function redirect(redirect_to) {
+  function redirect(redirect_to) {
 
-		var message = `Redirecting to ${ redirect_to }`
+    var message = `Redirecting to ${ redirect_to }`
 
-		var headers =  {
-			'Location'       : redirect_to,
-			'Content-Length' : message.length,
-			'Expires'        : new Date().toUTCString()
-		}
+    var headers =  {
+      'Location'       : redirect_to,
+      'Content-Length' : message.length,
+      'Expires'        : new Date().toUTCString()
+    }
 
-		state.res.writeHead(303, headers)
-		state.res.end(message)
-		if (state.db) state.db.release()
-	}
+    state.res.writeHead(303, headers)
+    state.res.end(message)
+    if (state.db) state.db.release()
+  }
 
     function tabs() {
         return `<ul class='nav nav-tabs'>
@@ -1246,31 +1265,31 @@ async function render(state) {
         return formatted.join(' ') + ` <a href='/topics/'>more&raquo;</a>`
     }
 
-	function die(message) { // errors that normal user will never see
+  function die(message) { // errors that normal user will never see
 
-		var headers =  {
-			'Content-Length' : message.length,
-			'Expires'        : new Date().toUTCString()
-		}
+    var headers =  {
+      'Content-Length' : message.length,
+      'Expires'        : new Date().toUTCString()
+    }
 
-		state.res.writeHead(303, headers)
-		state.res.end(message)
-		console.log(message)
-		if (state.db) state.db.release()
-	}
+    state.res.writeHead(303, headers)
+    state.res.end(message)
+    console.log(message)
+    if (state.db) state.db.release()
+  }
 
-	function send_html(code, html) {
+  function send_html(code, html) {
 
-		var headers =  {
-			'Content-Type'   : 'text/html',
-			'Content-Length' : html.length,
-			'Expires'        : new Date().toUTCString()
-		}
+    var headers =  {
+      'Content-Type'   : 'text/html',
+      'Content-Length' : html.length,
+      'Expires'        : new Date().toUTCString()
+    }
 
-		state.res.writeHead(code, headers)
-		state.res.end(html)
-		if (state.db) state.db.release()
-	}
+    state.res.writeHead(code, headers)
+    state.res.end(html)
+    if (state.db) state.db.release()
+  }
 
     if (typeof pages[state.page] === 'function') { // hit the db iff the request is for a valid url
         try {
