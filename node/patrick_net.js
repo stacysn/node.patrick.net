@@ -472,12 +472,13 @@ async function render(state) {
 
                 await query('update users set user_last_comment_ip = ? where user_id = ?', [state.ip, state.current_user.user_id], state)
                 await query('update posts set post_modified = ? where post_id = ?', [post_data.comment_date, post_data.comment_post_id], state)
-                await query('insert into comments set ?', post_data, state)
+                var insert_result = await query('insert into comments set ?', post_data, state)
 
                 // now select the inserted row so that we pick up the comment_date time and user data for displaying the comment
-                var results = await query('select * from comments left join users on comment_author=user_id where comment_id = ?', [results.insertId], state)
+                results = await query('select * from comments left join users on comment_author=user_id where comment_id = ?',
+                                      [insert_result.insertId], state)
 
-                if (results.length) state.comment = results[0]
+                state.comment = results[0]
 
                 send_html(200, comment(state.comment))
             }
