@@ -759,7 +759,7 @@ async function render(state) {
         return `<div class='comment' >
             <div style='float:right' >${ icon_or_loginprompt(state) }</div>
             <a href='/' ><h1 class='sitename' title='back to home page' >${ conf.domain }</h1></a><br>
-            ${ top_topics() + '<br>' + brag() + '<br>' + new_post_button() }
+            <font size='-1'>${ top_topics() + '<br>' + brag() + '</font><br>' + new_post_button() }
             </div>`
     }
 
@@ -933,14 +933,29 @@ async function render(state) {
                 </div>`
     }
 
+    function get_external_link(post) {
+
+		const c = cheerio.load(post.post_content)
+		if (c('a').length) {
+            let extlink = c('a').attr('href')
+            let host = url.parse(extlink).host
+
+            if (!(['http:', 'https:'].indexOf(url.parse(extlink).protocol) > -1)) return '' // ignore invalid protocols
+            if (new RegExp(conf.domain).test(host))                               return '' // ignore links back to own domain
+
+            return `<a href='${brandit(extlink)}' target='_blank' title='original story at ${host}' ><img src='/images/ext_link.png'></a>`
+        }
+		else return ''
+	}
+
     function get_first_image(post) {
 
 		const c = cheerio.load(post.post_content)
 		if (c('img').length) {
 			if (post.post_nsfw)
-				return `<div class='icon' ><a href='${post_path(post)}' ><img src='/images/nsfw.png' border=0 width=100 align=top hspace=5 vspace=5 ></a></div>`;
+				return `<div class='icon' ><a href='${post_path(post)}' ><img src='/images/nsfw.png' border=0 width=100 align=top hspace=5 vspace=5 ></a></div>`
 			else
-				return `<div class='icon' ><a href='${post_path(post)}' ><img src='${c('img').attr('src')}' border=0 width=100 align=top hspace=5 vspace=5 ></a></div>`;
+				return `<div class='icon' ><a href='${post_path(post)}' ><img src='${c('img').attr('src')}' border=0 width=100 align=top hspace=5 vspace=5 ></a></div>`
 		}
 		else return ''
 	}
@@ -969,8 +984,10 @@ async function render(state) {
 
                 let arrowbox_html = arrowbox(post)
 				let imgdiv = state.current_user.user_hide_post_list_photos ? '' : get_first_image(post)
+                let extlink = get_external_link(post)
 
-                return `<div class='post' >${arrowbox_html}${imgdiv}${link} ${post.postview_last_view} ${post.post_comments} comments ${unread} </div>`
+                return `<div class='post' >${arrowbox_html}${imgdiv}<b><font size='+1'>${link}</font></b> ${extlink}<br>
+                        ${post.postview_last_view} ${post.post_comments} comments ${unread} </div>`
             })
         }
         else formatted = []
