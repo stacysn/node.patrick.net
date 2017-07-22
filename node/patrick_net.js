@@ -400,7 +400,7 @@ async function render(state) {
 
             let content = html(
                 midpage(
-					tabs(),
+					tabs(order),
                     post_list(),
                     pagination_links(state.posts.length, curpage, `&order=${order}`)
                 )
@@ -682,8 +682,9 @@ async function render(state) {
             let content = html(
                 midpage(
                     h1(),
+                    tabs(order, `&topic=${topic}`),
                     post_list(),
-                    pagination_links()
+                    pagination_links(state.posts.length, curpage, `&topic=${topic}&order=${order}`)
                 )
             )
 
