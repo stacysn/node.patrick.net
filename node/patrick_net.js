@@ -105,7 +105,6 @@ async function header_data(state) { // data that the page header needs to render
     }
 }
 
-
 function collect_post_data(state) { // if there is any POST data, accumulate it and append it to req object
 
     return new Promise(function(fulfill, reject) {
@@ -387,20 +386,23 @@ async function render(state) {
 
             let current_user_id = state.current_user ? state.current_user.user_id : 0
 
+            let [curpage, slimit, order, order_by] = page()
+
             // left joins to also get each post's viewing and voting data for the current user if there is one
             let sql = `select sql_calc_found_rows * from posts
                        left join postviews on postview_post_id=post_id and postview_user_id= ?
                        left join postvotes on postvote_post_id=post_id and postvote_user_id= ?
                        left join users     on user_id=post_author
                        where post_modified > date_sub(now(), interval 7 day) and post_approved=1
-                       order by post_modified desc limit 0, 20`
+                       ${order_by} limit ${slimit}`
 
             state.posts = await query(sql, [current_user_id, current_user_id], state)
 
             let content = html(
                 midpage(
 					tabs(),
-                    post_list()
+                    post_list(),
+                    pagination_links()
                 )
             )
 
@@ -409,7 +411,7 @@ async function render(state) {
 
         key_login : async function() {
 
-      let key      = _GET('key')
+            let key      = _GET('key')
             let password = md5(Date.now() + conf.nonce_secret).substring(0, 6)
 
             state.header_data = await header_data(state)
@@ -635,9 +637,11 @@ async function render(state) {
 
             var topic = segments(state.req.url)[2] // like /topics/housing
 
+            let [curpage, slimit, order, order_by] = page()
+
             let sql = `select sql_calc_found_rows * from posts
                        left join users on user_id=post_author
-             where post_topic = ? and post_approved=1 order by post_modified desc limit 0, 20`
+             where post_topic = ? and post_approved=1 ${order_by} limit ${slimit}`
 
             state.posts = await query(sql, [topic], state)
             state.message = '#' + topic
@@ -647,7 +651,8 @@ async function render(state) {
             let content = html(
                 midpage(
                     h1(),
-                    post_list()
+                    post_list(),
+                    pagination_links()
                 )
             )
 
@@ -767,9 +772,9 @@ async function render(state) {
         }
     }
 
-  function _GET(parm) { // given a string, return the GET parameter by that name
-    return URL.parse(state.req.url, true).query[parm]
-  }
+	function _GET(parm) { // given a string, return the GET parameter by that name
+		return URL.parse(state.req.url, true).query[parm]
+	}
 
     function format_date(gmt_date) { // create localized date string from gmt date out of mysql
         var utz = state.current_user ? state.current_user.user_timezone : 'America/Los_Angeles'
@@ -849,7 +854,8 @@ async function render(state) {
             var content = html(
                 midpage(
                     alert(),
-                    post_list()
+                    post_list(),
+                    pagination_links()
                 )
             )
         }
@@ -883,35 +889,72 @@ async function render(state) {
         return '<a href="/postform" class="btn btn-success btn-sm" title="start a new post" ><b>new post</b></a>'
     }
 
+	function page() { // tell homepage, search, userpage, topic which page we are on
+
+		let curpage = Math.floor(_GET('page')) ? Math.floor(_GET('page')) : 1
+		let slimit  = (curpage - 1) * 20 + ', 20' // sql limit for pagination of results.
+
+		let orders = { // maps _GET('order') parm to a posts table column name to order by
+			'active'   : 'post_modified',
+			'comments' : 'post_comments',
+			'likes'    : 'cast(post_likes as signed) - cast(post_dislikes as signed)',
+			'new'      : 'post_date',
+		}
+
+		let order = orders[_GET('order')] ? _GET('order') : 'active'
+		let order_by = 'order by ' + orders[order] + ' desc'
+
+		return [curpage, slimit, order, order_by]
+	}
+
+	function pagination_links() {
+
+        let [curpage, slimit, order, order_by] = page()
+        let extra = `&order=${order}`
+		let links    = ''
+		let nextpage = curpage + 1
+		let pages    = Math.floor( (state.posts.length + 20) / 20)
+		let path     = URL.parse(state.req.url).pathname
+		let prevpage = curpage - 1
+
+		if (curpage > 1) links = links + `<a href='${path}?page=${prevpage}${extra}'>&laquo; previous</a> &nbsp;`
+
+		links = links + ` page ${curpage} of ${pages} `
+
+		if (curpage < pages) links = links + `&nbsp; <a href='${path}?page=${nextpage}${extra}'>next &raquo;</a>`
+
+		return links
+	}
+
     async function post_comment_list(post) {
 
-    // If page is not set, show the 40 most recent comments. Same as page 0.
-    // If page is set, show that page, counting backwards from most recent.
-    // So page 1 would be the 40 comments before the most recent.
+		// If page is not set, show the 40 most recent comments. Same as page 0.
+		// If page is set, show that page, counting backwards from most recent.
+		// So page 1 would be the 40 comments before the most recent.
 
-    // If we were passed a 'c' parm, then calculate the page from that, overriding any page parm.
-    // This allows permalinks regardless of page number.
+		// If we were passed a 'c' parm, then calculate the page from that, overriding any page parm.
+		// This allows permalinks regardless of page number.
 
         let page = 0 // default to first page of comments
 
-    if (_GET('c')) {
-      var c = digits(_GET('c'))
-      // Get all the comments, sorted from greatest to least.
-      // What page of 40 from the end is our comment in? Start counting with page 0 being the most recent comments.
-      let results = await query(`select floor(count(*)/40 - 0.01) as f from comments
-                                where comment_post_id=? and comment_id >= ? order by comment_id`, [post.post_id, c], state)
+		if (_GET('c')) {
+		  var c = digits(_GET('c'))
+		  // Get all the comments, sorted from greatest to least.
+		  // What page of 40 from the end is our comment in? Start counting with page 0 being the most recent comments.
+		  let results = await query(`select floor(count(*)/40 - 0.01) as f from comments
+									where comment_post_id=? and comment_id >= ? order by comment_id`, [post.post_id, c], state)
 
-            if (results[0]) page = results[0].f
-    }
+				if (results[0]) page = results[0].f
+		}
 
-    if (!page) page = digits(_GET('page')) // if page is not set from c above, use _GET('page')
-    if (!page) page = 0
+		if (!page) page = digits(_GET('page')) // if page is not set from c above, use _GET('page')
+		if (!page) page = 0
 
-    let start = post.post_comments - 40 * (page + 1)
-    if (start < 0) start = 0
+		let start = post.post_comments - 40 * (page + 1)
+		if (start < 0) start = 0
 
-    // if this gets too slow as user_adhom_comments increases, try a left join, or just start deleting old adhom comments
-    let sql = `select sql_calc_found_rows * from comments
+		// if this gets too slow as user_adhom_comments increases, try a left join, or just start deleting old adhom comments
+		let sql = `select sql_calc_found_rows * from comments
                   left join users on comment_author=user_id
           where comment_post_id = ?
           and comment_adhom_when is null
@@ -1214,84 +1257,96 @@ async function render(state) {
 
     function footer() {
         return `
-			<p id='footer' >
-			<center>
-			<a href="/users">users</a> &nbsp;
-			<a href="/about">about</a> &nbsp;
-			<a href='/1302130/2017-01-28-patnet-improvement-suggestions'>suggestions</a> &nbsp;
-			<a href='mailto:${ state.conf.admin_email }' >contact</a> &nbsp;
-			<br>
-			<a href='/topics'>topics</a> &nbsp;
-			<a href='/random'>random post</a> &nbsp;
-			<a href="/best.php">best comments</a> &nbsp;
-			<a href="/adhom_jail.php">comment jail</a> &nbsp;
-			<br>
-			<a href='/1303173/2017-02-19-patricks-s-40-proposals'>patrick's 40 proposals</a> &nbsp;
-			<br>
-			<a href='/1282720/2015-07-11-ten-reasons-it-s-a-terrible-time-to-buy-an-expensive-house'>10 reasons it's a terrible time to buy</a> &nbsp;
-			<br>
-			<a href='/1282721/2015-07-11-eight-groups-who-lie-about-the-housing-market'>8 groups who lie about the housing market</a> &nbsp;
-			<br>
-			<a href='/1282722/2015-07-11-37-bogus-arguments-about-housing'>37 bogus arguments about housing</a> &nbsp;
-			<br>
-			<a href='/1206569/2011-12-30-free-patrick-net-bumper-stickers'>get a free bumper sticker:</a><br>
-			<a href='/1206569/2011-12-30-free-patrick-net-bumper-stickers'><img src='/images/bumpersticker.png' width=300 ></a>
-			<br>
-			<form method="get" action="/" ><input name="s" type="text" placeholder="search..." size="20" ></form>
-			</center>
-			<div class="fixed">
-				<a href='#' title='top of page' >top</a> &nbsp; <a href='#footer' title='bottom of page' >bottom</a> &nbsp; <a href='/' title='home page' >home</a>
-			</div>
-			<script>
-			function tweet(content) {
-				$.get( "/tweet?comment_id="+content.split("_")[1], function(data) {
-				    document.getElementById(content).innerHTML = data;
-				});
-			}
-			function like(content) {
-				$.get( "/like?comment_id="+content.split("_")[1], function(data) {
-				    document.getElementById(content).innerHTML = data;
-				});
-			}
-			function dislike(content) {
-				$.get( "/dislike?comment_id="+content.split("_")[1], function(data) {
-				    document.getElementById(content).innerHTML = data;
-				});
-			}
-			function postlike(content) { // For whole post instead of just one comment.
-				$.get( "/like?post_id="+content.split("_")[1], function(data) {
-				    document.getElementById(content).innerHTML = data;
-				});
-			}
-			function postdislike(content) { // For whole post instead of just one comment.
-				$.get( "/dislike?post_id="+content.split("_")[1], function(data) {
-				    document.getElementById(content).innerHTML = data;
-				});
-			}
-			</script>`
+        <p id='footer' >
+        <center>
+        <a href="/users">users</a> &nbsp;
+        <a href="/about">about</a> &nbsp;
+        <a href='/1302130/2017-01-28-patnet-improvement-suggestions'>suggestions</a> &nbsp;
+        <a href='mailto:${ state.conf.admin_email }' >contact</a> &nbsp;
+        <br>
+        <a href='/topics'>topics</a> &nbsp;
+        <a href='/random'>random post</a> &nbsp;
+        <a href="/best.php">best comments</a> &nbsp;
+        <a href="/adhom_jail.php">comment jail</a> &nbsp;
+        <br>
+        <a href='/1303173/2017-02-19-patricks-s-40-proposals'>patrick's 40 proposals</a> &nbsp;
+        <br>
+        <a href='/1282720/2015-07-11-ten-reasons-it-s-a-terrible-time-to-buy-an-expensive-house'>10 reasons it's a terrible time to buy</a> &nbsp;
+        <br>
+        <a href='/1282721/2015-07-11-eight-groups-who-lie-about-the-housing-market'>8 groups who lie about the housing market</a> &nbsp;
+        <br>
+        <a href='/1282722/2015-07-11-37-bogus-arguments-about-housing'>37 bogus arguments about housing</a> &nbsp;
+        <br>
+        <a href='/1206569/2011-12-30-free-patrick-net-bumper-stickers'>get a free bumper sticker:</a><br>
+        <a href='/1206569/2011-12-30-free-patrick-net-bumper-stickers'><img src='/images/bumpersticker.png' width=300 ></a>
+        <br>
+        <form method="get" action="/" ><input name="s" type="text" placeholder="search..." size="20" ></form>
+        </center>
+        <div class="fixed">
+            <a href='#' title='top of page' >top</a> &nbsp; <a href='#footer' title='bottom of page' >bottom</a> &nbsp; <a href='/' title='home page' >home</a>
+        </div>
+        <script>
+        function tweet(content) {
+            $.get( "/tweet?comment_id="+content.split("_")[1], function(data) {
+                document.getElementById(content).innerHTML = data;
+            });
+        }
+        function like(content) {
+            $.get( "/like?comment_id="+content.split("_")[1], function(data) {
+                document.getElementById(content).innerHTML = data;
+            });
+        }
+        function dislike(content) {
+            $.get( "/dislike?comment_id="+content.split("_")[1], function(data) {
+                document.getElementById(content).innerHTML = data;
+            });
+        }
+        function postlike(content) { // For whole post instead of just one comment.
+            $.get( "/like?post_id="+content.split("_")[1], function(data) {
+                document.getElementById(content).innerHTML = data;
+            });
+        }
+        function postdislike(content) { // For whole post instead of just one comment.
+            $.get( "/dislike?post_id="+content.split("_")[1], function(data) {
+                document.getElementById(content).innerHTML = data;
+            });
+        }
+        </script>`
     }
 
-  function redirect(redirect_to) {
+    function redirect(redirect_to) {
 
-    var message = `Redirecting to ${ redirect_to }`
+        var message = `Redirecting to ${ redirect_to }`
 
-    var headers =  {
-      'Location'       : redirect_to,
-      'Content-Length' : message.length,
-      'Expires'        : new Date().toUTCString()
+        var headers =  {
+          'Location'       : redirect_to,
+          'Content-Length' : message.length,
+          'Expires'        : new Date().toUTCString()
+        }
+
+        state.res.writeHead(303, headers)
+        state.res.end(message)
+        if (state.db) state.db.release()
     }
-
-    state.res.writeHead(303, headers)
-    state.res.end(message)
-    if (state.db) state.db.release()
-  }
 
     function tabs() {
+
+		let [curpage, slimit, order, order_by] = page()
+
+        let selected_tab = []
+		selected_tab['active']   = ''
+		selected_tab['comments'] = ''
+		selected_tab['likes']    = ''
+		selected_tab['new']      = ''
+        selected_tab[order]      = `class='active'` // default is active
+
+        let path = URL.parse(state.req.url).pathname // "pathNAME" is url path without ? parms, unlike "path"
+
         return `<ul class='nav nav-tabs'>
-            <li class='active' > <a href='/?order=active'   title='most recent comments'       >active</a></li>
-            <li                > <a href='/?order=comments' title='most comments in last week' >comments</a></li>
-            <li                > <a href='/?order=likes'    title='most likes in last week'    >likes</a></li>
-            <li                > <a href='/?order=new'      title='newest'                     >new</a></li>
+            <li ${selected_tab['active']}   > <a href='${path}?order=active'   title='most recent comments'       >active</a></li>
+            <li ${selected_tab['comments']} > <a href='${path}?order=comments' title='most comments in last week' >comments</a></li>
+            <li ${selected_tab['likes']}    > <a href='${path}?order=likes'    title='most likes in last week'    >likes</a></li>
+            <li ${selected_tab['new']}      > <a href='${path}?order=new'      title='newest'                     >new</a></li>
             </ul>`
     }
 
