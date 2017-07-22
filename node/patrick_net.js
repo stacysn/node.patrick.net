@@ -944,6 +944,12 @@ async function render(state) {
                 </div>`
     }
 
+	function share_post(post) {
+		let share_title = encodeURI(post.post_title).replace(/%20/g,' ')
+		share_link  = encodeURI('https://patrick.net' +  post_path(post) )
+		return `<a href='mailto:?subject=${share_title}&body=${share_link}' title='email this' ><img src='/images/mailicon.jpg' width=15 height=12 ></a>`
+	}
+
     function get_external_link(post) {
 
         const c = CHEERIO.load(post.post_content)
@@ -997,6 +1003,7 @@ async function render(state) {
                 let imgdiv        = state.current_user.user_hide_post_list_photos ? '' : get_first_image(post)
                 let arrowbox_html = arrowbox(post)
                 let extlink       = get_external_link(post)
+                let sharelink     = share_post(post)
 
                 if (post.post_comments) {
 				    let s = (post.post_comments == 1) ? '' : 's';
@@ -1006,7 +1013,7 @@ async function render(state) {
                 }
                 else var latest = `Posted ${ago}`
 
-                return `<div class='post' >${arrowbox_html}${imgdiv}<b><font size='+1'>${link}</font></b> ${extlink}<br>by 
+                return `<div class='post' >${arrowbox_html}${imgdiv}<b><font size='+1'>${link}</font></b> ${extlink} ${sharelink}<br>by 
                         <a href='/user/${ post.user_name }'>${ post.user_name }</a> ${hashlink} &nbsp; ${latest} ${unread} </div>`
             })
         }
