@@ -402,7 +402,7 @@ async function render(state) {
                 midpage(
 					tabs(),
                     post_list(),
-                    pagination_links()
+                    pagination_links(state.posts.length, curpage, `&order=${order}`)
                 )
             )
 
@@ -590,28 +590,60 @@ async function render(state) {
             if (/\W/.test(state.post_data.user_name))               state.message = 'Please go back and enter username consisting only of letters'
             if (!/^\w.*@.+\.\w+$/.test(state.post_data.user_email)) state.message = 'Please go back and enter a valid email'
 
-      if (!state.message) { // no error yet
+            if (!state.message) { // no error yet
 
-        var results = await query('select * from users where user_email = ?', [state.post_data.user_email], state)
+                var results = await query('select * from users where user_email = ?', [state.post_data.user_email], state)
 
-        if (results[0]) {
-          state.message = `That email is already registered. Please use the "forgot password" link above.</a>`
-        }
-        else {
-          let results = await query('select * from users where user_name = ?', [state.post_data.user_name], state)
+                if (results[0]) {
+                    state.message = `That email is already registered. Please use the "forgot password" link above.</a>`
+                }
+                else {
+                    let results = await query('select * from users where user_name = ?', [state.post_data.user_name], state)
 
-          if (results[0]) state.message = `That user name is already registered. Please choose a different one.</a>`
-          else {
-            await query('insert into users set ?', state.post_data, state)
-            state.message = await send_login_link(state)
-          }
-        }
-      }
+                    if (results[0]) state.message = `That user name is already registered. Please choose a different one.</a>`
+                    else {
+                        await query('insert into users set ?', state.post_data, state)
+                        state.message = await send_login_link(state)
+                    }
+                }
+            }
+
+            let content = html(
+                midpage(
+                h1(),
+                text()
+                )
+            )
+
+            send_html(200, content)
+        },
+
+        search : async function() {
+
+            // if (is_robot()) die('robots may not do searches');
+
+            let s = _GET('s').trim().replace(/[^0-9a-z ]/gi, '') // allow only alphanum and spaces for now
+            let us = encodeURI(s)
+
+            // if (!$s) format_die("You searched for nothing. It was found.");
+
+            let [curpage, slimit, order, order_by] = page()
+
+			// These MATCH() requests require the existence of fulltext index:
+			//      create fulltext index post_title_content_index on posts (post_title, post_content);
+
+			let sql = `select * from posts where match(post_title, post_content) against ('${s}') ${order_by} limit ${slimit}`
+
+            state.posts       = await query(sql, [], state)
+            state.message     = `search results for "${s}"`
+            state.header_data = await header_data(state)
 
             let content = html(
                 midpage(
                     h1(),
-                    text()
+                    tabs(order, `&s=${us}`),
+                    post_list(),
+                    pagination_links(state.posts.length, curpage, `&s=${us}&order=${order}`)
                 )
             )
 
@@ -621,14 +653,14 @@ async function render(state) {
         since : async function() { // given a post_id and epoch timestamp, redirect to post's first comment after that timestamp
 
             // these will die on replace() if p or when is not defined and that's the right thing to do
-      let p    = digits(_GET('p'))
+            let p    = digits(_GET('p'))
             let when = digits(_GET('when'))
 
-      let results = await query(`select comment_id from comments
-                     where comment_post_id = ? and comment_approved > 0 and comment_date > from_UNIXTIME(?)
-                     order by comment_date limit 1`, [p, when], state)
+            let results = await query(`select comment_id from comments
+                                       where comment_post_id = ? and comment_approved > 0 and comment_date > from_UNIXTIME(?)
+                                       order by comment_date limit 1`, [p, when], state)
 
-      let c = results[0].comment_id
+            let c = results[0].comment_id
 
             redirect(`/post/${p}?c=${c}#comment-${c}`)
         },
@@ -641,11 +673,10 @@ async function render(state) {
 
             let sql = `select sql_calc_found_rows * from posts
                        left join users on user_id=post_author
-             where post_topic = ? and post_approved=1 ${order_by} limit ${slimit}`
+                       where post_topic = ? and post_approved=1 ${order_by} limit ${slimit}`
 
             state.posts = await query(sql, [topic], state)
             state.message = '#' + topic
-        
             state.header_data = await header_data(state)
 
             let content = html(
@@ -907,13 +938,11 @@ async function render(state) {
 		return [curpage, slimit, order, order_by]
 	}
 
-	function pagination_links() {
+	function pagination_links(post_count, curpage, extra) {
 
-        let [curpage, slimit, order, order_by] = page()
-        let extra = `&order=${order}`
 		let links    = ''
 		let nextpage = curpage + 1
-		let pages    = Math.floor( (state.posts.length + 20) / 20)
+		let pages    = Math.floor( (post_count + 20) / 20)
 		let path     = URL.parse(state.req.url).pathname
 		let prevpage = curpage - 1
 
@@ -1055,7 +1084,7 @@ async function render(state) {
 
                 let ago           = MOMENT(post.post_modified).fromNow();
                 let hashlink      = text2hashtag(post.post_content)
-                let imgdiv        = state.current_user.user_hide_post_list_photos ? '' : get_first_image(post)
+                let imgdiv        = (state.current_user && state.current_user.user_hide_post_list_photos) ? '' : get_first_image(post)
                 let arrowbox_html = arrowbox(post)
                 let extlink       = get_external_link(post)
                 let sharelink     = share_post(post)
@@ -1329,9 +1358,7 @@ async function render(state) {
         if (state.db) state.db.release()
     }
 
-    function tabs() {
-
-		let [curpage, slimit, order, order_by] = page()
+    function tabs(order, extra='') {
 
         let selected_tab = []
 		selected_tab['active']   = ''
@@ -1343,10 +1370,10 @@ async function render(state) {
         let path = URL.parse(state.req.url).pathname // "pathNAME" is url path without ? parms, unlike "path"
 
         return `<ul class='nav nav-tabs'>
-            <li ${selected_tab['active']}   > <a href='${path}?order=active'   title='most recent comments'       >active</a></li>
-            <li ${selected_tab['comments']} > <a href='${path}?order=comments' title='most comments in last week' >comments</a></li>
-            <li ${selected_tab['likes']}    > <a href='${path}?order=likes'    title='most likes in last week'    >likes</a></li>
-            <li ${selected_tab['new']}      > <a href='${path}?order=new'      title='newest'                     >new</a></li>
+            <li ${selected_tab['active']}   > <a href='${path}?order=active${extra}'   title='most recent comments'       >active</a></li>
+            <li ${selected_tab['comments']} > <a href='${path}?order=comments${extra}' title='most comments in last week' >comments</a></li>
+            <li ${selected_tab['likes']}    > <a href='${path}?order=likes${extra}'    title='most likes in last week'    >likes</a></li>
+            <li ${selected_tab['new']}      > <a href='${path}?order=new${extra}'      title='newest'                     >new</a></li>
             </ul>`
     }
 
