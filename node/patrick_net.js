@@ -399,6 +399,7 @@ async function render(state) {
 
             let content = html(
                 midpage(
+					tabs(),
                     post_list()
                 )
             )
@@ -1037,7 +1038,7 @@ async function render(state) {
     function post() { // format a single post for display
 
         let arrowbox_html = arrowbox(state.post)
-        let icon          = user_icon(state.post) // state.post will have all the user fields in it bc of left join with post
+        let icon          = user_icon(state.post, 1, `align='left' hspace='5' vspace='2'`) // state.post will have all the user fields in it bc of left join with post
         let link          = post_link(state.post)
 
         return `<div class='comment' >${arrowbox_html} ${icon} <h2 style='display:inline' >${ link }</h2>
@@ -1101,20 +1102,28 @@ async function render(state) {
         return formatted.join('')
     }
 
-    function user_icon(u, scale=1) { // clickable icon for this user if they have icon
+    function user_icon(u, scale=1, img_parms='') { // clickable icon for this user if they have icon
 
         user_icon_width  = Math.round(u.user_icon_width  * scale)
         user_icon_height = Math.round(u.user_icon_height * scale)
 
         return u.user_icon ?
-                `<a href='/user/${ u.user_name }'><img src='${u.user_icon}' width='${user_icon_width}' height='${user_icon_height}'
-                    align='left' hspace='5' vspace='2' ></a>`
+                `<a href='/user/${ u.user_name }'><img src='${u.user_icon}' width='${user_icon_width}' height='${user_icon_height}' ${img_parms} ></a>`
                 : ''
     }
 
     function user_info(u) {
-        var img = user_icon(u)
-        return `<center><a href='/user/${ u.user_name }' >${ img }</a><h2>${ u.user_name }</h2></p>joined ${ u.user_registered }</center>`
+        let img = user_icon(u)
+
+		if (u.user_id == state.current_user.user_id) {
+			var edit_or_logout = `<div style='float:right'>
+			<b><a href='/profile'>edit profile</a> &nbsp; 
+               <a href='#' onclick="$.get('/logout', function(data) { $('#status').html(data) });return false">logout</a></b><p>
+			</div><div style='clear: both;'></div>`
+		}
+		else var edit_or_logout = ''
+
+        return `${edit_or_logout}<center><a href='/user/${ u.user_name }' >${ img }</a><h2>${ u.user_name }</h2></p>joined ${ u.user_registered }</center>`
     }
 
     function icon_or_loginprompt() {
@@ -1124,13 +1133,11 @@ async function render(state) {
 
     function id_box() {
 
-        var img = user_icon(state.current_user, 0.4) // scale image down
+        var img = user_icon(state.current_user, 0.4, `'align='left' hspace='5' vspace='2'`) // scale image down
 
         return `
             <div id='status' >
                 ${img}<a href='/user/${state.current_user.user_name}' >${state.current_user.user_name}</a>
-                <p>
-                <a href='#' onclick="$.get('/logout', function(data) { $('#status').html(data) });return false">logout</a>
             </div>`
     }
 
@@ -1207,42 +1214,61 @@ async function render(state) {
 
     function footer() {
         return `
-            <p>
-            <center>
-            <a href='/'>home</a> &nbsp;
-            <a href='#'>top</a> &nbsp;
-            <a href="/topics">topics</a> &nbsp;
-            <a href="/users">users</a> &nbsp;
-            <a href="/about">about</a> &nbsp;
-            <a href='mailto:${ state.conf.admin_email }' >contact</a> &nbsp;
-      <script>
-      function tweet(content) {
-        $.get( "/tweet?comment_id="+content.split("_")[1], function(data) {
-          document.getElementById(content).innerHTML = data;
-        });
-      }
-      function like(content) {
-        $.get( "/like?comment_id="+content.split("_")[1], function(data) {
-          document.getElementById(content).innerHTML = data;
-        });
-      }
-      function dislike(content) {
-        $.get( "/dislike?comment_id="+content.split("_")[1], function(data) {
-          document.getElementById(content).innerHTML = data;
-        });
-      }
-      function postlike(content) { // For whole post instead of just one comment.
-        $.get( "/like?post_id="+content.split("_")[1], function(data) {
-          document.getElementById(content).innerHTML = data;
-        });
-      }
-      function postdislike(content) { // For whole post instead of just one comment.
-        $.get( "/dislike?post_id="+content.split("_")[1], function(data) {
-          document.getElementById(content).innerHTML = data;
-        });
-      }
-      </script>
-            `
+			<p id='footer' >
+			<center>
+			<a href="/users">users</a> &nbsp;
+			<a href="/about">about</a> &nbsp;
+			<a href='/1302130/2017-01-28-patnet-improvement-suggestions'>suggestions</a> &nbsp;
+			<a href='mailto:${ state.conf.admin_email }' >contact</a> &nbsp;
+			<br>
+			<a href='/topics'>topics</a> &nbsp;
+			<a href='/random'>random post</a> &nbsp;
+			<a href="/best.php">best comments</a> &nbsp;
+			<a href="/adhom_jail.php">comment jail</a> &nbsp;
+			<br>
+			<a href='/1303173/2017-02-19-patricks-s-40-proposals'>patrick's 40 proposals</a> &nbsp;
+			<br>
+			<a href='/1282720/2015-07-11-ten-reasons-it-s-a-terrible-time-to-buy-an-expensive-house'>10 reasons it's a terrible time to buy</a> &nbsp;
+			<br>
+			<a href='/1282721/2015-07-11-eight-groups-who-lie-about-the-housing-market'>8 groups who lie about the housing market</a> &nbsp;
+			<br>
+			<a href='/1282722/2015-07-11-37-bogus-arguments-about-housing'>37 bogus arguments about housing</a> &nbsp;
+			<br>
+			<a href='/1206569/2011-12-30-free-patrick-net-bumper-stickers'>get a free bumper sticker:</a><br>
+			<a href='/1206569/2011-12-30-free-patrick-net-bumper-stickers'><img src='/images/bumpersticker.png' width=300 ></a>
+			<br>
+			<form method="get" action="/" ><input name="s" type="text" placeholder="search..." size="20" ></form>
+			</center>
+			<div class="fixed">
+				<a href='#' title='top of page' >top</a> &nbsp; <a href='#footer' title='bottom of page' >bottom</a> &nbsp; <a href='/' title='home page' >home</a>
+			</div>
+			<script>
+			function tweet(content) {
+				$.get( "/tweet?comment_id="+content.split("_")[1], function(data) {
+				    document.getElementById(content).innerHTML = data;
+				});
+			}
+			function like(content) {
+				$.get( "/like?comment_id="+content.split("_")[1], function(data) {
+				    document.getElementById(content).innerHTML = data;
+				});
+			}
+			function dislike(content) {
+				$.get( "/dislike?comment_id="+content.split("_")[1], function(data) {
+				    document.getElementById(content).innerHTML = data;
+				});
+			}
+			function postlike(content) { // For whole post instead of just one comment.
+				$.get( "/like?post_id="+content.split("_")[1], function(data) {
+				    document.getElementById(content).innerHTML = data;
+				});
+			}
+			function postdislike(content) { // For whole post instead of just one comment.
+				$.get( "/dislike?post_id="+content.split("_")[1], function(data) {
+				    document.getElementById(content).innerHTML = data;
+				});
+			}
+			</script>`
     }
 
   function redirect(redirect_to) {
@@ -1264,7 +1290,7 @@ async function render(state) {
         return `<ul class='nav nav-tabs'>
             <li class='active' > <a href='/?order=active'   title='most recent comments'       >active</a></li>
             <li                > <a href='/?order=comments' title='most comments in last week' >comments</a></li>
-            <li                > <a href='/?order=likes'    title='most likes in last week'    >private</a></li>
+            <li                > <a href='/?order=likes'    title='most likes in last week'    >likes</a></li>
             <li                > <a href='/?order=new'      title='newest'                     >new</a></li>
             </ul>`
     }
