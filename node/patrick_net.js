@@ -1124,11 +1124,11 @@ async function render(state) {
 
     function id_box() {
 
-        var img = user_icon(state.current_user, 0.5) // scale image down
+        var img = user_icon(state.current_user, 0.4) // scale image down
 
         return `
             <div id='status' >
-                <a href='/user/${state.current_user.user_name}' >${img} ${state.current_user.user_name}</a>
+                ${img}<a href='/user/${state.current_user.user_name}' >${state.current_user.user_name}</a>
                 <p>
                 <a href='#' onclick="$.get('/logout', function(data) { $('#status').html(data) });return false">logout</a>
             </div>`
