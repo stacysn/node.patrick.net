@@ -1,10 +1,11 @@
 // Copyright 2017 by Patrick Killelea under the ISC license
 
-try { conf = require('./conf.json') } catch(e) { console.log(e.message); process.exit(1) } // conf.json is required
+try { CONF = require('./conf.json') } catch(e) { console.log(e.message); process.exit(1) } // conf.json is required
 
 // globals are capitalized
 CLUSTER     = require('cluster')
 CHEERIO     = require('cheerio')         // installed via npm
+CRYPTO      = require('crypto')
 HTTP        = require('http')
 MOMENT      = require('moment-timezone') // installed via npm
 MYSQL       = require('mysql')           // installed via npm
@@ -15,7 +16,7 @@ URL         = require('url')
 
 locks = {} // global locks to allow only one db connection per ip; helps mitigate dos attacks
 
-pool = MYSQL.createPool(conf.db)
+pool = MYSQL.createPool(CONF.db)
 pool.on('release', db => { // delete the lock for the released db.threadId, and any locks that are older than 2000 milliseconds
     Object.keys(locks).map(ip => {
         if (locks[ip].threadId == db.threadId || locks[ip].ts < (Date.now() - 2000)) {
@@ -32,7 +33,7 @@ if (CLUSTER.isMaster) {
         console.log(`worker pid ${worker.process.pid} died with code ${code} from signal ${signal}, replacing that worker`)
         CLUSTER.fork()
     })
-} else HTTP.createServer(run).listen(conf.http_port)
+} else HTTP.createServer(run).listen(CONF.http_port)
 
 ////////////////////////////////////////////////////////////////////////////////
 // end of top-level code; everything else is in a function
@@ -41,7 +42,6 @@ if (CLUSTER.isMaster) {
 function run(req, res) { // handle a single http request
 
     var state = { // start accumulation of state for this request
-        conf    : conf,
         page    : segments(req.url)[1] || 'home',
         queries : [],
         req     : req,
@@ -144,7 +144,7 @@ async function set_user(state) { // update state with whether they are logged in
             pairs[name] = value
         })
 
-        var results = await query('select * from users where user_id = ? and user_pass = ?', [pairs[conf.usercookie], pairs[conf.pwcookie]], state)
+        var results = await query('select * from users where user_id = ? and user_pass = ?', [pairs[CONF.usercookie], pairs[CONF.pwcookie]], state)
 
         if (0 == results.length) state.current_user = null
         else                     state.current_user = results[0]
@@ -196,8 +196,7 @@ async function set_relations(state) { // update state object with their relation
 }
 
 function md5(str) {
-    var crypto = require('crypto')
-    var hash = crypto.createHash('md5')
+    var hash = CRYPTO.createHash('md5')
     hash.update(str)
     return hash.digest('hex')
 }
@@ -225,18 +224,18 @@ function first_words(string, num) {
 }
 
 function text2hashtag(text) { // given some text, pull out first hashtag as link
-  if (matches = text.match(/[\s>]#(\w{1,32})/)) return `in <a href='/topic/${matches[1]}'>#${matches[1]}</a>`
-  else                          return ''
+    if (matches = text.match(/[\s>]#(\w{1,32})/)) return `in <a href='/topic/${matches[1]}'>#${matches[1]}</a>`
+    else                                          return ''
 }
 
 function get_transporter() {
     return NODEMAILER.createTransport({
-        host:   conf.email.host,
-        port:   conf.email.port,
+        host:   CONF.email.host,
+        port:   CONF.email.port,
         secure: false, // do not use TLS
         auth: {
-            user: conf.email.user,
-            pass: conf.email.password
+            user: CONF.email.user,
+            pass: CONF.email.password
         },
         tls: {
             rejectUnauthorized: false // do not fail on invalid certs
@@ -248,9 +247,9 @@ async function send_login_link(state) {
 
   if (!/^\w.*@.+\.\w+$/.test(state.post_data.user_email)) return 'Please go back and enter a valid email'
 
-    baseurl  = (/^dev\./.test(OS.hostname())) ? conf.baseurl_dev : conf.baseurl // conf.baseurl_dev is for testing email
+    baseurl  = (/^dev\./.test(OS.hostname())) ? CONF.baseurl_dev : CONF.baseurl // CONF.baseurl_dev is for testing email
     console.log(`baseurl is ${baseurl}`)
-    key      = md5(Date.now() + conf.nonce_secret)
+    key      = md5(Date.now() + CONF.nonce_secret)
     key_link = `${ baseurl }/key_login?key=${ key }`
 
     var results = await query('update users set user_activation_key=? where user_email=?', [key, state.post_data.user_email], state)
@@ -258,9 +257,9 @@ async function send_login_link(state) {
     if (results.changedRows) {
 
         let mailOptions = {
-            from:    conf.admin_email,
+            from:    CONF.admin_email,
             to:      state.post_data.user_email,
-            subject: `Your ${ conf.domain } login info`,
+            subject: `Your ${ CONF.domain } login info`,
             html:    `Click here to log in and get your password: <a href='${ key_link }'>${ key_link }</a>`
         }
 
@@ -292,22 +291,22 @@ function brandit(url) { // add ref=[domain name] to a url
 
     if (!url) return
 
-    if (!new RegExp(conf.domain).test(url)) { // brand it iff url does not already have conf.domain in it somewhere
+    if (!new RegExp(CONF.domain).test(url)) { // brand it iff url does not already have CONF.domain in it somewhere
 
         let matches = null
 
-        if (matches = url.match(/(.*)\?(.*)/)) { // if E parms, add in ref=conf.domain as first one to make it visible and harder to remove
+        if (matches = url.match(/(.*)\?(.*)/)) { // if E parms, add in ref=CONF.domain as first one to make it visible and harder to remove
             let loc         = matches[1]
             let querystring = matches[2]
-            url = `${loc}?ref=${conf.domain}&${querystring}`
+            url = `${loc}?ref=${CONF.domain}&${querystring}`
         }
         else if (matches = url.match(/(.*)#(.*)/)) { // if no parms, but E hash tag, add in brand BEFORE that
             let loc        = matches[1]
             let hashstring = matches[2]
-            url = `${loc}?ref=${conf.domain}#${hashstring}`
+            url = `${loc}?ref=${CONF.domain}#${hashstring}`
         }
         else { // Otherwise, we're the only parm.
-            url = url + `?ref=${conf.domain}`
+            url = url + `?ref=${CONF.domain}`
         }
     }
 
@@ -412,7 +411,7 @@ async function render(state) {
         key_login : async function() {
 
             let key      = _GET('key')
-            let password = md5(Date.now() + conf.nonce_secret).substring(0, 6)
+            let password = md5(Date.now() + CONF.nonce_secret).substring(0, 6)
 
             state.header_data = await header_data(state)
 
@@ -451,8 +450,8 @@ async function render(state) {
                 ['Content-Length' , html.length                               ],
                 ['Content-Type'   , 'text/html'                               ],
                 ['Expires'        , d.toUTCString()                           ],
-                ['Set-Cookie'     , `${ conf.usercookie }=_; Expires=${d}; Path=/`],
-                ['Set-Cookie'     , `${ conf.pwcookie   }=_; Expires=${d}; Path=/`]
+                ['Set-Cookie'     , `${ CONF.usercookie }=_; Expires=${d}; Path=/`],
+                ['Set-Cookie'     , `${ CONF.pwcookie   }=_; Expires=${d}; Path=/`]
             ] // do not use 'secure' parm with cookie or will be unable to test login in dev, bc dev is http only
 
             state.res.writeHead(200, headers)
@@ -512,14 +511,15 @@ async function render(state) {
 
         post : async function() { // show a single post
 
-      let current_user_id = state.current_user ? state.current_user.user_id : 0
+            let current_user_id = state.current_user ? state.current_user.user_id : 0
             let post_id         = segments(state.req.url)[2] // get post's db row number from url, eg 47 from /post/47/slug-goes-here
 
             var results = await query(`select * from posts
-                                       left join postvotes on postvote_post_id=post_id and postvote_user_id=?
+                                       left join postvotes on (postvote_post_id=post_id and postvote_user_id=?)
+                                       left join postviews on (postview_post_id=post_id and postview_user_id=? )
                                        left join users on user_id=post_author
                                        where post_id=?`,
-                        [current_user_id, post_id], state)
+                                       [current_user_id, current_user_id, post_id], state)
 
             state.post = results[0]
 
@@ -527,6 +527,9 @@ async function render(state) {
             else {
                 state.header_data = await header_data(state)
                 state.comments    = await post_comment_list(state.post) // pick up the comment list for this post
+
+                results = await query(`select count(*) as c from postviews where postview_post_id=? and postview_want_email=1`, [post_id], state)
+                state.post.watchers = results[0].c
 
                 let content = html(
                     midpage(
@@ -538,8 +541,8 @@ async function render(state) {
 
                 send_html(200, content)
 
-        if (state.current_user) { // log the time that this user has seen this post
-          await query(`insert into postviews (postview_user_id, postview_post_id, postview_last_view)
+                if (state.current_user) { // log the time that this user has seen this post
+                    await query(`insert into postviews (postview_user_id, postview_post_id, postview_last_view)
                                  values (?, ?, now()) on duplicate key update postview_last_view=now()`, [state.current_user.user_id, post_id], state)
                 }
             }
@@ -750,7 +753,7 @@ async function render(state) {
     } // end of pages /////////////////////////////////////////////////////////
 
     function about_this_site() {
-        return `<h1>About ${ conf.domain }</h1>${ conf.domain } is the bomb!`
+        return `<h1>About ${ CONF.domain }</h1>${ CONF.domain } is the bomb!`
     }
 
 
@@ -810,14 +813,14 @@ async function render(state) {
 
     function format_date(gmt_date) { // create localized date string from gmt date out of mysql
         var utz = state.current_user ? state.current_user.user_timezone : 'America/Los_Angeles'
-        return MOMENT(Date.parse(gmt_date)).tz(utz).format('YYYY MMMM Do h:mma z')
+        return MOMENT(Date.parse(gmt_date)).tz(utz).format('YYYY MMM D, h:mma')
     }
 
     function header() {
 
         return `<div class='comment' >
             <div style='float:right' >${ icon_or_loginprompt(state) }</div>
-            <a href='/' ><h1 class='sitename' title='back to home page' >${ conf.domain }</h1></a><br>
+            <a href='/' ><h1 class='sitename' title='back to home page' >${ CONF.domain }</h1></a><br>
             <font size='-1'>${ top_topics() + '<br>' + brag() + '</font><br>' + new_post_button() }
             </div>`
     }
@@ -832,12 +835,12 @@ async function render(state) {
 
         return `<!DOCTYPE html><html lang="en">
             <head>
-            <link href='/${ conf.stylesheet }' rel='stylesheet' type='text/css' />
+            <link href='/${ CONF.stylesheet }' rel='stylesheet' type='text/css' />
             <link rel='icon' href='/favicon.ico' />
             <meta charset='utf-8' />
-            <meta name='description' content='${ conf.description }' />
+            <meta name='description' content='${ CONF.description }' />
             <meta name='viewport' content='width=device-width, initial-scale=1, shrink-to-fit=no' />
-            <title>${ conf.domain }</title>
+            <title>${ CONF.domain }</title>
             </head>
             <body>
                 <div class="container" >
@@ -892,8 +895,8 @@ async function render(state) {
             )
         }
 
-        var usercookie = `${ conf.usercookie }=${ user_id   }`
-        var pwcookie   = `${ conf.pwcookie   }=${ user_pass }`
+        var usercookie = `${ CONF.usercookie }=${ user_id   }`
+        var pwcookie   = `${ CONF.pwcookie   }=${ user_pass }`
         var d          = new Date()
         var decade     = new Date(d.getFullYear()+10, d.getMonth(), d.getDate()).toUTCString()
 
@@ -1044,7 +1047,7 @@ async function render(state) {
             let host = URL.parse(extlink).host
 
             if (!(['http:', 'https:'].indexOf(URL.parse(extlink).protocol) > -1)) return '' // ignore invalid protocols
-            if (new RegExp(conf.domain).test(host))                               return '' // ignore links back to own domain
+            if (new RegExp(CONF.domain).test(host))                               return '' // ignore links back to own domain
 
             return `<a href='${brandit(extlink)}' target='_blank' title='original story at ${host}' ><img src='/images/ext_link.png'></a>`
         }
@@ -1111,20 +1114,66 @@ async function render(state) {
     function post() { // format a single post for display
 
         let arrowbox_html = arrowbox(state.post)
-        let icon          = user_icon(state.post, 1, `align='left' hspace='5' vspace='2'`) // state.post will have all the user fields in it bc of left join with post
+        let icon          = user_icon(state.post, 1, `align='left' hspace='5' vspace='2'`)
         let link          = post_link(state.post)
+		let adhom         = ''
+		let incoming      = ''
 
-        return `<div class='comment' >${arrowbox_html} ${icon} <h2 style='display:inline' >${ link }</h2>
-                <p>By ${user_link(state.post)} ${follow_button(state.post)}
-                    ${ state.post.post_content }</div>`
-                /*
-                    print "<p>By " . name_posts($u->user_id);
-                    print ' ';
-                    print follow($u->user_id);
-                    print ' &nbsp; ';
-                    print zdate($post->post_date);
-                    print ' &nbsp; ';
-                */
+		if (state.current_user && state.current_user.user_pbias >= 3) {
+
+			let ts = Date.now() // current unix time in ms
+			let nonce = get_nonce(ts)
+			let nonce_parms = `ts=${ts}&nonce=${nonce}`
+
+			if (!state.post.post_title.match(/thunderdome/)) {
+
+				let confirm_adhom = `onClick="javascript:return confirm('Really mark as ad hominem?')"`
+				adhom = ` &nbsp; <a href='/adhominem?post_id=${state.post.post_id}&${nonce_parms}' ${confirm_adhom} title='attacks person, not point' >ad hominem</a> &nbsp;` 
+			}
+		}
+
+        if (state.post.post_referers) {
+            let s = state.post.post_referers == 1 ? '' : 's'
+            let n = state.post.post_referers
+            incoming = `<a href='/links?post_id=${state.post.post_id}' title='Incoming links to this post' >${n} link${s}<img src='/images/goldstar.gif'
+            width='18' height='17'></a> &nbsp; `
+        }
+
+        return `<div class='comment' id='comment-0-text' >${arrowbox_html} ${icon} <h2 style='display:inline' >${ link }</h2>
+                <p>By ${user_link(state.post)} ${follow_button(state.post)} &nbsp; ${format_date(state.post.post_date)} ${adhom} ${incoming}
+                ${state.post.post_views} views &nbsp; ${state.post.post_comments} comments &nbsp;
+                ${state.post.watchers} watchers
+                ${ state.post.post_content }</div>`
+/*
+    if ($want_email)
+        echo "<A HREF='". post_id2path($post_id) ."?want_email=0' title='stop getting comments by email' >
+              <IMG SRC='/content/openeye.png'> unwatch</A> ($watchers) $change &nbsp;";
+    else
+        echo "<A HREF='". post_id2path($post_id) ."?want_email=1' title='Get comments by email for this post' >
+              <IMG SRC='/content/closedeye.png'> watch</A> ($watchers) $change &nbsp;";
+
+    if ( $post->post_content != '' && $post_id) { // If there is some post content, let them quote it.
+        ?>
+        <a href="#commentform" onclick="addquote( '<?= $post->post_id ?>', '0', '<? echo $u->user_name; ?>' ); return false;"
+           title="Select some text then click this to quote" >quote</a> &nbsp;
+        <?
+    }
+
+    print ' &nbsp; ' . share_post($post) . ' &nbsp; ';
+
+    if ( ($user_id == $post->post_author) || ($current_user->user_level >= 4) ) {
+        $location = "/edit.php?p=$post->post_id";
+        print "<a href=\"$location\">edit</a> &nbsp; ";
+    }
+
+    if (($user_id == $post->post_author && !$post->post_comments) || ($current_user->user_level >= 4)) {
+        $ts = time();
+        $nonce=get_nonce($ts);
+        $nonce_parms = "ts=$ts&nonce=$nonce";
+
+        ?><A HREF="/delete_post.php?post_id=<?= $post->post_id ?>&<?= $nonce_parms ?>" onClick='javascript:return confirm("Really?")' >delete</A> &nbsp; <?
+    }
+*/
     }
 
     function postform() { // need to add conditional display of user-name chooser for non-logged in users
@@ -1139,7 +1188,7 @@ async function render(state) {
     }
 
     function slugify(s) { // url-safe pretty chars only; not used for navigation, only for seo and humans
-        return s.replace(/\W/g,'-').toLowerCase().replace(/-+/,'-').replace(/^-+|-+$/,'')
+        return s.replace(/\W+/g,'-').toLowerCase().replace(/-+/,'-').replace(/^-+|-+$/,'')
     }
 
     function text() {
@@ -1292,7 +1341,7 @@ async function render(state) {
         <a href="/users">users</a> &nbsp;
         <a href="/about">about</a> &nbsp;
         <a href='/1302130/2017-01-28-patnet-improvement-suggestions'>suggestions</a> &nbsp;
-        <a href='mailto:${ state.conf.admin_email }' >contact</a> &nbsp;
+        <a href='mailto:${ CONF.admin_email }' >contact</a> &nbsp;
         <br>
         <a href='/topics'>topics</a> &nbsp;
         <a href='/random'>random post</a> &nbsp;
@@ -1419,6 +1468,13 @@ async function render(state) {
     state.res.end(html)
     if (state.db) state.db.release()
   }
+
+	function get_nonce(ts) {
+		// create a nonce string for input forms. this makes each form usable only once, and only from the ip that got the form.
+		// hopefully this slows down spammers and cross-site posting tricks
+		return md5(state.ip + CONF.nonce_secret + ts)
+	}
+
 
     if (typeof pages[state.page] === 'function') { // hit the db iff the request is for a valid url
         try {
