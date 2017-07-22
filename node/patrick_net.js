@@ -214,6 +214,17 @@ function strip_tags(s) {
     return s.replace(/(<([^>]+)>)/g,'')
 }
 
+function first_words(string, num) {
+
+    string = strip_tags(string)
+
+    let allwords   = string.split(/\s+/).map(s => s.substring(0, 30)) // max single word len is 30 chars
+    let firstwords = allwords.slice(0, num)
+
+    if (allwords.length > firstwords.length) return firstwords.join(' ') + '...'
+    else                                     return firstwords.join(' ')
+}
+
 function text2hashtag(text) { // given some text, pull out first hashtag as link
   if (matches = text.match(/[\s>]#(\w{1,32})/)) return `in <a href='/topic/${matches[1]}'>#${matches[1]}</a>`
   else                          return ''
@@ -944,11 +955,11 @@ async function render(state) {
                 </div>`
     }
 
-	function share_post(post) {
-		let share_title = encodeURI(post.post_title).replace(/%20/g,' ')
-		share_link  = encodeURI('https://patrick.net' +  post_path(post) )
-		return `<a href='mailto:?subject=${share_title}&body=${share_link}' title='email this' ><img src='/images/mailicon.jpg' width=15 height=12 ></a>`
-	}
+    function share_post(post) {
+        let share_title = encodeURI(post.post_title).replace(/%20/g,' ')
+        share_link  = encodeURI('https://patrick.net' +  post_path(post) )
+        return `<a href='mailto:?subject=${share_title}&body=${share_link}' title='email this' ><img src='/images/mailicon.jpg' width=15 height=12 ></a>`
+    }
 
     function get_external_link(post) {
 
@@ -1004,17 +1015,18 @@ async function render(state) {
                 let arrowbox_html = arrowbox(post)
                 let extlink       = get_external_link(post)
                 let sharelink     = share_post(post)
+                let firstwords    = `<font size='-1'>${first_words(post.post_content, 30)}</font>`
 
                 if (post.post_comments) {
-				    let s = (post.post_comments == 1) ? '' : 's';
+                    let s = (post.post_comments == 1) ? '' : 's';
                     let path = post_path(post)
-				    // should add commas to post_comments here
+                    // should add commas to post_comments here
                     var latest = `<a href='${path}'>${post.post_comments}&nbsp;comment${s}</a>, latest <a href='${path}#comment-${post.post_latest_comment_id}' >${ago}</a>`
                 }
                 else var latest = `Posted ${ago}`
 
                 return `<div class='post' >${arrowbox_html}${imgdiv}<b><font size='+1'>${link}</font></b> ${extlink} ${sharelink}<br>by 
-                        <a href='/user/${ post.user_name }'>${ post.user_name }</a> ${hashlink} &nbsp; ${latest} ${unread} </div>`
+                        <a href='/user/${ post.user_name }'>${ post.user_name }</a> ${hashlink} &nbsp; ${latest} ${unread}<br>${firstwords}</div>`
             })
         }
         else formatted = []
