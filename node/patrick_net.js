@@ -399,7 +399,7 @@ async function render(state) {
 
             let content = html(
                 midpage(
-					tabs(order),
+                    tabs(order),
                     post_list(),
                     pagination_links(state.posts.length, curpage, `&order=${order}`)
                 )
@@ -526,7 +526,8 @@ async function render(state) {
             if (0 == results.length) send_html(404, `No post with id "${post_id}"`)
             else {
                 state.header_data = await header_data(state)
-                state.comments    = await post_comment_list(state.post) // pick up the comment list for this post
+                var [comments, start, page] = await post_comment_list(state.post) // pick up the comment list for this post
+                state.comments = comments
 
                 results = await query(`select count(*) as c from postviews where postview_post_id=? and postview_want_email=1`, [post_id], state)
                 state.post.watchers = results[0].c
@@ -534,7 +535,9 @@ async function render(state) {
                 let content = html(
                     midpage(
                         post(),
+                        comment_pagination(start, page),
                         comment_list(),
+                        comment_pagination(start, page),
                         commentbox()
                     )
                 )
@@ -632,10 +635,10 @@ async function render(state) {
 
             let [curpage, slimit, order, order_by] = page()
 
-			// These MATCH() requests require the existence of fulltext index:
-			//      create fulltext index post_title_content_index on posts (post_title, post_content);
+            // These MATCH() requests require the existence of fulltext index:
+            //      create fulltext index post_title_content_index on posts (post_title, post_content);
 
-			let sql = `select * from posts where match(post_title, post_content) against ('${s}') ${order_by} limit ${slimit}`
+            let sql = `select * from posts where match(post_title, post_content) against ('${s}') ${order_by} limit ${slimit}`
 
             state.posts       = await query(sql, [], state)
             state.message     = `search results for "${s}"`
@@ -797,6 +800,33 @@ async function render(state) {
         </form>`
     }
 
+    function comment_pagination(start, page) {
+        let end = (state.post.post_comments > start + 40) ? start + 40 : state.post.post_comments
+        let from_one_start = start + 1
+
+        let previouspage = 0
+        let nextpage = 0
+
+        if (start > 0) previouspage = page + 1
+        if (page  > 0) nextpage     = page - 1
+
+        let maxpage = Math.floor(state.post.post_comments / 40)
+        let ret = `<p id='comments'>`
+
+        if (start > 0) {
+            ret = ret + `<a href='${post_path(state.post)}?{page}=${maxpage}#comments' title='Jump to first comment' >&laquo; First</a> &nbsp; &nbsp; `
+            ret = ret + `<a href='${post_path(state.post)}?{page}=${previouspage}#comments' title='Previous page of comments' >&laquo; Previous</a> &nbsp; &nbsp; `
+        }
+
+        let s = (state.post.post_comments == 1) ? '' : 's'
+
+        ret = ret + `Comment${s} ${from_one_start} - ${end} of ${state.post.post_comments} &nbsp; &nbsp; `
+        if (page  > 0) ret = ret + `<a href='${post_path(state.post)}?page=${nextpage}#comments'>Next &raquo;</a> &nbsp; &nbsp; `
+        ret = ret + `<a href='${post_path(state.post)}#comment-${state.post.post_latest_comment_id}' title='Jump to last comment' >Last &raquo;</a></br>`
+
+        return ret
+    }
+
     function comment_list() {
         if (state.comments) {
             var formatted = state.comments.map( (item) => {
@@ -807,9 +837,9 @@ async function render(state) {
         }
     }
 
-	function _GET(parm) { // given a string, return the GET parameter by that name
-		return URL.parse(state.req.url, true).query[parm]
-	}
+    function _GET(parm) { // given a string, return the GET parameter by that name
+        return URL.parse(state.req.url, true).query[parm]
+    }
 
     function format_date(gmt_date) { // create localized date string from gmt date out of mysql
         var utz = state.current_user ? state.current_user.user_timezone : 'America/Los_Angeles'
@@ -924,81 +954,81 @@ async function render(state) {
         return '<a href="/postform" class="btn btn-success btn-sm" title="start a new post" ><b>new post</b></a>'
     }
 
-	function page() { // tell homepage, search, userpage, topic which page we are on
+    function page() { // tell homepage, search, userpage, topic which page we are on
 
-		let curpage = Math.floor(_GET('page')) ? Math.floor(_GET('page')) : 1
-		let slimit  = (curpage - 1) * 20 + ', 20' // sql limit for pagination of results.
+        let curpage = Math.floor(_GET('page')) ? Math.floor(_GET('page')) : 1
+        let slimit  = (curpage - 1) * 20 + ', 20' // sql limit for pagination of results.
 
-		let orders = { // maps _GET('order') parm to a posts table column name to order by
-			'active'   : 'post_modified',
-			'comments' : 'post_comments',
-			'likes'    : 'cast(post_likes as signed) - cast(post_dislikes as signed)',
-			'new'      : 'post_date',
-		}
+        let orders = { // maps _GET('order') parm to a posts table column name to order by
+            'active'   : 'post_modified',
+            'comments' : 'post_comments',
+            'likes'    : 'cast(post_likes as signed) - cast(post_dislikes as signed)',
+            'new'      : 'post_date',
+        }
 
-		let order = orders[_GET('order')] ? _GET('order') : 'active'
-		let order_by = 'order by ' + orders[order] + ' desc'
+        let order = orders[_GET('order')] ? _GET('order') : 'active'
+        let order_by = 'order by ' + orders[order] + ' desc'
 
-		return [curpage, slimit, order, order_by]
-	}
+        return [curpage, slimit, order, order_by]
+    }
 
-	function pagination_links(post_count, curpage, extra) {
+    function pagination_links(post_count, curpage, extra) {
 
-		let links    = ''
-		let nextpage = curpage + 1
-		let pages    = Math.floor( (post_count + 20) / 20)
-		let path     = URL.parse(state.req.url).pathname
-		let prevpage = curpage - 1
+        let links    = ''
+        let nextpage = curpage + 1
+        let pages    = Math.floor( (post_count + 20) / 20)
+        let path     = URL.parse(state.req.url).pathname
+        let prevpage = curpage - 1
 
-		if (curpage > 1) links = links + `<a href='${path}?page=${prevpage}${extra}'>&laquo; previous</a> &nbsp;`
+        if (curpage > 1) links = links + `<a href='${path}?page=${prevpage}${extra}'>&laquo; previous</a> &nbsp;`
 
-		links = links + ` page ${curpage} of ${pages} `
+        links = links + ` page ${curpage} of ${pages} `
 
-		if (curpage < pages) links = links + `&nbsp; <a href='${path}?page=${nextpage}${extra}'>next &raquo;</a>`
+        if (curpage < pages) links = links + `&nbsp; <a href='${path}?page=${nextpage}${extra}'>next &raquo;</a>`
 
-		return links
-	}
+        return links
+    }
 
     async function post_comment_list(post) {
 
-		// If page is not set, show the 40 most recent comments. Same as page 0.
-		// If page is set, show that page, counting backwards from most recent.
-		// So page 1 would be the 40 comments before the most recent.
+        // If page is not set, show the 40 most recent comments. Same as page 0.
+        // If page is set, show that page, counting backwards from most recent.
+        // So page 1 would be the 40 comments before the most recent.
 
-		// If we were passed a 'c' parm, then calculate the page from that, overriding any page parm.
-		// This allows permalinks regardless of page number.
+        // If we were passed a 'c' parm, then calculate the page from that, overriding any page parm.
+        // This allows permalinks regardless of page number.
 
         let page = 0 // default to first page of comments
 
-		if (_GET('c')) {
-		  var c = digits(_GET('c'))
-		  // Get all the comments, sorted from greatest to least.
-		  // What page of 40 from the end is our comment in? Start counting with page 0 being the most recent comments.
-		  let results = await query(`select floor(count(*)/40 - 0.01) as f from comments
-									where comment_post_id=? and comment_id >= ? order by comment_id`, [post.post_id, c], state)
+        if (_GET('c')) {
+          var c = digits(_GET('c'))
+          // Get all the comments, sorted from greatest to least.
+          // What page of 40 from the end is our comment in? Start counting with page 0 being the most recent comments.
+          let results = await query(`select floor(count(*)/40 - 0.01) as f from comments
+                                    where comment_post_id=? and comment_id >= ? order by comment_id`, [post.post_id, c], state)
 
-				if (results[0]) page = results[0].f
-		}
+                if (results[0]) page = results[0].f
+        }
 
-		if (!page) page = digits(_GET('page')) // if page is not set from c above, use _GET('page')
-		if (!page) page = 0
+        if (!page) page = digits(_GET('page')) // if page is not set from c above, use _GET('page')
+        if (!page) page = 0
 
-		let start = post.post_comments - 40 * (page + 1)
-		if (start < 0) start = 0
+        let start = post.post_comments - 40 * (page + 1)
+        if (start < 0) start = 0
 
-		// if this gets too slow as user_adhom_comments increases, try a left join, or just start deleting old adhom comments
-		let sql = `select sql_calc_found_rows * from comments
+        // if this gets too slow as user_adhom_comments increases, try a left join, or just start deleting old adhom comments
+        let sql = `select sql_calc_found_rows * from comments
                   left join users on comment_author=user_id
-          where comment_post_id = ?
-          and comment_adhom_when is null
-          order by comment_date limit ?, 40`
+                  where comment_post_id = ?
+                  and comment_adhom_when is null
+                  order by comment_date limit ?, 40`
 
         let results = await query(sql, [post.post_id, start], state)
 
         //let results = await query('select * from comments left join users on comment_author=user_id where comment_post_id=? order by comment_date',
         //    [post.post_id], state)
 
-        if (results.length) return results
+        return [results, start, page]
     }
 
     function post_link(post) {
@@ -1116,21 +1146,21 @@ async function render(state) {
         let arrowbox_html = arrowbox(state.post)
         let icon          = user_icon(state.post, 1, `align='left' hspace='5' vspace='2'`)
         let link          = post_link(state.post)
-		let adhom         = ''
-		let incoming      = ''
+        let adhom         = ''
+        let incoming      = ''
 
-		if (state.current_user && state.current_user.user_pbias >= 3) {
+        if (state.current_user && state.current_user.user_pbias >= 3) {
 
-			let ts = Date.now() // current unix time in ms
-			let nonce = get_nonce(ts)
-			let nonce_parms = `ts=${ts}&nonce=${nonce}`
+            let ts = Date.now() // current unix time in ms
+            let nonce = get_nonce(ts)
+            let nonce_parms = `ts=${ts}&nonce=${nonce}`
 
-			if (!state.post.post_title.match(/thunderdome/)) {
+            if (!state.post.post_title.match(/thunderdome/)) {
 
-				let confirm_adhom = `onClick="javascript:return confirm('Really mark as ad hominem?')"`
-				adhom = ` &nbsp; <a href='/adhominem?post_id=${state.post.post_id}&${nonce_parms}' ${confirm_adhom} title='attacks person, not point' >ad hominem</a> &nbsp;` 
-			}
-		}
+                let confirm_adhom = `onClick="javascript:return confirm('Really mark as ad hominem?')"`
+                adhom = ` &nbsp; <a href='/adhominem?post_id=${state.post.post_id}&${nonce_parms}' ${confirm_adhom} title='attacks person, not point' >ad hominem</a> &nbsp;` 
+            }
+        }
 
         if (state.post.post_referers) {
             let s = state.post.post_referers == 1 ? '' : 's'
@@ -1140,11 +1170,11 @@ async function render(state) {
         }
 
         if (state.post.postview_want_email) {
-            var watcheye = `<a href='${post_path(state.post.post_id)}?want_email=0' title='stop getting comments by email' >
+            var watcheye = `<a href='${post_path(state.post)}?want_email=0' title='stop getting comments by email' >
                   <IMG SRC='/content/openeye.png'> unwatch</A> (${state.post.watchers}) &nbsp;`
         }
         else {
-            var watcheye = `<a href='${post_path(state.post.post_id)}?want_email=1' title='Get comments by email for this post' >
+            var watcheye = `<a href='${post_path(state.post)}?want_email=1' title='Get comments by email for this post' >
                   <IMG SRC='/content/closedeye.png'> watch</A> (${state.post.watchers}) &nbsp;`
         }
 
@@ -1157,9 +1187,9 @@ async function render(state) {
 
         let delete_link = ''
         if (state.current_user && ((state.current_user.user_id == state.post.post_author && !state.post.post_comments) || (state.current_user.user_level >= 4))) {
-			let ts = Date.now() // current unix time in ms
-			let nonce = get_nonce(ts)
-			let nonce_parms = `ts=${ts}&nonce=${nonce}`
+            let ts = Date.now() // current unix time in ms
+            let nonce = get_nonce(ts)
+            let nonce_parms = `ts=${ts}&nonce=${nonce}`
 
             let confirm_del = `onClick="javascript:return confirm('Really delete?')"`
             delete_link = ` &nbsp; <a href='/delete_post?post_id=${state.post.post_id}&${nonce_parms}' ${confirm_del} >delete</a> &nbsp;` 
@@ -1236,13 +1266,13 @@ async function render(state) {
     function user_info(u) {
         let img = user_icon(u)
 
-		if (u.user_id == state.current_user.user_id) {
-			var edit_or_logout = `<div style='float:right'>
-			<b><a href='/profile'>edit profile</a> &nbsp; 
+        if (u.user_id == state.current_user.user_id) {
+            var edit_or_logout = `<div style='float:right'>
+            <b><a href='/profile'>edit profile</a> &nbsp; 
                <a href='#' onclick="$.get('/logout', function(data) { $('#status').html(data) });return false">logout</a></b><p>
-			</div><div style='clear: both;'></div>`
-		}
-		else var edit_or_logout = ''
+            </div><div style='clear: both;'></div>`
+        }
+        else var edit_or_logout = ''
 
         return `${edit_or_logout}<center><a href='/user/${ u.user_name }' >${ img }</a><h2>${ u.user_name }</h2></p>joined ${ u.user_registered }</center>`
     }
@@ -1410,10 +1440,10 @@ async function render(state) {
     function tabs(order, extra='') {
 
         let selected_tab = []
-		selected_tab['active']   = ''
-		selected_tab['comments'] = ''
-		selected_tab['likes']    = ''
-		selected_tab['new']      = ''
+        selected_tab['active']   = ''
+        selected_tab['comments'] = ''
+        selected_tab['likes']    = ''
+        selected_tab['new']      = ''
         selected_tab[order]      = `class='active'` // default is active
 
         let path = URL.parse(state.req.url).pathname // "pathNAME" is url path without ? parms, unlike "path"
@@ -1468,11 +1498,11 @@ async function render(state) {
     if (state.db) state.db.release()
   }
 
-	function get_nonce(ts) {
-		// create a nonce string for input forms. this makes each form usable only once, and only from the ip that got the form.
-		// hopefully this slows down spammers and cross-site posting tricks
-		return md5(state.ip + CONF.nonce_secret + ts)
-	}
+    function get_nonce(ts) {
+        // create a nonce string for input forms. this makes each form usable only once, and only from the ip that got the form.
+        // hopefully this slows down spammers and cross-site posting tricks
+        return md5(state.ip + CONF.nonce_secret + ts)
+    }
 
 
     if (typeof pages[state.page] === 'function') { // hit the db iff the request is for a valid url
