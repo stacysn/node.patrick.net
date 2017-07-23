@@ -1139,41 +1139,40 @@ async function render(state) {
             width='18' height='17'></a> &nbsp; `
         }
 
+        if (state.post.postview_want_email) {
+            var watcheye = `<a href='${post_path(state.post.post_id)}?want_email=0' title='stop getting comments by email' >
+                  <IMG SRC='/content/openeye.png'> unwatch</A> (${state.post.watchers}) &nbsp;`
+        }
+        else {
+            var watcheye = `<a href='${post_path(state.post.post_id)}?want_email=1' title='Get comments by email for this post' >
+                  <IMG SRC='/content/closedeye.png'> watch</A> (${state.post.watchers}) &nbsp;`
+        }
+
+        let current_user_name = state.current_user ? state.current_user.user_name : 'anonymous'
+
+        let edit_link = ''
+        if (state.current_user && ((state.current_user.user_id == state.post.post_author) || (state.current_user.user_level >= 4)) ) {
+            edit_link = `<a href='/edit?p=${state.post.post_id}'>edit</a> &nbsp; `
+        }
+
+        let delete_link = ''
+        if (state.current_user && ((state.current_user.user_id == state.post.post_author && !state.post.post_comments) || (state.current_user.user_level >= 4))) {
+			let ts = Date.now() // current unix time in ms
+			let nonce = get_nonce(ts)
+			let nonce_parms = `ts=${ts}&nonce=${nonce}`
+
+            let confirm_del = `onClick="javascript:return confirm('Really delete?')"`
+            delete_link = ` &nbsp; <a href='/delete_post?post_id=${state.post.post_id}&${nonce_parms}' ${confirm_del} >delete</a> &nbsp;` 
+        }
+
         return `<div class='comment' id='comment-0-text' >${arrowbox_html} ${icon} <h2 style='display:inline' >${ link }</h2>
                 <p>By ${user_link(state.post)} ${follow_button(state.post)} &nbsp; ${format_date(state.post.post_date)} ${adhom} ${incoming}
                 ${state.post.post_views} views &nbsp; ${state.post.post_comments} comments &nbsp;
-                ${state.post.watchers} watchers
+                ${watcheye}
+                <a href="#commentform" onclick="addquote( '${state.post.post_id}', '0', '${current_user_name}' ); return false;"
+                   title="Select some text then click this to quote" >quote</a> &nbsp;
+                &nbsp; ${share_post(state.post)} &nbsp; ${edit_link} ${delete_link}
                 ${ state.post.post_content }</div>`
-/*
-    if ($want_email)
-        echo "<A HREF='". post_id2path($post_id) ."?want_email=0' title='stop getting comments by email' >
-              <IMG SRC='/content/openeye.png'> unwatch</A> ($watchers) $change &nbsp;";
-    else
-        echo "<A HREF='". post_id2path($post_id) ."?want_email=1' title='Get comments by email for this post' >
-              <IMG SRC='/content/closedeye.png'> watch</A> ($watchers) $change &nbsp;";
-
-    if ( $post->post_content != '' && $post_id) { // If there is some post content, let them quote it.
-        ?>
-        <a href="#commentform" onclick="addquote( '<?= $post->post_id ?>', '0', '<? echo $u->user_name; ?>' ); return false;"
-           title="Select some text then click this to quote" >quote</a> &nbsp;
-        <?
-    }
-
-    print ' &nbsp; ' . share_post($post) . ' &nbsp; ';
-
-    if ( ($user_id == $post->post_author) || ($current_user->user_level >= 4) ) {
-        $location = "/edit.php?p=$post->post_id";
-        print "<a href=\"$location\">edit</a> &nbsp; ";
-    }
-
-    if (($user_id == $post->post_author && !$post->post_comments) || ($current_user->user_level >= 4)) {
-        $ts = time();
-        $nonce=get_nonce($ts);
-        $nonce_parms = "ts=$ts&nonce=$nonce";
-
-        ?><A HREF="/delete_post.php?post_id=<?= $post->post_id ?>&<?= $nonce_parms ?>" onClick='javascript:return confirm("Really?")' >delete</A> &nbsp; <?
-    }
-*/
     }
 
     function postform() { // need to add conditional display of user-name chooser for non-logged in users
