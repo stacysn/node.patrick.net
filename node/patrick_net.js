@@ -483,8 +483,6 @@ async function render(state) {
                 post_data.comment_approved = 1
                 post_data.comment_date     = new Date().toISOString().slice(0, 19).replace('T', ' ') // mysql datetime format
 
-                await query('update users set user_last_comment_ip = ? where user_id = ?', [state.ip, state.current_user.user_id], state)
-                await query('update posts set post_modified = ? where post_id = ?', [post_data.comment_date, post_data.comment_post_id], state)
                 var insert_result = await query('insert into comments set ?', post_data, state)
 
                 // now select the inserted row so that we pick up the comment_date time and user data for displaying the comment
@@ -494,6 +492,11 @@ async function render(state) {
                 state.comment = results[0]
 
                 send_html(200, comment(state.comment))
+
+                await query('update users set user_last_comment_ip = ? where user_id = ?', [state.ip, state.current_user.user_id], state)
+                await query('update posts set post_modified = ?, post_comments=(select count(*) from comments where comment_post_id=?) where post_id = ?',
+                            [post_data.comment_date, post_data.comment_post_id, post_data.comment_post_id], state)
+                            // we select the count(*) from comments to make the comment counts self-correcting in case they get off somehow
             }
         },
 
