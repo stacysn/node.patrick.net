@@ -505,9 +505,10 @@ async function render(state) {
             post_data = state.post_data
             Object.keys(post_data).map(key => { post_data[key] = strip_tags(post_data[key]) })
 
+            post_data.post_author = state.current_user.user_id ? state.current_user.user_id : 0
             post_data.post_approved = 1 // create a function to check content before approving!
 
-            await query('insert into posts set ?, post_modified=now()', post_data, state)
+            let results = await query('insert into posts set ?, post_modified=now()', post_data, state)
 
             redirect(`/post/${results.insertId}`)
         },
@@ -804,6 +805,9 @@ async function render(state) {
     }
 
     function comment_pagination(start, page) {
+
+        if (!state.post.post_comments) return
+
         let end = (state.post.post_comments > start + 40) ? start + 40 : state.post.post_comments
         let from_one_start = start + 1
 
@@ -1198,14 +1202,14 @@ async function render(state) {
             delete_link = ` &nbsp; <a href='/delete_post?post_id=${state.post.post_id}&${nonce_parms}' ${confirm_del} >delete</a> &nbsp;` 
         }
 
-        return `<div class='comment' id='comment-0-text' >${arrowbox_html} ${icon} <h2 style='display:inline' >${ link }</h2>
+        return `<div class='comment' >${arrowbox_html} ${icon} <h2 style='display:inline' >${ link }</h2>
                 <p>By ${user_link(state.post)} ${follow_button(state.post)} &nbsp; ${format_date(state.post.post_date)} ${adhom} ${incoming}
                 ${state.post.post_views} views &nbsp; ${state.post.post_comments} comments &nbsp;
                 ${watcheye}
                 <a href="#commentform" onclick="addquote( '${state.post.post_id}', '0', '${current_user_name}' ); return false;"
                    title="Select some text then click this to quote" >quote</a> &nbsp;
                 &nbsp; ${share_post(state.post)} &nbsp; ${edit_link} ${delete_link}
-                ${ state.post.post_content }</div>`
+                <p><div class="entry" class="alt" id="comment-0-text" >${ state.post.post_content }</div></div>`
     }
 
     function postform() { // need to add conditional display of user-name chooser for non-logged in users
