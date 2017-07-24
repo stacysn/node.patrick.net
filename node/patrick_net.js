@@ -123,7 +123,6 @@ function collect_post_data(state) { // if there is any POST data, accumulate it 
 
             state.req.on('end', function () {
                 var post_data = QUERYSTRING.parse(body)
-                Object.keys(post_data).map(function(key) { post_data[key] = post_data[key].trim() }) // trim all top level values, should all be strings
                 state.post_data = post_data
                 fulfill(state)
             })
@@ -464,7 +463,6 @@ async function render(state) {
             await collect_post_data(state)
 
             post_data = state.post_data
-            Object.keys(post_data).map(key => { post_data[key] = strip_tags(post_data[key]) })
 
             if (!post_data.comment_content) { send_html(200, ''); return } // empty comment
 
@@ -507,7 +505,6 @@ async function render(state) {
             await collect_post_data(state)
 
             post_data = state.post_data
-            Object.keys(post_data).map(key => { post_data[key] = strip_tags(post_data[key]) })
 
             post_data.post_author = state.current_user.user_id ? state.current_user.user_id : 0
             post_data.post_approved = 1 // create a function to check content before approving!
@@ -586,10 +583,7 @@ async function render(state) {
             await collect_post_data(state)
 
             state.header_data = await header_data(state)
-
-            Object.keys(state.post_data).map(key => { state.post_data[key] = strip_tags(state.post_data[key]) })
-
-            state.message = await send_login_link(state)
+            state.message     = await send_login_link(state)
 
             let content = html(
                 midpage(
@@ -604,8 +598,6 @@ async function render(state) {
         registration : async function() {
 
             await collect_post_data(state)
-
-            Object.keys(state.post_data).map(key => { state.post_data[key] = strip_tags(state.post_data[key]) })
 
             if (/\W/.test(state.post_data.user_name))               state.message = 'Please go back and enter username consisting only of letters'
             if (!/^\w.*@.+\.\w+$/.test(state.post_data.user_email)) state.message = 'Please go back and enter a valid email'
@@ -743,18 +735,17 @@ async function render(state) {
             form.parse(state.req, function (err, fields, files) {
                 let d = new Date()
                 let mm = ('0' + (d.getMonth() + 1)).slice(-2)
-                let datepath = `${CONF.upload_dir}/${d.getFullYear()}/${mm}`
+                let rel_to_root = `/${CONF.upload_dir}/${d.getFullYear()}/${mm}`
+                let datepath = `${CONF.doc_root}${rel_to_root}`
                 if (!fs.existsSync(datepath)) fs.mkdirSync(datepath)
 
-                var oldpath = files.image.path
-                var newpath = `${datepath}/${files.image.name}`
-                fs.rename(oldpath, newpath, function (err) {
+                fs.rename(files.image.path, `${datepath}/${files.image.name}`, function (err) {
                     if (err) throw err
                     let content = `
                         <html>
                             <script language="javascript" type="text/javascript">
                                 var textarea = parent.document.getElementById('ta')
-                                textarea.value = textarea.value + '${newpath}';
+                                textarea.value = textarea.value + "<img src='${rel_to_root}/${files.image.name}' >";
                             </script>
                         </html>`
 
@@ -833,13 +824,14 @@ async function render(state) {
 
     function comment_box() {
         return `
+        <div  id='newcomment' ></div>
+
         <form enctype='multipart/form-data' id='upload-file' method='post' target='upload_target' action='/upload' >
             <input type='file'   id='upload'   name='image' class='form' /> 
             <input type='submit' value='Include Image' class='form' />
         </form>
         <iframe id='upload_target' name='upload_target' src='' style='display: none;' ></iframe>
 
-        <div  id='newcomment' ></div>
         <form id='commentform' >
             <textarea id='ta' name='comment_content'    class='form-control' rows='10' placeholder='write a comment...' ></textarea><p>
             <input type='hidden' name='comment_post_id' value='${ state.post.post_id }' />
