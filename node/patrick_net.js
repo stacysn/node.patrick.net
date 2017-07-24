@@ -735,8 +735,8 @@ async function render(state) {
         upload : async function() {
 
             var formidable = require('formidable')
-            var fs = require('fs')
-            var http = require('http')
+            var fs         = require('fs')
+            var http       = require('http')
 
             var form = new formidable.IncomingForm()
 
@@ -750,7 +750,15 @@ async function render(state) {
                 var newpath = `${datepath}/${files.image.name}`
                 fs.rename(oldpath, newpath, function (err) {
                     if (err) throw err
-                    send_html(200, 'done')
+                    let content = `
+                        <html>
+                            <script language="javascript" type="text/javascript">
+                                var textarea = parent.document.getElementById('ta')
+                                textarea.value = textarea.value + '${newpath}';
+                            </script>
+                        </html>`
+
+                    send_html(200, content)
                 })
             })
         },
@@ -825,14 +833,15 @@ async function render(state) {
 
     function comment_box() {
         return `
-		<form enctype="multipart/form-data" id="upload-file" method="post" target="upload_target" action="/upload" >
-			<input type="file"   id="upload"   name="image" class="form" /> 
-			<input type="submit" value="Include Image" class="form" />
-		</form>
+        <form enctype='multipart/form-data' id='upload-file' method='post' target='upload_target' action='/upload' >
+            <input type='file'   id='upload'   name='image' class='form' /> 
+            <input type='submit' value='Include Image' class='form' />
+        </form>
+        <iframe id='upload_target' name='upload_target' src='' style='display: none;' ></iframe>
 
         <div  id='newcomment' ></div>
         <form id='commentform' >
-            <textarea            name='comment_content'    class='form-control' rows='10' placeholder='write a comment...' ></textarea><p>
+            <textarea id='ta' name='comment_content'    class='form-control' rows='10' placeholder='write a comment...' ></textarea><p>
             <input type='hidden' name='comment_post_id' value='${ state.post.post_id }' />
             <button class='btn btn-success btn-sm'
                 onclick="$.post('/new_comment', $('#commentform').serialize()).done(function(data) {
