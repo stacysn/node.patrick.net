@@ -461,6 +461,8 @@ async function render(state) {
 
         new_comment : async function() {
 
+            await collect_post_data(state)
+
             post_data = state.post_data
             Object.keys(post_data).map(key => { post_data[key] = strip_tags(post_data[key]) })
 
@@ -502,6 +504,8 @@ async function render(state) {
 
         new_post : async function() {
 
+            await collect_post_data(state)
+
             post_data = state.post_data
             Object.keys(post_data).map(key => { post_data[key] = strip_tags(post_data[key]) })
 
@@ -542,20 +546,22 @@ async function render(state) {
                         comment_pagination(start, page),
                         comment_list(),
                         comment_pagination(start, page),
-                        commentbox()
+                        comment_box()
                     )
                 )
 
                 send_html(200, content)
 
-                if (state.current_user) { // log the time that this user has seen this post
-                    await query(`insert into postviews (postview_user_id, postview_post_id, postview_last_view)
-                                 values (?, ?, now()) on duplicate key update postview_last_view=now()`, [state.current_user.user_id, post_id], state)
-                }
+                await query(`insert into postviews (postview_user_id, postview_post_id, postview_last_view)
+                             values (?, ?, now()) on duplicate key update postview_last_view=now()`, [current_user_id, post_id], state)
+                await query(`update posts set post_views = post_views + 1 where post_id=?`, [post_id], state)
             }
         },
 
         post_login : async function() {
+
+            await collect_post_data(state)
+
             email    = state.post_data.email
             password = state.post_data.password
 
@@ -577,6 +583,8 @@ async function render(state) {
 
         recoveryemail : async function() {
 
+            await collect_post_data(state)
+
             state.header_data = await header_data(state)
 
             Object.keys(state.post_data).map(key => { state.post_data[key] = strip_tags(state.post_data[key]) })
@@ -594,6 +602,8 @@ async function render(state) {
         },
 
         registration : async function() {
+
+            await collect_post_data(state)
 
             Object.keys(state.post_data).map(key => { state.post_data[key] = strip_tags(state.post_data[key]) })
 
@@ -721,6 +731,30 @@ async function render(state) {
             send_html(200, content)
         },
 
+
+        upload : async function() {
+
+            var formidable = require('formidable')
+            var fs = require('fs')
+            var http = require('http')
+
+            var form = new formidable.IncomingForm()
+
+            form.parse(state.req, function (err, fields, files) {
+                let d = new Date()
+                let mm = ('0' + (d.getMonth() + 1)).slice(-2)
+                let datepath = `${CONF.upload_dir}/${d.getFullYear()}/${mm}`
+                if (!fs.existsSync(datepath)) fs.mkdirSync(datepath)
+
+                var oldpath = files.image.path
+                var newpath = `${datepath}/${files.image.name}`
+                fs.rename(oldpath, newpath, function (err) {
+                    if (err) throw err
+                    send_html(200, 'done')
+                })
+            })
+        },
+
         user : async function() {
 
             var user_name = segments(state.req.url)[2] // like /user/Patrick
@@ -789,8 +823,13 @@ async function render(state) {
         return `<div class="comment" id="comment-${ c.comment_id }" >${ u } ${ format_date(c.comment_date) } ${ del }<br>${ c.comment_content }</div>`
     }
 
-    function commentbox() {
+    function comment_box() {
         return `
+		<form enctype="multipart/form-data" id="upload-file" method="post" target="upload_target" action="/upload" >
+			<input type="file"   id="upload"   name="image" class="form" /> 
+			<input type="submit" value="Include Image" class="form" />
+		</form>
+
         <div  id='newcomment' ></div>
         <form id='commentform' >
             <textarea            name='comment_content'    class='form-control' rows='10' placeholder='write a comment...' ></textarea><p>
@@ -1517,7 +1556,6 @@ async function render(state) {
             await get_connection_from_pool(state)
             await block_countries(state)
             await block_nuked(state)
-            await collect_post_data(state)
             await set_user(state)
             await pages[state.page](state)
         }
