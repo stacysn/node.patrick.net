@@ -822,16 +822,20 @@ async function render(state) {
         return `<div class="comment" id="comment-${ c.comment_id }" >${ u } ${ format_date(c.comment_date) } ${ del }<br>${ c.comment_content }</div>`
     }
 
-    function comment_box() {
-        return `
-        <div  id='newcomment' ></div>
+    function upload_form() {
 
+        return `
         <form enctype='multipart/form-data' id='upload-file' method='post' target='upload_target' action='/upload' >
             <input type='file'   id='upload'   name='image' class='form' /> 
             <input type='submit' value='Include Image' class='form' />
         </form>
-        <iframe id='upload_target' name='upload_target' src='' style='display: none;' ></iframe>
+        <iframe id='upload_target' name='upload_target' src='' style='display: none;' ></iframe>` // for uploading a bit of js to insert the img link
+    }
 
+    function comment_box() {
+        return `
+        <div  id='newcomment' ></div>
+        ${upload_form()}
         <form id='commentform' >
             <textarea id='ta' name='comment_content'    class='form-control' rows='10' placeholder='write a comment...' ></textarea><p>
             <input type='hidden' name='comment_post_id' value='${ state.post.post_id }' />
@@ -1255,12 +1259,14 @@ async function render(state) {
     function postform() { // need to add conditional display of user-name chooser for non-logged in users
         return `
         <h1>new post</h1>
+
         <form action='/new_post' method='post' >
             <div class='form-group'><input name='post_title' type='text' class='form-control' placeholder='title' id='title' ></div>
-            <textarea class='form-control' name='post_content' rows='12' id='content' placeholder='write something...' ></textarea><p>
+            <textarea class='form-control' name='post_content' rows='12' id='ta' placeholder='write something...' ></textarea><p>
             <button type='submit' id='submit' class='btn btn-success btn-sm'>submit</button>
         </form>
-        <script type="text/javascript">document.getElementById('title').focus();</script>`
+        <script type="text/javascript">document.getElementById('title').focus();</script>
+        ${upload_form()}`
     }
 
     function slugify(s) { // url-safe pretty chars only; not used for navigation, only for seo and humans
@@ -1416,7 +1422,7 @@ async function render(state) {
         <center>
         <a href="/users">users</a> &nbsp;
         <a href="/about">about</a> &nbsp;
-        <a href='/1302130/2017-01-28-patnet-improvement-suggestions'>suggestions</a> &nbsp;
+        <a href='/post/1302130/2017-01-28-patnet-improvement-suggestions'>suggestions</a> &nbsp;
         <a href='mailto:${ CONF.admin_email }' >contact</a> &nbsp;
         <br>
         <a href='/topics'>topics</a> &nbsp;
@@ -1424,16 +1430,16 @@ async function render(state) {
         <a href="/best.php">best comments</a> &nbsp;
         <a href="/adhom_jail.php">comment jail</a> &nbsp;
         <br>
-        <a href='/1303173/2017-02-19-patricks-s-40-proposals'>patrick's 40 proposals</a> &nbsp;
+        <a href='/post/1303173/2017-02-19-patricks-s-40-proposals'>patrick's 40 proposals</a> &nbsp;
         <br>
-        <a href='/1282720/2015-07-11-ten-reasons-it-s-a-terrible-time-to-buy-an-expensive-house'>10 reasons it's a terrible time to buy</a> &nbsp;
+        <a href='/post/1282720/2015-07-11-ten-reasons-it-s-a-terrible-time-to-buy-an-expensive-house'>10 reasons it's a terrible time to buy</a> &nbsp;
         <br>
-        <a href='/1282721/2015-07-11-eight-groups-who-lie-about-the-housing-market'>8 groups who lie about the housing market</a> &nbsp;
+        <a href='/post/1282721/2015-07-11-eight-groups-who-lie-about-the-housing-market'>8 groups who lie about the housing market</a> &nbsp;
         <br>
-        <a href='/1282722/2015-07-11-37-bogus-arguments-about-housing'>37 bogus arguments about housing</a> &nbsp;
+        <a href='/post/1282722/2015-07-11-37-bogus-arguments-about-housing'>37 bogus arguments about housing</a> &nbsp;
         <br>
-        <a href='/1206569/2011-12-30-free-patrick-net-bumper-stickers'>get a free bumper sticker:</a><br>
-        <a href='/1206569/2011-12-30-free-patrick-net-bumper-stickers'><img src='/images/bumpersticker.png' width=300 ></a>
+        <a href='/post/1206569/2011-12-30-free-patrick-net-bumper-stickers'>get a free bumper sticker:</a><br>
+        <a href='/post/1206569/2011-12-30-free-patrick-net-bumper-stickers'><img src='/images/bumpersticker.png' width=300 ></a>
         <br>
         <form method="get" action="/" ><input name="s" type="text" placeholder="search..." size="20" ></form>
         </center>
