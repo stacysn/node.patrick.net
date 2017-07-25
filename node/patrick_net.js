@@ -182,7 +182,6 @@ async function set_relations(state) { // update state object with their relation
         var results2 = await query(sql, Array(4).fill(state.current_user.user_id), state)
 
         // now renumber array as object using user_ids to make later access easy
-
         state.current_user.relationships = {}
 
         for (var i = 0; i < results2.length; ++i) {
@@ -200,11 +199,9 @@ function md5(str) {
     return hash.digest('hex')
 }
 
-function digits(s) { // return just the digits from a string
-
-    if (!s) return ''
-
-    return s.replace(/\D/g,'')
+function intval(s) { // return integer from a string
+    if (parseInt(s)) return parseInt(s)
+    else             return 0
 }
 
 function strip_tags(s) {
@@ -366,6 +363,19 @@ async function render(state) {
             send_html(200, content)
         },
 
+        accept_post : async function() {
+
+            await collect_post_data(state)
+
+            post_data               = state.post_data
+            post_data.post_author   = state.current_user.user_id ? state.current_user.user_id : 0
+            post_data.post_approved = 1 // todo: create a function to check content before approving!
+
+            let results = await query('insert into posts set ?, post_modified=now()', post_data, state)
+
+            redirect(`/post/${results.insertId}`)
+        },
+
         delete : async function() { // delete a comment
 
             var comment_id = segments(state.req.url)[2]
@@ -376,6 +386,27 @@ async function render(state) {
             await query('delete from comments where comment_id = ? and comment_author = ?', [comment_id, state.current_user.user_id], state)
 
             send_html(200, '')
+        },
+
+        edit_post : async function () {
+            state.header_data = await header_data(state)
+
+            let post_id = intval(_GET('p')) // get post's db row number from url, eg 47 from /post/47/slug-goes-here
+
+            var results = await query(`select * from posts left join users on user_id=post_author where post_id=?`, [post_id], state)
+
+            state.post = results[0]
+
+            if (0 == results.length) send_html(404, `No post with id "${post_id}"`)
+            else {
+                let content = html(
+                    midpage(
+                        postform()
+                    )
+                )
+
+                send_html(200, content)
+            }
         },
 
         home : async function () {
@@ -500,24 +531,10 @@ async function render(state) {
             }
         },
 
-        new_post : async function() {
-
-            await collect_post_data(state)
-
-            post_data = state.post_data
-
-            post_data.post_author = state.current_user.user_id ? state.current_user.user_id : 0
-            post_data.post_approved = 1 // create a function to check content before approving!
-
-            let results = await query('insert into posts set ?, post_modified=now()', post_data, state)
-
-            redirect(`/post/${results.insertId}`)
-        },
-
         post : async function() { // show a single post
 
             let current_user_id = state.current_user ? state.current_user.user_id : 0
-            let post_id         = segments(state.req.url)[2] // get post's db row number from url, eg 47 from /post/47/slug-goes-here
+            let post_id         = intval(segments(state.req.url)[2]) // get post's db row number from url, eg 47 from /post/47/slug-goes-here
 
             var results = await query(`select * from posts
                                        left join postvotes on (postvote_post_id=post_id and postvote_user_id=?)
@@ -665,8 +682,8 @@ async function render(state) {
         since : async function() { // given a post_id and epoch timestamp, redirect to post's first comment after that timestamp
 
             // these will die on replace() if p or when is not defined and that's the right thing to do
-            let p    = digits(_GET('p'))
-            let when = digits(_GET('when'))
+            let p    = intval(_GET('p'))
+            let when = intval(_GET('when'))
 
             let results = await query(`select comment_id from comments
                                        where comment_post_id = ? and comment_approved > 0 and comment_date > from_UNIXTIME(?)
@@ -1052,7 +1069,7 @@ async function render(state) {
         let page = 0 // default to first page of comments
 
         if (_GET('c')) {
-          var c = digits(_GET('c'))
+          var c = intval(_GET('c'))
           // Get all the comments, sorted from greatest to least.
           // What page of 40 from the end is our comment in? Start counting with page 0 being the most recent comments.
           let results = await query(`select floor(count(*)/40 - 0.01) as f from comments
@@ -1061,7 +1078,7 @@ async function render(state) {
                 if (results[0]) page = results[0].f
         }
 
-        if (!page) page = digits(_GET('page')) // if page is not set from c above, use _GET('page')
+        if (!page) page = intval(_GET('page')) // if page is not set from c above, use _GET('page')
         if (!page) page = 0
 
         let start = post.post_comments - 40 * (page + 1)
@@ -1233,7 +1250,7 @@ async function render(state) {
 
         let edit_link = ''
         if (state.current_user && ((state.current_user.user_id == state.post.post_author) || (state.current_user.user_level >= 4)) ) {
-            edit_link = `<a href='/edit?p=${state.post.post_id}'>edit</a> &nbsp; `
+            edit_link = `<a href='/edit_post?p=${state.post.post_id}'>edit</a> &nbsp; `
         }
 
         let delete_link = ''
@@ -1256,13 +1273,25 @@ async function render(state) {
                 <p><div class="entry" class="alt" id="comment-0-text" >${ state.post.post_content }</div></div>`
     }
 
-    function postform() { // need to add conditional display of user-name chooser for non-logged in users
-        return `
-        <h1>new post</h1>
+    function postform() { // used both for composing new posts and for editing existing posts; distinction is the presence of p, an existing post_id
 
-        <form action='/new_post' method='post' >
-            <div class='form-group'><input name='post_title' type='text' class='form-control' placeholder='title' id='title' ></div>
-            <textarea class='form-control' name='post_content' rows='12' id='ta' placeholder='write something...' ></textarea><p>
+        // todo: add conditional display of user-name chooser for non-logged in users
+
+        if (_GET('p')) {
+            var fn = 'edit'
+            var title = state.post.post_title.replace(/'/g, '&apos;') // replace so that it displays correctly in single-quoted html value below
+            var content = state.post.post_content.replace(/'/g, '&apos;')
+        }
+        else {
+            var fn = 'new post'
+            var title = ''
+        }
+
+        return `
+        <h1>${fn}</h1>
+        <form action='/accept_post' method='post' >
+            <div class='form-group'><input name='post_title' type='text' class='form-control' placeholder='title' id='title' value='${title}' ></div>
+            <textarea class='form-control' name='post_content' rows='12' id='ta' placeholder='write something...' >${content}</textarea><p>
             <button type='submit' id='submit' class='btn btn-success btn-sm'>submit</button>
         </form>
         <script type="text/javascript">document.getElementById('title').focus();</script>
@@ -1293,8 +1322,8 @@ async function render(state) {
   }
 
     function user_link(u) {
-    return `<a href='/user/${ u.user_name }'>${ u.user_name }</a>`
-  }
+        return `<a href='/user/${ u.user_name }'>${ u.user_name }</a>`
+    }
 
     function user_list() {
 
