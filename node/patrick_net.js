@@ -371,9 +371,16 @@ async function render(state) {
             post_data.post_author   = state.current_user.user_id ? state.current_user.user_id : 0
             post_data.post_approved = 1 // todo: create a function to check content before approving!
 
-            let results = await query('insert into posts set ?, post_modified=now()', post_data, state)
+            if (intval(post_data.post_id)) {
+                await query('update posts set ?, post_modified=now() where post_id=?', [post_data, intval(post_data.post_id)], state)
+                var p = intval(post_data.post_id)
+            }
+            else {
+                var results = await query('insert into posts set ?, post_modified=now()', post_data, state)
+                var p = results.insertId
+            }
 
-            redirect(`/post/${results.insertId}`)
+            redirect(`/post/${p}`)
         },
 
         delete : async function() { // delete a comment
@@ -582,7 +589,7 @@ async function render(state) {
             login(state, email, password)
         },
 
-        postform : async function() {
+        new_post : async function() {
 
             state.header_data = await header_data(state)
 
@@ -1019,7 +1026,7 @@ async function render(state) {
     }
 
     function new_post_button() {
-        return '<a href="/postform" class="btn btn-success btn-sm" title="start a new post" ><b>new post</b></a>'
+        return '<a href="/new_post" class="btn btn-success btn-sm" title="start a new post" ><b>new post</b></a>'
     }
 
     function page() { // tell homepage, search, userpage, topic which page we are on
@@ -1281,10 +1288,13 @@ async function render(state) {
             var fn = 'edit'
             var title = state.post.post_title.replace(/'/g, '&apos;') // replace so that it displays correctly in single-quoted html value below
             var content = state.post.post_content.replace(/'/g, '&apos;')
+            var post_id = `<input type='hidden' name='post_id' value='${state.post.post_id}' />`
         }
         else {
             var fn = 'new post'
             var title = ''
+            var content = ''
+            var post_id = ''
         }
 
         return `
@@ -1292,6 +1302,7 @@ async function render(state) {
         <form action='/accept_post' method='post' >
             <div class='form-group'><input name='post_title' type='text' class='form-control' placeholder='title' id='title' value='${title}' ></div>
             <textarea class='form-control' name='post_content' rows='12' id='ta' placeholder='write something...' >${content}</textarea><p>
+            ${post_id}
             <button type='submit' id='submit' class='btn btn-success btn-sm'>submit</button>
         </form>
         <script type="text/javascript">document.getElementById('title').focus();</script>
