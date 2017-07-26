@@ -14,17 +14,18 @@ OS          = require('os')
 QUERYSTRING = require('querystring')
 URL         = require('url')
 
-locks = {} // global locks to allow only one db connection per ip; helps mitigate dos attacks
+LOCKS = {} // db locks to allow only one db connection per ip; helps mitigate dos attacks
 
-pool = MYSQL.createPool(CONF.db)
-pool.on('release', db => { // delete the lock for the released db.threadId, and any locks that are older than 2000 milliseconds
-    Object.keys(locks).map(ip => {
-        if (locks[ip].threadId == db.threadId || locks[ip].ts < (Date.now() - 2000)) {
-            delete locks[ip]
+POOL = MYSQL.createPool(CONF.db)
+POOL.on('release', db => { // delete the lock for the released db.threadId, and any locks that are older than 2000 milliseconds
+    Object.keys(LOCKS).map(ip => {
+        if (LOCKS[ip].threadId == db.threadId || LOCKS[ip].ts < (Date.now() - 2000)) {
+            delete LOCKS[ip]
             console.log(`unlock for ${ ip }`)
         }
     })
 })
+// end of globals
 
 if (CLUSTER.isMaster) {
     for (var i = 0; i < OS.cpus().length; i++) CLUSTER.fork()
@@ -36,7 +37,7 @@ if (CLUSTER.isMaster) {
 } else HTTP.createServer(run).listen(CONF.http_port)
 
 ////////////////////////////////////////////////////////////////////////////////
-// end of top-level code; everything else is in a function
+// end of top-level code; everything below is in a function
 ////////////////////////////////////////////////////////////////////////////////
 
 function run(req, res) { // handle a single http request
@@ -58,17 +59,17 @@ function get_connection_from_pool(state) {
         // query or set a database lock for this ip; each ip is allowed only one outstanding connection at a time
         state.ip = state.req.headers['x-forwarded-for']
 
-        if (locks[state.ip]) {
+        if (LOCKS[state.ip]) {
             //send_html(403, 'Rate Limit Exceeded')
             console.log(`Rate limit exceeded by ${ state.ip } by asking for ${ state.req.url }`)
             reject(state)
         }
 
-        pool.getConnection(function(err, db) {
+        POOL.getConnection(function(err, db) {
 
             state.db = db
 
-            locks[state.ip] = { // set the lock
+            LOCKS[state.ip] = { // set the lock
                 threadId : db.threadId,
                 ts       : Date.now()
             }
