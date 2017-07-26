@@ -204,13 +204,31 @@ function intval(s) { // return integer from a string
     else             return 0
 }
 
-function strip_tags(s) {
+function strip_tags(s) { // use like this: str = strip_tags('<p>There is some <u>text</u> here</p>', '<b><i><u><p><ol><ul>')
+
+	// these are the only allowed tags that users can enter in posts or comments; they will not be stripped
+	let allowed = '<a><b><blockquote><br><code><font><hr><i><img><li><ol><p><source><strike><sub><sup><u><ul><video><vsmall>'
+
+    allowed = (((allowed || '') + '')
+        .toLowerCase()
+        .match(/<[a-z][a-z0-9]*>/g) || [])
+        .join('') // making sure the allowed arg is a string containing only tags in lowercase (<a><b><c>)
+
+    var tags = /<\/?([a-z][a-z0-9]*)\b[^>]*>/gi
+    var commentsAndPhpTags = /<!--[\s\S]*?-->|<\?(?:php)?[\s\S]*?\?>/gi
+
+    return s.replace(commentsAndPhpTags, '').replace(tags, function($0, $1) {
+        return allowed.indexOf('<' + $1.toLowerCase() + '>') > -1 ? $0 : ''
+    })
+}
+
+function strip_all_tags(s) {
     return s.replace(/(<([^>]+)>)/g,'')
 }
 
 function first_words(string, num) {
 
-    string = strip_tags(string)
+    string = strip_all_tags(string)
 
     let allwords   = string.split(/\s+/).map(s => s.substring(0, 30)) // max single word len is 30 chars
     let firstwords = allwords.slice(0, num)
@@ -368,6 +386,7 @@ async function render(state) {
             await collect_post_data(state)
 
             post_data               = state.post_data
+            post_data.post_content  = strip_tags(post_data.post_content) // remove all but a small set of allowed html tags
             post_data.post_author   = state.current_user.user_id ? state.current_user.user_id : 0
             post_data.post_approved = 1 // todo: create a function to check content before approving!
 
@@ -383,7 +402,7 @@ async function render(state) {
             redirect(`/post/${p}`)
         },
 
-        delete : async function() { // delete a comment
+        delete_comment : async function() { // delete a comment
 
             var comment_id = segments(state.req.url)[2]
 
@@ -393,6 +412,11 @@ async function render(state) {
             await query('delete from comments where comment_id = ? and comment_author = ?', [comment_id, state.current_user.user_id], state)
 
             send_html(200, '')
+        },
+
+        delete_post : async function() { // delete a comment
+
+            send_html(200, 'not yet implemented')
         },
 
         edit_post : async function () {
@@ -515,7 +539,7 @@ async function render(state) {
             else {
 
                 post_data.comment_author   = state.current_user ? state.current_user.user_id : 0
-                post_data.comment_content  = post_data.comment_content.linkify() // linkify, imagify, etc
+                post_data.comment_content  = strip_tags(post_data.comment_content.linkify()) // linkify, imagify, etc, stripping non-approved tags
                 post_data.comment_dislikes = 0
                 post_data.comment_likes    = 0
                 post_data.comment_approved = 1
@@ -840,7 +864,7 @@ async function render(state) {
 
         if (state.current_user) {
             var del = state.current_user.user_id == c.comment_author ?
-                `<a href='#' onclick="$.get('/delete/${ c.comment_id }', function() { $('#comment-${ c.comment_id }').remove() });return false">delete</a>` : ''
+                `<a href='#' onclick="$.get('/delete_comment/${ c.comment_id }', function() { $('#comment-${ c.comment_id }').remove() });return false">delete</a>` : ''
         }
 
         return `<div class="comment" id="comment-${ c.comment_id }" >${ u } ${ format_date(c.comment_date) } ${ del }<br>${ c.comment_content }</div>`
