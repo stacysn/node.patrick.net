@@ -794,12 +794,22 @@ async function render(state) {
 
             var form = new formidable.IncomingForm()
 
+            form.maxFieldsSize = 7 * 1024 * 1024 // max upload is 4MB, but this seems to fail; nginx config will block larger images anyway
+            form.maxFields = 1                   // only one image at a time
+
+            // todo: implement upload progress meter with this
+            //form.on('progress', function(bytesReceived, bytesExpected) {
+            //    console.log(`${bytesReceived}, ${bytesExpected}`)
+            //})
+
             form.parse(state.req, function (err, fields, files) {
                 let d = new Date()
                 let mm = ('0' + (d.getMonth() + 1)).slice(-2)
                 let rel_to_root = `/${CONF.upload_dir}/${d.getFullYear()}/${mm}`
                 let datepath = `${CONF.doc_root}${rel_to_root}`
                 if (!fs.existsSync(datepath)) fs.mkdirSync(datepath)
+
+                files.image.name.replace(/[^0-9a-z\.]/gi, '') // allow only alphanum and dot in image name to mitigate scripting tricks
 
                 fs.rename(files.image.path, `${datepath}/${files.image.name}`, function (err) {
                     if (err) throw err
