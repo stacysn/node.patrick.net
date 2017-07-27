@@ -364,7 +364,44 @@ function segments(path) { // return url path split up as array of cleaned \w str
     return URL.parse(path).path.replace(/\?.*/,'').split('/').map(segment => segment.replace(/\W/g,''))
 }
 
-async function render(state) {
+function resize_image(file, max_dim = 600) { // max_dim is maximum allowed dimension in either direction
+
+    return new Promise(function(fulfill, reject) {
+        if (require('fs').existsSync(file)) {
+
+            const { spawn } = require('child_process')
+            const identify = spawn('identify', ['-format', '%w %h', file]) // identify -format '%w %h' file
+
+            identify.stdout.on('data', data => {
+
+                let dims   = data.toString('utf8').replace(/\n/,'').split(' ')
+                let width  = dims[0]
+                let height = dims[1]
+                if (width > max_dim) {
+    /*
+                    $command    = "/usr/bin/mogrify -resize $max_dim $file" // Larger dimension will be reduced to $max_dim.
+                    $output     = shell_exec($command." 2>&1")
+                    $image_attr = getimagesize( $file )
+                    $width      = $image_attr[0]
+                    $height     = $image_attr[1]
+    */
+                }
+            })
+
+            identify.stderr.on('data', data => { // remove the file because something is wrong with it
+                console.log(`stderr from 'identify': ${data}`)
+            })
+
+            identify.on('close', code => {
+                // if code is non-zero, remove the file because something is wrong with it
+                console.log(`child process exited with code ${code}`)
+            })
+
+        } else console.log(`image not found: ${file}`)
+    })
+}
+
+async function render(state) { /////////////////////////////////////////
 
     var pages = {
 
@@ -813,6 +850,9 @@ async function render(state) {
 
                 fs.rename(files.image.path, `${datepath}/${files.image.name}`, function (err) {
                     if (err) throw err
+
+                    resize_image(`${datepath}/${files.image.name}`) // limit max width to 600 px
+
                     let content = `
                         <html>
                             <script language="javascript" type="text/javascript">
