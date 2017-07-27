@@ -60,9 +60,9 @@ function get_connection_from_pool(state) {
         state.ip = state.req.headers['x-forwarded-for']
 
         if (LOCKS[state.ip]) {
-            //send_html(403, 'Rate Limit Exceeded')
             console.log(`Rate limit exceeded by ${ state.ip } by asking for ${ state.req.url }`)
             reject(state)
+            return send_html(403, 'Rate Limit Exceeded')
         }
 
         POOL.getConnection(function(err, db) {
@@ -207,8 +207,8 @@ function intval(s) { // return integer from a string
 
 function strip_tags(s) { // use like this: str = strip_tags('<p>There is some <u>text</u> here</p>', '<b><i><u><p><ol><ul>')
 
-	// these are the only allowed tags that users can enter in posts or comments; they will not be stripped
-	let allowed = '<a><b><blockquote><br><code><font><hr><i><img><li><ol><p><source><strike><sub><sup><u><ul><video><vsmall>'
+    // these are the only allowed tags that users can enter in posts or comments; they will not be stripped
+    let allowed = '<a><b><blockquote><br><code><font><hr><i><img><li><ol><p><source><strike><sub><sup><u><ul><video><vsmall>'
 
     allowed = (((allowed || '') + '')
         .toLowerCase()
@@ -407,7 +407,7 @@ async function render(state) {
 
             var comment_id = segments(state.req.url)[2]
 
-            if (!state.current_user) send_html(200, content) // do nothing if not logged in
+            if (!state.current_user) return send_html(200, '') // do nothing if not logged in
 
             // delete comment only if current user is comment_author
             await query('delete from comments where comment_id = ? and comment_author = ?', [comment_id, state.current_user.user_id], state)
@@ -418,9 +418,28 @@ async function render(state) {
             send_html(200, '')
         },
 
-        delete_post : async function() { // delete a comment
+        delete_post : async function() { // delete a whole post, but not its comments
+            if (!state.current_user) return send_html(200, 'You must be logged in to delete a post.')
 
-            send_html(200, 'not yet implemented')
+            let nonce_parms = create_nonce_parms()
+
+            if (!get_nonce(_GET('ts')) == _GET('nonce')) return send_html(200, 'invalid nonce')
+
+            if (post_id = intval(_GET('post_id'))) {
+
+                var results = await query(`select * from posts where post_id = ?`, [post_id], state)
+                if (!results) return send_html(200, '')
+
+                let post = results[0]
+
+                if ((state.current_user.user_id == post.post_author) || (state.current_user.user_id == 1)) { // If it's their own post or if it's admin.
+
+                    await query(`delete from posts where post_id = ?`, [post_id], state)
+                    return send_html(200, 'post deleted')
+                }
+                else return send_html(200, 'permission to delete post denied')
+            }
+            else send_html(200, 'need a post_id')
         },
 
         edit_post : async function () {
@@ -432,7 +451,7 @@ async function render(state) {
 
             state.post = results[0]
 
-            if (0 == results.length) send_html(404, `No post with id "${post_id}"`)
+            if (0 == results.length) return send_html(404, `No post with id "${post_id}"`)
             else {
                 let content = html(
                     midpage(
@@ -530,7 +549,7 @@ async function render(state) {
 
             post_data = state.post_data
 
-            if (!post_data.comment_content) { send_html(200, ''); return } // empty comment
+            if (!post_data.comment_content) return send_html(200, '') // empty comment
 
             // rate limit by user's ip address
             var results = await query('select (unix_timestamp(now()) - unix_timestamp(user_last_comment_time)) as ago from users where user_last_comment_time is not null and user_last_comment_ip = ? order by user_last_comment_time desc limit 1',
@@ -538,7 +557,7 @@ async function render(state) {
 
             if (results.length && results[0].ago < 2) { // this ip already commented less than two seconds ago
                 state.message = 'You are posting comments too quickly! Please slow down'
-                send_html(200, alert())
+                return send_html(200, alert())
             }
             else {
 
@@ -557,7 +576,7 @@ async function render(state) {
 
                 state.comment = results[0]
 
-                send_html(200, comment(state.comment))
+                send_html(200, comment(state.comment)) // send html right away, before updating users and posts tables
 
                 await query('update users set user_last_comment_ip = ? where user_id = ?', [state.ip, state.current_user.user_id], state)
                 await query('update posts set post_modified = ?, post_comments=(select count(*) from comments where comment_post_id=?) where post_id = ?',
@@ -580,7 +599,7 @@ async function render(state) {
 
             state.post = results[0]
 
-            if (0 == results.length) send_html(404, `No post with id "${post_id}"`)
+            if (0 == results.length) return send_html(404, `No post with id "${post_id}"`)
             else {
                 state.header_data = await header_data(state)
                 var [comments, start, page] = await post_comment_list(state.post) // pick up the comment list for this post
@@ -599,7 +618,7 @@ async function render(state) {
                     )
                 )
 
-                send_html(200, content)
+                send_html(200, content) // send html right away, before updating postviews and posts tables
 
                 await query(`insert into postviews (postview_user_id, postview_post_id, postview_last_view)
                              values (?, ?, now()) on duplicate key update postview_last_view=now()`, [current_user_id, post_id], state)
@@ -1254,9 +1273,7 @@ async function render(state) {
 
         if (state.current_user && state.current_user.user_pbias >= 3) {
 
-            let ts = Date.now() // current unix time in ms
-            let nonce = get_nonce(ts)
-            let nonce_parms = `ts=${ts}&nonce=${nonce}`
+            let nonce_parms = create_nonce_parms()
 
             if (!state.post.post_title.match(/thunderdome/)) {
 
@@ -1290,9 +1307,7 @@ async function render(state) {
 
         let delete_link = ''
         if (state.current_user && ((state.current_user.user_id == state.post.post_author && !state.post.post_comments) || (state.current_user.user_level >= 4))) {
-            let ts = Date.now() // current unix time in ms
-            let nonce = get_nonce(ts)
-            let nonce_parms = `ts=${ts}&nonce=${nonce}`
+            let nonce_parms = create_nonce_parms()
 
             let confirm_del = `onClick="javascript:return confirm('Really delete?')"`
             delete_link = ` &nbsp; <a href='/delete_post?post_id=${state.post.post_id}&${nonce_parms}' ${confirm_del} >delete</a> &nbsp;` 
@@ -1593,38 +1608,43 @@ async function render(state) {
         return formatted.join(' ') + ` <a href='/topics/'>more&raquo;</a>`
     }
 
-  function die(message) { // errors that normal user will never see
+    function die(message) { // errors that normal user will never see
 
-    var headers =  {
-      'Content-Length' : message.length,
-      'Expires'        : new Date().toUTCString()
+        var headers =    {
+            'Content-Length' : message.length,
+            'Expires'                : new Date().toUTCString()
+        }
+
+        state.res.writeHead(303, headers)
+        state.res.end(message)
+        console.log(message)
+        if (state.db) state.db.release()
     }
 
-    state.res.writeHead(303, headers)
-    state.res.end(message)
-    console.log(message)
-    if (state.db) state.db.release()
-  }
+    function send_html(code, html) {
 
-  function send_html(code, html) {
+        var headers =    {
+            'Content-Type'     : 'text/html',
+            'Content-Length' : html.length,
+            'Expires'                : new Date().toUTCString()
+        }
 
-    var headers =  {
-      'Content-Type'   : 'text/html',
-      'Content-Length' : html.length,
-      'Expires'        : new Date().toUTCString()
+        state.res.writeHead(code, headers)
+        state.res.end(html)
+        if (state.db) state.db.release()
     }
-
-    state.res.writeHead(code, headers)
-    state.res.end(html)
-    if (state.db) state.db.release()
-  }
 
     function get_nonce(ts) {
-        // create a nonce string for input forms. this makes each form usable only once, and only from the ip that got the form.
+        // create or check a nonce string for input forms. this makes each form usable only once, and only from the ip that got the form.
         // hopefully this slows down spammers and cross-site posting tricks
         return md5(state.ip + CONF.nonce_secret + ts)
     }
 
+    function create_nonce_parms() {
+        let ts = Date.now() // current unix time in ms
+        let nonce = get_nonce(ts)
+        return `ts=${ts}&nonce=${nonce}`
+    }
 
     if (typeof pages[state.page] === 'function') { // hit the db iff the request is for a valid url
         try {
