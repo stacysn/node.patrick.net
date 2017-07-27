@@ -1,8 +1,8 @@
 // Copyright 2017 by Patrick Killelea under the ISC license
+// globals are capitalized
 
 try { CONF = require('./conf.json') } catch(e) { console.log(e.message); process.exit(1) } // conf.json is required
 
-// globals are capitalized
 CLUSTER     = require('cluster')
 CHEERIO     = require('cheerio')         // installed via npm
 CRYPTO      = require('crypto')
@@ -262,10 +262,9 @@ async function send_login_link(state) {
 
   if (!/^\w.*@.+\.\w+$/.test(state.post_data.user_email)) return 'Please go back and enter a valid email'
 
-    baseurl  = (/^dev\./.test(OS.hostname())) ? CONF.baseurl_dev : CONF.baseurl // CONF.baseurl_dev is for testing email
-    console.log(`baseurl is ${baseurl}`)
-    key      = md5(Date.now() + CONF.nonce_secret)
-    key_link = `${ baseurl }/key_login?key=${ key }`
+    let baseurl  = (/^dev\./.test(OS.hostname())) ? CONF.baseurl_dev : CONF.baseurl // CONF.baseurl_dev is for testing email
+    let key      = get_nonce(Date.now())
+    let key_link = `${ baseurl }/key_login?key=${ key }`
 
     var results = await query('update users set user_activation_key=? where user_email=?', [key, state.post_data.user_email], state)
 
@@ -280,7 +279,7 @@ async function send_login_link(state) {
 
         get_transporter().sendMail(mailOptions, (error, info) => {
             if (error) console.log('error in send_login_link: ' + error)
-            else       console.log('send_login_link %s sent: %s', info.messageId, info.response);
+            else       console.log('send_login_link %s sent: %s', info.messageId, info.response)
         })
 
         return 'Please check your email for the login link'
@@ -292,8 +291,8 @@ String.prototype.linkify = function(ref) {
 
     var urlPattern = /\b(?:https?|ftp):\/\/[a-z0-9-+&@#\/%?=~_|!:,.;]*[a-z0-9-+&@#\/%=~_|]/gim; // http://, https://, ftp://
     var pseudoUrlPattern = /(^|[^\/])(www\.[\S]+(\b|$))/gim;                                    // www. sans http:// or https://
-    var imagePattern = />((?:https?):\/\/[a-z0-9-+&@#\/%?=~_|!:,.;]*[a-z0-9-+&@#\/%=~_|]\.(jpg|jpeg|gif|gifv|png|bmp))</gim;
-    var emailpostPattern = /[\w.]+@[a-zA-Z_-]+?(?:\.[a-zA-Z]{2,6})+/gim;
+    var imagePattern = />((?:https?):\/\/[a-z0-9-+&@#\/%?=~_|!:,.;]*[a-z0-9-+&@#\/%=~_|]\.(jpg|jpeg|gif|gifv|png|bmp))</gim
+    var emailpostPattern = /[\w.]+@[a-zA-Z_-]+?(?:\.[a-zA-Z]{2,6})+/gim
 
     return this
         .replace(urlPattern,       '<a href="$&">$&</a>')
@@ -419,30 +418,32 @@ async function render(state) {
         },
 
         delete_post : async function() { // delete a whole post, but not its comments
-            if (!state.current_user) return send_html(200, 'You must be logged in to delete a post.')
 
-            let nonce_parms = create_nonce_parms()
+            state.header_data = await header_data(state)
 
-            if (!get_nonce(_GET('ts')) == _GET('nonce')) return send_html(200, 'invalid nonce')
+            if (!state.current_user) return die('You must be logged in to delete a post')
+
+            if (!get_nonce(_GET('ts')) == _GET('nonce')) return die('invalid nonce')
 
             if (post_id = intval(_GET('post_id'))) {
 
                 var results = await query(`select * from posts where post_id = ?`, [post_id], state)
-                if (!results) return send_html(200, '')
+                if (!results.length) return die('no such post')
 
                 let post = results[0]
 
-                if ((state.current_user.user_id == post.post_author) || (state.current_user.user_id == 1)) { // If it's their own post or if it's admin.
+                if ((state.current_user.user_id == post.post_author) || (state.current_user.user_id == 1)) { // if it's their own post or if it's admin
 
-                    await query(`delete from posts where post_id = ?`, [post_id], state)
-                    return send_html(200, 'post deleted')
+                    let results = await query(`delete from posts where post_id = ?`, [post_id], state)
+                    return die(`${results.affectedRows} post deleted`)
                 }
-                else return send_html(200, 'permission to delete post denied')
+                else return die('permission to delete post denied')
             }
-            else send_html(200, 'need a post_id')
+            else die('need a post_id')
         },
 
         edit_post : async function () {
+
             state.header_data = await header_data(state)
 
             let post_id = intval(_GET('p')) // get post's db row number from url, eg 47 from /post/47/slug-goes-here
@@ -455,7 +456,7 @@ async function render(state) {
             else {
                 let content = html(
                     midpage(
-                        postform()
+                        post_form()
                     )
                 )
 
@@ -495,7 +496,7 @@ async function render(state) {
         key_login : async function() {
 
             let key      = _GET('key')
-            let password = md5(Date.now() + CONF.nonce_secret).substring(0, 6)
+            let password = get_nonce(Date.now()).substring(0, 6)
 
             state.header_data = await header_data(state)
 
@@ -557,7 +558,7 @@ async function render(state) {
 
             if (results.length && results[0].ago < 2) { // this ip already commented less than two seconds ago
                 state.message = 'You are posting comments too quickly! Please slow down'
-                return send_html(200, alert())
+                return send_html(200, popup())
             }
             else {
 
@@ -583,6 +584,19 @@ async function render(state) {
                             [post_data.comment_date, post_data.comment_post_id, post_data.comment_post_id], state)
                             // we select the count(*) from comments to make the comment counts self-correcting in case they get off somehow
             }
+        },
+
+        new_post : async function() {
+
+            state.header_data = await header_data(state)
+
+            let content = html(
+                midpage(
+                    post_form()
+                )
+            )
+
+            send_html(200, content)
         },
 
         post : async function() { // show a single post
@@ -634,19 +648,6 @@ async function render(state) {
             password = state.post_data.password
 
             login(state, email, password)
-        },
-
-        new_post : async function() {
-
-            state.header_data = await header_data(state)
-
-            let content = html(
-                midpage(
-                    postform()
-                )
-            )
-
-            send_html(200, content)
         },
 
         recoveryemail : async function() {
@@ -703,17 +704,17 @@ async function render(state) {
 
         search : async function() {
 
-            // if (is_robot()) die('robots may not do searches');
+            // if (is_robot()) die('robots may not do searches')
 
             let s = _GET('s').trim().replace(/[^0-9a-z ]/gi, '') // allow only alphanum and spaces for now
             let us = encodeURI(s)
 
-            // if (!$s) format_die("You searched for nothing. It was found.");
+            // if (!$s) format_die("You searched for nothing. It was found.")
 
             let [curpage, slimit, order, order_by] = page()
 
             // These MATCH() requests require the existence of fulltext index:
-            //      create fulltext index post_title_content_index on posts (post_title, post_content);
+            //      create fulltext index post_title_content_index on posts (post_title, post_content)
 
             let sql = `select * from posts where match(post_title, post_content) against ('${s}') ${order_by} limit ${slimit}`
 
@@ -816,7 +817,7 @@ async function render(state) {
                         <html>
                             <script language="javascript" type="text/javascript">
                                 var textarea = parent.document.getElementById('ta')
-                                textarea.value = textarea.value + "<img src='${rel_to_root}/${files.image.name}' >";
+                                textarea.value = textarea.value + "<img src='${rel_to_root}/${files.image.name}' >"
                             </script>
                         </html>`
 
@@ -861,15 +862,37 @@ async function render(state) {
             send_html(200, content)
         },
 
-    } // end of pages /////////////////////////////////////////////////////////
+    } // end of pages
+
+    // functions within render(), arranged alphabetically:
 
     function about_this_site() {
         return `<h1>About ${ CONF.domain }</h1>${ CONF.domain } is the bomb!`
     }
 
-
-    function alert() {
+    function popup() {
         return `<script type='text/javascript'> alert('${ state.message }'); </script>`
+    }
+
+    function arrowbox(post) { // output html for vote up/down arrows; takes a post left joined on user's votes for that post
+
+        net = post.post_likes - post.post_dislikes
+
+        if (state.current_user) { // user is logged in
+            var upgrey   = post.postvote_up   ? `style='color: grey; pointer-events: none;' title='you liked this'    ` : ``
+            var downgrey = post.postvote_down ? `style='color: grey; pointer-events: none;' title='you disliked this' ` : ``
+
+            var likelink    = `href='#' ${upgrey}   onclick="postlike('post_${post.post_id}');   return false;"`
+            var dislikelink = `href='#' ${downgrey} onclick="postdislike('post_${post.post_id}');return false;"`
+        }
+        else {
+            var likelink    = `href='#' onclick="midpage.innerHTML = registerform.innerHTML; return false;"`
+            var dislikelink = `href='#' onclick="midpage.innerHTML = registerform.innerHTML; return false;"`
+        }
+
+        return `<div class='arrowbox' >
+                <a ${likelink} >&#9650;</a><br><span id='post_${post.post_id}' />${net}</span><br><a ${dislikelink} >&#9660;</a>
+                </div>`
     }
 
     function brag() {
@@ -893,16 +916,6 @@ async function render(state) {
         return `<div class="comment" id="comment-${ c.comment_id }" >${ u } ${ format_date(c.comment_date) } ${ del }<br>${ c.comment_content }</div>`
     }
 
-    function upload_form() {
-
-        return `
-        <form enctype='multipart/form-data' id='upload-file' method='post' target='upload_target' action='/upload' >
-            <input type='file'   id='upload'   name='image' class='form' /> 
-            <input type='submit' value='Include Image' class='form' />
-        </form>
-        <iframe id='upload_target' name='upload_target' src='' style='display: none;' ></iframe>` // for uploading a bit of js to insert the img link
-    }
-
     function comment_box() {
         return `
         <div  id='newcomment' ></div>
@@ -917,6 +930,16 @@ async function render(state) {
                 })
                 return false" >submit</button>
         </form>`
+    }
+
+    function comment_list() {
+        if (state.comments) {
+            var formatted = state.comments.map( (item) => {
+                return comment(item)
+            })
+
+            return formatted.join('')
+        }
     }
 
     function comment_pagination(start, page) {
@@ -936,36 +959,165 @@ async function render(state) {
         let ret = `<p id='comments'>`
 
         if (start > 0) {
-            ret = ret + `<a href='${post_path(state.post)}?{page}=${maxpage}#comments' title='Jump to first comment' >&laquo; First</a> &nbsp; &nbsp; `
-            ret = ret + `<a href='${post_path(state.post)}?{page}=${previouspage}#comments' title='Previous page of comments' >&laquo; Previous</a> &nbsp; &nbsp; `
+            ret = ret +
+                `<a href='${post_path(state.post)}?{page}=${maxpage}#comments' title='Jump to first comment' >&laquo; First</a> &nbsp; &nbsp;
+                 <a href='${post_path(state.post)}?{page}=${previouspage}#comments' title='Previous page of comments' >&laquo; Previous</a> &nbsp; &nbsp; `
         }
 
         let s = (state.post.post_comments == 1) ? '' : 's'
 
         ret = ret + `Comment${s} ${from_one_start} - ${end} of ${state.post.post_comments} &nbsp; &nbsp; `
+
         if (page  > 0) ret = ret + `<a href='${post_path(state.post)}?page=${nextpage}#comments'>Next &raquo;</a> &nbsp; &nbsp; `
+
         ret = ret + `<a href='${post_path(state.post)}#comment-${state.post.post_latest_comment_id}' title='Jump to last comment' >Last &raquo;</a></br>`
 
         return ret
     }
 
-    function comment_list() {
-        if (state.comments) {
-            var formatted = state.comments.map( (item) => {
-                return comment(item)
-            })
+    function create_nonce_parms() {
+        let ts = Date.now() // current unix time in ms
+        let nonce = get_nonce(ts)
+        return `ts=${ts}&nonce=${nonce}`
+    }
 
-            return formatted.join('')
+    function die(message) {
+
+        console.log(message)
+
+        state.message = message
+
+        let content = html(
+            midpage(
+                h1()
+            )
+        )
+
+        send_html(200, content)
+    }
+
+    function follow_button(f) { // f is the user to follow, a row from users table
+
+        let b = '<button type="button" class="btn btn-default btn-xs">follow</button>';
+
+        if (state.current_user) {
+            if (state.current_user.relationships[f.user_id] &&
+                    state.current_user.relationships[f.user_id].rel_i_follow) {
+                return `following (<a href='/users?followers=${f.user_id}'>${f.user_followers}</a>)
+                        <a href='/unfollow?unfollow=${f.user_id}' title='Stop getting new posts by ${f.user_name}' >x</a>`
+            }
+            else {
+                let s = f.user_followers ? ` (<a href='/users?followers_of=${f.user_name}'>${f.user_followers}</a>)` : ''
+                return `<a href='/follow?follow=${f.user_id}' title='Get new posts from ${f.user_name} by email' >${b}</a> ${s}`
+            }
         }
+        else return `<a href='/login?action=registerform' title='Register to get emails of new posts by ${f.user_name}' >${b}</a>`
+    }
+
+    function footer() {
+        return `
+        <p id='footer' >
+        <center>
+        <a href="/users">users</a> &nbsp;
+        <a href="/about">about</a> &nbsp;
+        <a href='/post/1302130/2017-01-28-patnet-improvement-suggestions'>suggestions</a> &nbsp;
+        <a href='mailto:${ CONF.admin_email }' >contact</a> &nbsp;
+        <br>
+        <a href='/topics'>topics</a> &nbsp;
+        <a href='/random'>random post</a> &nbsp;
+        <a href="/best.php">best comments</a> &nbsp;
+        <a href="/adhom_jail.php">comment jail</a> &nbsp;
+        <br>
+        <a href='/post/1303173/2017-02-19-patricks-s-40-proposals'>patrick's 40 proposals</a> &nbsp;
+        <br>
+        <a href='/post/1282720/2015-07-11-ten-reasons-it-s-a-terrible-time-to-buy-an-expensive-house'>10 reasons it's a terrible time to buy</a> &nbsp;
+        <br>
+        <a href='/post/1282721/2015-07-11-eight-groups-who-lie-about-the-housing-market'>8 groups who lie about the housing market</a> &nbsp;
+        <br>
+        <a href='/post/1282722/2015-07-11-37-bogus-arguments-about-housing'>37 bogus arguments about housing</a> &nbsp;
+        <br>
+        <a href='/post/1206569/2011-12-30-free-patrick-net-bumper-stickers'>get a free bumper sticker:</a><br>
+        <a href='/post/1206569/2011-12-30-free-patrick-net-bumper-stickers'><img src='/images/bumpersticker.png' width=300 ></a>
+        <br>
+        <form method="get" action="/" ><input name="s" type="text" placeholder="search..." size="20" ></form>
+        </center>
+        <div class="fixed">
+            <a href='#' title='top of page' >top</a> &nbsp; <a href='#footer' title='bottom of page' >bottom</a> &nbsp; <a href='/' title='home page' >home</a>
+        </div>
+        <script>
+        function tweet(content) {
+            $.get( "/tweet?comment_id="+content.split("_")[1], function(data) {
+                document.getElementById(content).innerHTML = data;
+            });
+        }
+        function like(content) {
+            $.get( "/like?comment_id="+content.split("_")[1], function(data) {
+                document.getElementById(content).innerHTML = data;
+            });
+        }
+        function dislike(content) {
+            $.get( "/dislike?comment_id="+content.split("_")[1], function(data) {
+                document.getElementById(content).innerHTML = data;
+            });
+        }
+        function postlike(content) { // For whole post instead of just one comment.
+            $.get( "/like?post_id="+content.split("_")[1], function(data) {
+                document.getElementById(content).innerHTML = data;
+            });
+        }
+        function postdislike(content) { // For whole post instead of just one comment.
+            $.get( "/dislike?post_id="+content.split("_")[1], function(data) {
+                document.getElementById(content).innerHTML = data;
+            });
+        }
+        </script>`
+    }
+
+    function format_date(gmt_date) { // create localized date string from gmt date out of mysql
+        var utz = state.current_user ? state.current_user.user_timezone : 'America/Los_Angeles'
+        return MOMENT(Date.parse(gmt_date)).tz(utz).format('YYYY MMM D, h:mma')
     }
 
     function _GET(parm) { // given a string, return the GET parameter by that name
         return URL.parse(state.req.url, true).query[parm]
     }
 
-    function format_date(gmt_date) { // create localized date string from gmt date out of mysql
-        var utz = state.current_user ? state.current_user.user_timezone : 'America/Los_Angeles'
-        return MOMENT(Date.parse(gmt_date)).tz(utz).format('YYYY MMM D, h:mma')
+    function get_external_link(post) {
+
+        const c = CHEERIO.load(post.post_content)
+
+        if (c('a').length) {
+            let extlink = c('a').attr('href')
+            let host = URL.parse(extlink).host
+
+            if (!(['http:', 'https:'].indexOf(URL.parse(extlink).protocol) > -1)) return '' // ignore invalid protocols
+            if (new RegExp(CONF.domain).test(host))                               return '' // ignore links back to own domain
+
+            return `<a href='${brandit(extlink)}' target='_blank' title='original story at ${host}' ><img src='/images/ext_link.png'></a>`
+        }
+        else return ''
+    }
+
+    function get_nonce(ts) {
+        // create or check a nonce string for input forms. this makes each form usable only once, and only from the ip that got the form.
+        // hopefully this slows down spammers and cross-site posting tricks
+        return md5(state.ip + CONF.nonce_secret + ts)
+    }
+
+    function get_first_image(post) {
+
+        const c = CHEERIO.load(post.post_content)
+        if (c('img').length) {
+          if (post.post_nsfw)
+            return `<div class='icon' ><a href='${post_path(post)}' ><img src='/images/nsfw.png' border=0 width=100 align=top hspace=5 vspace=5 ></a></div>`
+          else
+            return `<div class='icon' ><a href='${post_path(post)}' ><img src='${c('img').attr('src')}' border=0 width=100 align=top hspace=5 vspace=5 ></a></div>`
+        }
+        else return ''
+    }
+
+    function h1() {
+        return `<h1>${ state.message }</h1>`
     }
 
     function header() {
@@ -975,10 +1127,6 @@ async function render(state) {
             <a href='/' ><h1 class='sitename' title='back to home page' >${ CONF.domain }</h1></a><br>
             <font size='-1'>${ top_topics() + '<br>' + brag() + '</font><br>' + new_post_button() }
             </div>`
-    }
-
-    function h1() {
-        return `<h1>${ state.message }</h1>`
     }
 
     function html(...args) {
@@ -1003,6 +1151,21 @@ async function render(state) {
             </body>
             <script async src="/jquery.min.js"></script><!-- ${'\n' + queries + '\n'} -->
             </html>`
+    }
+
+    function icon_or_loginprompt() {
+        if (state.current_user) return id_box(state)
+        else                    return loginprompt(state)
+    }
+
+    function id_box() {
+
+        var img = user_icon(state.current_user, 0.4, `'align='left' hspace='5' vspace='2'`) // scale image down
+
+        return `
+            <div id='status' >
+                ${img}<a href='/user/${state.current_user.user_name}' >${state.current_user.user_name}</a>
+            </div>`
     }
 
     async function login(state, email, password) {
@@ -1040,7 +1203,7 @@ async function render(state) {
 
             var content = html(
                 midpage(
-                    alert(),
+                    popup(),
                     post_list(),
                     pagination_links()
                 )
@@ -1064,6 +1227,44 @@ async function render(state) {
         state.res.writeHead(200, headers)
         state.res.end(content)
         if (state.db) state.db.release()
+    }
+
+    function loginprompt() {
+
+        return `
+            <div id='status' >
+                ${ state.login_failed_email ? 'login failed' : '' }
+                <form id='loginform' >
+                    <fieldset>
+                        <input id='email'    name='email'    placeholder='email'    type='text'     required >   
+                        <input id='password' name='password' placeholder='password' type='password' required >
+                    </fieldset>
+                    <fieldset>
+                        <input type='submit' id='submit' value='log in'
+                            onclick="$.post('/post_login', $('#loginform').serialize()).done(function(data) { $('#status').html(data) });return false">
+                        <a href='#' onclick="midpage.innerHTML = lostpwform.innerHTML;  return false" >forgot password</a>
+                        <a href='#' onclick="midpage.innerHTML = registerform.innerHTML; return false" >register</a>
+                    </fieldset>
+                </form>
+                <div style='display: none;' >
+                    ${ lostpwform(state)   }
+                    ${ registerform() }
+                </div>
+            </div>`
+    }
+
+    function lostpwform() {
+        var show = state.login_failed_email ? `value='${ state.login_failed_email }'` : `placeholder='email address'`
+
+        return `
+        <div id='lostpwform' >
+            <h1>reset password</h1>
+            <form action='/recoveryemail' method='post'>
+                <div class='form-group'><input type='text' name='user_email' ${ show } class='form-control' id='lost_pw_email' ></div>
+                <button type='submit' id='submit' class='btn btn-success btn-sm'>submit</button>
+            </form>
+            <script type="text/javascript">document.getElementById('lost_pw_email').focus();</script>
+        </div>`
     }
 
     function midpage(...args) { // just an id so we can easily swap out the middle of the page
@@ -1109,158 +1310,6 @@ async function render(state) {
         if (curpage < pages) links = links + `&nbsp; <a href='${path}?page=${nextpage}${extra}'>next &raquo;</a>`
 
         return links
-    }
-
-    async function post_comment_list(post) {
-
-        // If page is not set, show the 40 most recent comments. Same as page 0.
-        // If page is set, show that page, counting backwards from most recent.
-        // So page 1 would be the 40 comments before the most recent.
-
-        // If we were passed a 'c' parm, then calculate the page from that, overriding any page parm.
-        // This allows permalinks regardless of page number.
-
-        let page = 0 // default to first page of comments
-
-        if (_GET('c')) {
-          var c = intval(_GET('c'))
-          // Get all the comments, sorted from greatest to least.
-          // What page of 40 from the end is our comment in? Start counting with page 0 being the most recent comments.
-          let results = await query(`select floor(count(*)/40 - 0.01) as f from comments
-                                    where comment_post_id=? and comment_id >= ? order by comment_id`, [post.post_id, c], state)
-
-                if (results[0]) page = results[0].f
-        }
-
-        if (!page) page = intval(_GET('page')) // if page is not set from c above, use _GET('page')
-        if (!page) page = 0
-
-        let start = post.post_comments - 40 * (page + 1)
-        if (start < 0) start = 0
-
-        // if this gets too slow as user_adhom_comments increases, try a left join, or just start deleting old adhom comments
-        let sql = `select sql_calc_found_rows * from comments
-                  left join users on comment_author=user_id
-                  where comment_post_id = ?
-                  and comment_adhom_when is null
-                  order by comment_date limit ?, 40`
-
-        let results = await query(sql, [post.post_id, start], state)
-
-        //let results = await query('select * from comments left join users on comment_author=user_id where comment_post_id=? order by comment_date',
-        //    [post.post_id], state)
-
-        return [results, start, page]
-    }
-
-    function post_link(post) {
-        let path = post_path(post)
-        return `<a href='${path}'>${post.post_title}</a>`
-    }
-
-    function post_path(post) {
-        let slug = slugify(`${post.post_title}`)
-        return `/post/${post.post_id}/${slug}`
-    }
-
-    function arrowbox(post) { // output html for vote up/down arrows; takes a post left joined on user's votes for that post
-
-        net = post.post_likes - post.post_dislikes
-
-        if (state.current_user) { // user is logged in
-            var upgrey   = post.postvote_up   ? `style='color: grey; pointer-events: none;' title='you liked this'    ` : ``
-            var downgrey = post.postvote_down ? `style='color: grey; pointer-events: none;' title='you disliked this' ` : ``
-
-            var likelink    = `href='#' ${upgrey}   onclick="postlike('post_${post.post_id}');   return false;"`
-            var dislikelink = `href='#' ${downgrey} onclick="postdislike('post_${post.post_id}');return false;"`
-        }
-        else {
-            var likelink    = `href='#' onclick="midpage.innerHTML = registerform.innerHTML; return false;"`
-            var dislikelink = `href='#' onclick="midpage.innerHTML = registerform.innerHTML; return false;"`
-        }
-
-        return `<div class='arrowbox' >
-                <a ${likelink} >&#9650;</a><br><span id='post_${post.post_id}' />${net}</span><br><a ${dislikelink} >&#9660;</a>
-                </div>`
-    }
-
-    function share_post(post) {
-        let share_title = encodeURI(post.post_title).replace(/%20/g,' ')
-        share_link  = encodeURI('https://patrick.net' +  post_path(post) )
-        return `<a href='mailto:?subject=${share_title}&body=${share_link}' title='email this' ><img src='/images/mailicon.jpg' width=15 height=12 ></a>`
-    }
-
-    function get_external_link(post) {
-
-        const c = CHEERIO.load(post.post_content)
-
-        if (c('a').length) {
-            let extlink = c('a').attr('href')
-            let host = URL.parse(extlink).host
-
-            if (!(['http:', 'https:'].indexOf(URL.parse(extlink).protocol) > -1)) return '' // ignore invalid protocols
-            if (new RegExp(CONF.domain).test(host))                               return '' // ignore links back to own domain
-
-            return `<a href='${brandit(extlink)}' target='_blank' title='original story at ${host}' ><img src='/images/ext_link.png'></a>`
-        }
-        else return ''
-    }
-
-    function get_first_image(post) {
-
-        const c = CHEERIO.load(post.post_content)
-        if (c('img').length) {
-          if (post.post_nsfw)
-            return `<div class='icon' ><a href='${post_path(post)}' ><img src='/images/nsfw.png' border=0 width=100 align=top hspace=5 vspace=5 ></a></div>`
-          else
-            return `<div class='icon' ><a href='${post_path(post)}' ><img src='${c('img').attr('src')}' border=0 width=100 align=top hspace=5 vspace=5 ></a></div>`
-        }
-        else return ''
-    }
-
-    function post_list() { // format and display a list of posts from whatever source; pass in only a limited number, because all of them will display
-
-        if (state.posts) {
-            var formatted = state.posts.map(post => {
-
-                var link = post_link(post)
-
-                if (!state.current_user && post.post_title.match(/thunderdome/gi)) return '' // don't show thunderdome posts to non-logged-in users
-                if (!state.current_user && post.post_nsfw)                         return '' // don't show porn posts to non-logged-in users
-
-                net = post.post_likes - post.post_dislikes
-
-                if (state.current_user) { // user is logged in
-                    if (!post.postview_last_view)
-                        var unread = `<a href='${post_path(post)}' ><img src='/content/unread_post.gif' width='45' height='16' title='You never read this one' ></a>`
-                    else 
-                        var unread = unread_comments_icon(post, post.postview_last_view) // last view by this user, from left join
-                }
-                else var unread = ''
-
-                let ago           = MOMENT(post.post_modified).fromNow();
-                let hashlink      = text2hashtag(post.post_content)
-                let imgdiv        = (state.current_user && state.current_user.user_hide_post_list_photos) ? '' : get_first_image(post)
-                let arrowbox_html = arrowbox(post)
-                let extlink       = get_external_link(post)
-                let sharelink     = share_post(post)
-                let firstwords    = `<font size='-1'>${first_words(post.post_content, 30)}</font>`
-
-                if (post.post_comments) {
-                    let s = (post.post_comments == 1) ? '' : 's';
-                    let path = post_path(post)
-                    // should add commas to post_comments here
-                    var latest = `<a href='${path}'>${post.post_comments}&nbsp;comment${s}</a>, latest <a href='${path}#comment-${post.post_latest_comment_id}' >${ago}</a>`
-                }
-                else var latest = `Posted ${ago}`
-
-                return `<div class='post' >${arrowbox_html}${imgdiv}<b><font size='+1'>${link}</font></b> ${extlink} ${sharelink}<br>by 
-                        <a href='/user/${ post.user_name }'>${ post.user_name }</a> ${hashlink} &nbsp; ${latest} ${unread}<br>${firstwords}</div>`
-            })
-        }
-        else formatted = []
-
-        return formatted.join('')
     }
 
     function post() { // format a single post for display
@@ -1323,7 +1372,49 @@ async function render(state) {
                 <p><div class="entry" class="alt" id="comment-0-text" >${ state.post.post_content }</div></div>`
     }
 
-    function postform() { // used both for composing new posts and for editing existing posts; distinction is the presence of p, an existing post_id
+    async function post_comment_list(post) {
+
+        // If page is not set, show the 40 most recent comments. Same as page 0.
+        // If page is set, show that page, counting backwards from most recent.
+        // So page 1 would be the 40 comments before the most recent.
+
+        // If we were passed a 'c' parm, then calculate the page from that, overriding any page parm.
+        // This allows permalinks regardless of page number.
+
+        let page = 0 // default to first page of comments
+
+        if (_GET('c')) {
+          var c = intval(_GET('c'))
+          // Get all the comments, sorted from greatest to least.
+          // What page of 40 from the end is our comment in? Start counting with page 0 being the most recent comments.
+          let results = await query(`select floor(count(*)/40 - 0.01) as f from comments
+                                    where comment_post_id=? and comment_id >= ? order by comment_id`, [post.post_id, c], state)
+
+                if (results[0]) page = results[0].f
+        }
+
+        if (!page) page = intval(_GET('page')) // if page is not set from c above, use _GET('page')
+        if (!page) page = 0
+
+        let start = post.post_comments - 40 * (page + 1)
+        if (start < 0) start = 0
+
+        // if this gets too slow as user_adhom_comments increases, try a left join, or just start deleting old adhom comments
+        let sql = `select sql_calc_found_rows * from comments
+                  left join users on comment_author=user_id
+                  where comment_post_id = ?
+                  and comment_adhom_when is null
+                  order by comment_date limit ?, 40`
+
+        let results = await query(sql, [post.post_id, start], state)
+
+        //let results = await query('select * from comments left join users on comment_author=user_id where comment_post_id=? order by comment_date',
+        //    [post.post_id], state)
+
+        return [results, start, page]
+    }
+
+    function post_form() { // used both for composing new posts and for editing existing posts; distinction is the presence of p, an existing post_id
 
         // todo: add conditional display of user-name chooser for non-logged in users
 
@@ -1352,41 +1443,175 @@ async function render(state) {
         ${upload_form()}`
     }
 
+    function post_link(post) {
+        let path = post_path(post)
+        return `<a href='${path}'>${post.post_title}</a>`
+    }
+
+    function post_list() { // format and display a list of posts from whatever source; pass in only a limited number, because all of them will display
+
+        if (state.posts) {
+            var formatted = state.posts.map(post => {
+
+                var link = post_link(post)
+
+                if (!state.current_user && post.post_title.match(/thunderdome/gi)) return '' // don't show thunderdome posts to non-logged-in users
+                if (!state.current_user && post.post_nsfw)                         return '' // don't show porn posts to non-logged-in users
+
+                net = post.post_likes - post.post_dislikes
+
+                if (state.current_user) { // user is logged in
+                    if (!post.postview_last_view)
+                        var unread = `<a href='${post_path(post)}' ><img src='/content/unread_post.gif' width='45' height='16' title='You never read this one' ></a>`
+                    else 
+                        var unread = unread_comments_icon(post, post.postview_last_view) // last view by this user, from left join
+                }
+                else var unread = ''
+
+                let ago           = MOMENT(post.post_modified).fromNow();
+                let hashlink      = text2hashtag(post.post_content)
+                let imgdiv        = (state.current_user && state.current_user.user_hide_post_list_photos) ? '' : get_first_image(post)
+                let arrowbox_html = arrowbox(post)
+                let extlink       = get_external_link(post)
+                let sharelink     = share_post(post)
+                let firstwords    = `<font size='-1'>${first_words(post.post_content, 30)}</font>`
+
+                if (post.post_comments) {
+                    let s = (post.post_comments == 1) ? '' : 's';
+                    let path = post_path(post)
+                    // should add commas to post_comments here
+                    var latest = `<a href='${path}'>${post.post_comments}&nbsp;comment${s}</a>, latest <a href='${path}#comment-${post.post_latest_comment_id}' >${ago}</a>`
+                }
+                else var latest = `Posted ${ago}`
+
+                return `<div class='post' >${arrowbox_html}${imgdiv}<b><font size='+1'>${link}</font></b> ${extlink} ${sharelink}<br>by 
+                        <a href='/user/${ post.user_name }'>${ post.user_name }</a> ${hashlink} &nbsp; ${latest} ${unread}<br>${firstwords}</div>`
+            })
+        }
+        else formatted = []
+
+        return formatted.join('')
+    }
+
+    function post_path(post) {
+        let slug = slugify(`${post.post_title}`)
+        return `/post/${post.post_id}/${slug}`
+    }
+
+    function redirect(redirect_to) {
+
+        var message = `Redirecting to ${ redirect_to }`
+
+        var headers =  {
+          'Location'       : redirect_to,
+          'Content-Length' : message.length,
+          'Expires'        : new Date().toUTCString()
+        }
+
+        state.res.writeHead(303, headers)
+        state.res.end(message)
+        if (state.db) state.db.release()
+    }
+
+    function registerform() {
+        return `
+        <div id='registerform' >
+            <h1>register</h1>
+            <form action='/registration' method='post'>
+            <div >
+                <div class='form-group'><input type='text' name='user_name' placeholder='choose username' class='form-control' id='user_name' ></div>
+                <div class='form-group'><input type='text' name='user_email'      placeholder='email'     class='form-control'                ></div>
+            </div>
+            <button type='submit' id='submit' class='btn btn-success btn-sm'>submit</button>
+            </form>
+            <script type="text/javascript">document.getElementById('user_name').focus();</script>
+        </div>`
+    }
+
+    function send_html(code, html) {
+
+        var headers =    {
+            'Content-Type'   : 'text/html',
+            'Content-Length' : html.length,
+            'Expires'        : new Date().toUTCString()
+        }
+
+        state.res.writeHead(code, headers)
+        state.res.end(html)
+        if (state.db) state.db.release()
+    }
+
+    function share_post(post) {
+        let share_title = encodeURI(post.post_title).replace(/%20/g,' ')
+        share_link  = encodeURI('https://patrick.net' +  post_path(post) )
+        return `<a href='mailto:?subject=${share_title}&body=${share_link}' title='email this' ><img src='/images/mailicon.jpg' width=15 height=12 ></a>`
+    }
+
     function slugify(s) { // url-safe pretty chars only; not used for navigation, only for seo and humans
         return s.replace(/\W+/g,'-').toLowerCase().replace(/-+/,'-').replace(/^-+|-+$/,'')
+    }
+
+    function tabs(order, extra='') {
+
+        let selected_tab = []
+        selected_tab['active']   = ''
+        selected_tab['comments'] = ''
+        selected_tab['likes']    = ''
+        selected_tab['new']      = ''
+        selected_tab[order]      = `class='active'` // default is active
+
+        let path = URL.parse(state.req.url).pathname // "pathNAME" is url path without ? parms, unlike "path"
+
+        return `<ul class='nav nav-tabs'>
+            <li ${selected_tab['active']}   > <a href='${path}?order=active${extra}'   title='most recent comments'       >active</a></li>
+            <li ${selected_tab['comments']} > <a href='${path}?order=comments${extra}' title='most comments in last week' >comments</a></li>
+            <li ${selected_tab['likes']}    > <a href='${path}?order=likes${extra}'    title='most likes in last week'    >likes</a></li>
+            <li ${selected_tab['new']}      > <a href='${path}?order=new${extra}'      title='newest'                     >new</a></li>
+            </ul>`
     }
 
     function text() {
         return `${ state.text || '' }`
     }
 
-  function unread_comments_icon(post, last_view) { // return the blinky icon if there are unread comments in a post
-
-    // if post_modified > last time they viewed this post, then give them a link to earliest unread comment
-    let last_viewed = Date.parse(last_view) / 1000
-    let modified    = Date.parse(post.post_modified) / 1000
-
-    if (modified > last_viewed) {
-
-      let unread = `<a href='/since?p=${post.post_id}&when=${last_viewed}' ><img src='/content/unread_comments.gif' width='19' height='18' title='View unread comments'></A>`
-
-      return unread
-    }
-    else return ''
-  }
-
-    function user_link(u) {
-        return `<a href='/user/${ u.user_name }'>${ u.user_name }</a>`
+    function top_topics() {
+        var formatted = state.header_data.top3.map(item => `<a href='/topic/${ item.post_topic }'>#${ item.post_topic }</a>`)
+        return formatted.join(' ') + ` <a href='/topics/'>more&raquo;</a>`
     }
 
-    function user_list() {
+    function topic_list() {
+        if (state.topics) {
+            var formatted = state.topics.map( (item) => {
+                return `<a href='/topic/${ item.post_topic }'>#${ item.post_topic }</a>`
+            })
 
-        var formatted = state.users.map( (item) => {
-            let l = user_link(item)
-            return `<div class='user' >${l}</div>`
-        })
+            return formatted.join(' ')
+        }
+    }
 
-        return formatted.join('')
+    function unread_comments_icon(post, last_view) { // return the blinky icon if there are unread comments in a post
+
+        // if post_modified > last time they viewed this post, then give them a link to earliest unread comment
+        let last_viewed = Date.parse(last_view) / 1000
+        let modified        = Date.parse(post.post_modified) / 1000
+
+        if (modified > last_viewed) {
+
+            let unread = `<a href='/since?p=${post.post_id}&when=${last_viewed}' ><img src='/content/unread_comments.gif' width='19' height='18' title='View unread comments'></A>`
+
+            return unread
+        }
+        else return ''
+    }
+
+    function upload_form() {
+
+        return `
+        <form enctype='multipart/form-data' id='upload-file' method='post' target='upload_target' action='/upload' >
+            <input type='file'   id='upload'   name='image' class='form' /> 
+            <input type='submit' value='Include Image' class='form' />
+        </form>
+        <iframe id='upload_target' name='upload_target' src='' style='display: none;' ></iframe>` // for uploading a bit of js to insert the img link
     }
 
     function user_icon(u, scale=1, img_parms='') { // clickable icon for this user if they have icon
@@ -1413,238 +1638,21 @@ async function render(state) {
         return `${edit_or_logout}<center><a href='/user/${ u.user_name }' >${ img }</a><h2>${ u.user_name }</h2></p>joined ${ u.user_registered }</center>`
     }
 
-    function icon_or_loginprompt() {
-        if (state.current_user) return id_box(state)
-        else                    return loginprompt(state)
+    function user_link(u) {
+        return `<a href='/user/${ u.user_name }'>${ u.user_name }</a>`
     }
 
-    function id_box() {
+    function user_list() {
 
-        var img = user_icon(state.current_user, 0.4, `'align='left' hspace='5' vspace='2'`) // scale image down
+        var formatted = state.users.map( (item) => {
+            let l = user_link(item)
+            return `<div class='user' >${l}</div>`
+        })
 
-        return `
-            <div id='status' >
-                ${img}<a href='/user/${state.current_user.user_name}' >${state.current_user.user_name}</a>
-            </div>`
+        return formatted.join('')
     }
 
-    function loginprompt() {
-
-        return `
-            <div id='status' >
-                ${ state.login_failed_email ? 'login failed' : '' }
-                <form id='loginform' >
-                    <fieldset>
-                        <input id='email'    name='email'    placeholder='email'    type='text'     required >   
-                        <input id='password' name='password' placeholder='password' type='password' required >
-                    </fieldset>
-                    <fieldset>
-                        <input type='submit' id='submit' value='log in'
-                            onclick="$.post('/post_login', $('#loginform').serialize()).done(function(data) { $('#status').html(data) });return false">
-                        <a href='#' onclick="midpage.innerHTML = lostpwform.innerHTML;  return false" >forgot password</a>
-                        <a href='#' onclick="midpage.innerHTML = registerform.innerHTML; return false" >register</a>
-                    </fieldset>
-                </form>
-                <div style='display: none;' >
-                    ${ lostpwform(state)   }
-                    ${ registerform() }
-                </div>
-            </div>`
-    }
-
-    function lostpwform() {
-        var show = state.login_failed_email ? `value='${ state.login_failed_email }'` : `placeholder='email address'`
-
-        return `
-        <div id='lostpwform' >
-            <h1>reset password</h1>
-            <form action='/recoveryemail' method='post'>
-                <div class='form-group'><input type='text' name='user_email' ${ show } class='form-control' id='lost_pw_email' ></div>
-                <button type='submit' id='submit' class='btn btn-success btn-sm'>submit</button>
-            </form>
-            <script type="text/javascript">document.getElementById('lost_pw_email').focus();</script>
-        </div>`
-    }
-
-    function registerform() {
-        return `
-        <div id='registerform' >
-            <h1>register</h1>
-            <form action='/registration' method='post'>
-            <div >
-                <div class='form-group'><input type='text' name='user_name' placeholder='choose username' class='form-control' id='user_name' ></div>
-                <div class='form-group'><input type='text' name='user_email'      placeholder='email'     class='form-control'                ></div>
-            </div>
-            <button type='submit' id='submit' class='btn btn-success btn-sm'>submit</button>
-            </form>
-            <script type="text/javascript">document.getElementById('user_name').focus();</script>
-        </div>`
-    }
-
-  function follow_button(f) { // f is the user to follow, a row from users table
-
-    let b = '<button type="button" class="btn btn-default btn-xs">follow</button>';
-
-    if (state.current_user) {
-      if (state.current_user.relationships[f.user_id] &&
-          state.current_user.relationships[f.user_id].rel_i_follow) {
-        return `following (<a href='/users?followers=${f.user_id}'>${f.user_followers}</a>)
-            <a href='/unfollow?unfollow=${f.user_id}' title='Stop getting new posts by ${f.user_name}' >x</a>`
-      }
-      else {
-        let s = f.user_followers ? ` (<a href='/users?followers_of=${f.user_name}'>${f.user_followers}</a>)` : ''
-        return `<a href='/follow?follow=${f.user_id}' title='Get new posts from ${f.user_name} by email' >${b}</a> ${s}`
-      }
-    }
-    else return `<a href='/login?action=registerform' title='Register to get emails of new posts by ${f.user_name}' >${b}</a>`
-  }
-
-    function footer() {
-        return `
-        <p id='footer' >
-        <center>
-        <a href="/users">users</a> &nbsp;
-        <a href="/about">about</a> &nbsp;
-        <a href='/post/1302130/2017-01-28-patnet-improvement-suggestions'>suggestions</a> &nbsp;
-        <a href='mailto:${ CONF.admin_email }' >contact</a> &nbsp;
-        <br>
-        <a href='/topics'>topics</a> &nbsp;
-        <a href='/random'>random post</a> &nbsp;
-        <a href="/best.php">best comments</a> &nbsp;
-        <a href="/adhom_jail.php">comment jail</a> &nbsp;
-        <br>
-        <a href='/post/1303173/2017-02-19-patricks-s-40-proposals'>patrick's 40 proposals</a> &nbsp;
-        <br>
-        <a href='/post/1282720/2015-07-11-ten-reasons-it-s-a-terrible-time-to-buy-an-expensive-house'>10 reasons it's a terrible time to buy</a> &nbsp;
-        <br>
-        <a href='/post/1282721/2015-07-11-eight-groups-who-lie-about-the-housing-market'>8 groups who lie about the housing market</a> &nbsp;
-        <br>
-        <a href='/post/1282722/2015-07-11-37-bogus-arguments-about-housing'>37 bogus arguments about housing</a> &nbsp;
-        <br>
-        <a href='/post/1206569/2011-12-30-free-patrick-net-bumper-stickers'>get a free bumper sticker:</a><br>
-        <a href='/post/1206569/2011-12-30-free-patrick-net-bumper-stickers'><img src='/images/bumpersticker.png' width=300 ></a>
-        <br>
-        <form method="get" action="/" ><input name="s" type="text" placeholder="search..." size="20" ></form>
-        </center>
-        <div class="fixed">
-            <a href='#' title='top of page' >top</a> &nbsp; <a href='#footer' title='bottom of page' >bottom</a> &nbsp; <a href='/' title='home page' >home</a>
-        </div>
-        <script>
-        function tweet(content) {
-            $.get( "/tweet?comment_id="+content.split("_")[1], function(data) {
-                document.getElementById(content).innerHTML = data;
-            });
-        }
-        function like(content) {
-            $.get( "/like?comment_id="+content.split("_")[1], function(data) {
-                document.getElementById(content).innerHTML = data;
-            });
-        }
-        function dislike(content) {
-            $.get( "/dislike?comment_id="+content.split("_")[1], function(data) {
-                document.getElementById(content).innerHTML = data;
-            });
-        }
-        function postlike(content) { // For whole post instead of just one comment.
-            $.get( "/like?post_id="+content.split("_")[1], function(data) {
-                document.getElementById(content).innerHTML = data;
-            });
-        }
-        function postdislike(content) { // For whole post instead of just one comment.
-            $.get( "/dislike?post_id="+content.split("_")[1], function(data) {
-                document.getElementById(content).innerHTML = data;
-            });
-        }
-        </script>`
-    }
-
-    function redirect(redirect_to) {
-
-        var message = `Redirecting to ${ redirect_to }`
-
-        var headers =  {
-          'Location'       : redirect_to,
-          'Content-Length' : message.length,
-          'Expires'        : new Date().toUTCString()
-        }
-
-        state.res.writeHead(303, headers)
-        state.res.end(message)
-        if (state.db) state.db.release()
-    }
-
-    function tabs(order, extra='') {
-
-        let selected_tab = []
-        selected_tab['active']   = ''
-        selected_tab['comments'] = ''
-        selected_tab['likes']    = ''
-        selected_tab['new']      = ''
-        selected_tab[order]      = `class='active'` // default is active
-
-        let path = URL.parse(state.req.url).pathname // "pathNAME" is url path without ? parms, unlike "path"
-
-        return `<ul class='nav nav-tabs'>
-            <li ${selected_tab['active']}   > <a href='${path}?order=active${extra}'   title='most recent comments'       >active</a></li>
-            <li ${selected_tab['comments']} > <a href='${path}?order=comments${extra}' title='most comments in last week' >comments</a></li>
-            <li ${selected_tab['likes']}    > <a href='${path}?order=likes${extra}'    title='most likes in last week'    >likes</a></li>
-            <li ${selected_tab['new']}      > <a href='${path}?order=new${extra}'      title='newest'                     >new</a></li>
-            </ul>`
-    }
-
-
-    function topic_list() {
-        if (state.topics) {
-            var formatted = state.topics.map( (item) => {
-                return `<a href='/topic/${ item.post_topic }'>#${ item.post_topic }</a>`
-            })
-
-            return formatted.join(' ')
-        }
-    }
-
-    function top_topics() {
-        var formatted = state.header_data.top3.map(item => `<a href='/topic/${ item.post_topic }'>#${ item.post_topic }</a>`)
-        return formatted.join(' ') + ` <a href='/topics/'>more&raquo;</a>`
-    }
-
-    function die(message) { // errors that normal user will never see
-
-        var headers =    {
-            'Content-Length' : message.length,
-            'Expires'                : new Date().toUTCString()
-        }
-
-        state.res.writeHead(303, headers)
-        state.res.end(message)
-        console.log(message)
-        if (state.db) state.db.release()
-    }
-
-    function send_html(code, html) {
-
-        var headers =    {
-            'Content-Type'     : 'text/html',
-            'Content-Length' : html.length,
-            'Expires'                : new Date().toUTCString()
-        }
-
-        state.res.writeHead(code, headers)
-        state.res.end(html)
-        if (state.db) state.db.release()
-    }
-
-    function get_nonce(ts) {
-        // create or check a nonce string for input forms. this makes each form usable only once, and only from the ip that got the form.
-        // hopefully this slows down spammers and cross-site posting tricks
-        return md5(state.ip + CONF.nonce_secret + ts)
-    }
-
-    function create_nonce_parms() {
-        let ts = Date.now() // current unix time in ms
-        let nonce = get_nonce(ts)
-        return `ts=${ts}&nonce=${nonce}`
-    }
+    // end of render() functions
 
     if (typeof pages[state.page] === 'function') { // hit the db iff the request is for a valid url
         try {
@@ -1654,7 +1662,10 @@ async function render(state) {
             await set_user(state)
             await pages[state.page](state)
         }
-        catch(e) { console.log(e); send_html(500, e.message) }
+        catch(e) {
+            console.log(e)
+            send_html(500, e.message)
+        }
     }
     else {
         let err = `${ state.req.url } is not a valid url`
@@ -1662,4 +1673,4 @@ async function render(state) {
         send_html(404, err)
     }
 
-} // end of render
+} // end of render()
