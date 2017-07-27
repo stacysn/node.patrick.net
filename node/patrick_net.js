@@ -434,7 +434,7 @@ async function render(state) {
                 }
                 else return die('permission to delete post denied')
             }
-            else die('need a post_id')
+            else return die('need a post_id')
         },
 
         edit_post : async function () {
@@ -786,6 +786,8 @@ async function render(state) {
 
         upload : async function() {
 
+            if (!state.current_user) return die('you must be logged in to upload images')
+
             var formidable = require('formidable')
             var fs         = require('fs')
             var http       = require('http')
@@ -907,7 +909,7 @@ async function render(state) {
 
         return `
         <div  id='newcomment' ></div>
-        ${upload_form()}
+        ${state.current_user ? upload_form() : ''}
         <form id='commentform' >
             <textarea id='ta' name='comment_content'    class='form-control' rows='10' placeholder='write a comment...' ></textarea><p>
             <input type='hidden' name='comment_post_id' value='${ state.post.post_id }' />
@@ -971,7 +973,7 @@ async function render(state) {
 
     function die(message) {
 
-        console.log(message)
+        console.log(`died because: ${message}`)
 
         state.message = message
 
