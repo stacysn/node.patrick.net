@@ -364,41 +364,45 @@ function segments(path) { // return url path split up as array of cleaned \w str
     return URL.parse(path).path.replace(/\?.*/,'').split('/').map(segment => segment.replace(/\W/g,''))
 }
 
-function resize_image(file, max_dim = 600) { // max_dim is maximum allowed dimension in either direction
+function limit_image_width(file, max_width = 600) {
 
-    return new Promise(function(fulfill, reject) {
-        if (require('fs').existsSync(file)) {
+    if (require('fs').existsSync(file)) {
 
-            const { spawn } = require('child_process')
-            const identify = spawn('identify', ['-format', '%w %h', file]) // identify -format '%w %h' file
+        const { spawn } = require('child_process')
+        const identify  = spawn('identify', ['-format', '%w %h', file]) // identify -format '%w %h' file
 
-            identify.stdout.on('data', data => {
+        identify.stdout.on('data', data => {
 
-                let dims   = data.toString('utf8').replace(/\n/,'').split(' ')
-                let width  = dims[0]
-                let height = dims[1]
-                if (width > max_dim) {
-    /*
-                    $command    = "/usr/bin/mogrify -resize $max_dim $file" // Larger dimension will be reduced to $max_dim.
-                    $output     = shell_exec($command." 2>&1")
-                    $image_attr = getimagesize( $file )
-                    $width      = $image_attr[0]
-                    $height     = $image_attr[1]
-    */
-                }
-            })
+            let dims   = data.toString('utf8').replace(/\n/,'').split(' ')
+            let width  = dims[0]
+            let height = dims[1]
+            if (width > max_width) resize_image(file, max_width = 600)
+        })
 
-            identify.stderr.on('data', data => { // remove the file because something is wrong with it
-                console.log(`stderr from 'identify': ${data}`)
-            })
+        identify.stderr.on('data', data => { // remove the file because something is wrong with it
+            console.log(`stderr from 'identify': ${data}`)
+        })
 
-            identify.on('close', code => {
-                // if code is non-zero, remove the file because something is wrong with it
-                console.log(`child process exited with code ${code}`)
-            })
+        identify.on('close', code => {
+            // if code is non-zero, remove the file because something is wrong with it
+            console.log(`child process exited with code ${code}`)
+        })
 
-        } else console.log(`image not found: ${file}`)
-    })
+    } else console.log(`image not found: ${file}`)
+}
+
+function resize_image(file, max_dim = 600) { // max_dim is maximum dimension in either direction
+    if (require('fs').existsSync(file)) {
+        const { spawn } = require('child_process')
+        const mogrify   = spawn('mogrify', ['-resize', max_dim, file]) // /usr/bin/mogrify -resize $max_dim $file
+
+        console.log(`resized ${file} to max dimension of ${max_dim}`)
+/*
+        $image_attr = getimagesize( $file )
+        $width      = $image_attr[0]
+        $height     = $image_attr[1]
+*/
+    } else console.log(`image not found: ${file}`)
 }
 
 async function render(state) { /////////////////////////////////////////
@@ -439,17 +443,22 @@ async function render(state) { /////////////////////////////////////////
 
         delete_comment : async function() { // delete a comment
 
-            var comment_id = segments(state.req.url)[2]
-
             if (!state.current_user) return send_html(200, '') // do nothing if not logged in
+            if (!valid_nonce())      return send_html(200, '') // do nothing if invalid nonce
 
-            // delete comment only if current user is comment_author
-            await query('delete from comments where comment_id = ? and comment_author = ?', [comment_id, state.current_user.user_id], state)
-            await query('update posts set post_comments=(select count(*) from comments where comment_post_id=?) where post_id = ?',
-                        [post_data.comment_post_id, post_data.comment_post_id], state)
-                        // we select the count(*) from comments to make the comment counts self-correcting in case they get off somehow
+            let comment_id = intval(_GET('comment_id'))
+            let post_id    = intval(_GET('post_id'))
 
-            send_html(200, '')
+            if (comment_id && post_id) {
+                // delete comment only if current user is comment_author
+                await query('delete from comments where comment_id = ? and comment_author = ?', [comment_id, state.current_user.user_id], state)
+                await query('update posts set post_comments=(select count(*) from comments where comment_post_id=?) where post_id = ?',
+                            [post_id, post_id], state)
+                            // we select the count(*) from comments to make the comment counts self-correcting in case they get off somehow
+
+                send_html(200, '')
+            }
+            else return send_html(200, '')
         },
 
         delete_post : async function() { // delete a whole post, but not its comments
@@ -835,9 +844,7 @@ async function render(state) { /////////////////////////////////////////
             form.maxFields = 1                   // only one image at a time
 
             // todo: implement upload progress meter with this
-            //form.on('progress', function(bytesReceived, bytesExpected) {
-            //    console.log(`${bytesReceived}, ${bytesExpected}`)
-            //})
+            //form.on('progress', function(bytesReceived, bytesExpected) { console.log(`${bytesReceived}, ${bytesExpected}`) })
 
             form.parse(state.req, function (err, fields, files) {
                 let d = new Date()
@@ -851,7 +858,7 @@ async function render(state) { /////////////////////////////////////////
                 fs.rename(files.image.path, `${datepath}/${files.image.name}`, function (err) {
                     if (err) throw err
 
-                    resize_image(`${datepath}/${files.image.name}`) // limit max width to 600 px
+                    limit_image_width(`${datepath}/${files.image.name}`) // limit max width to 600 px
 
                     let content = `
                         <html>
@@ -913,7 +920,7 @@ async function render(state) { /////////////////////////////////////////
 
     function arrowbox(post) { // output html for vote up/down arrows; takes a post left joined on user's votes for that post
 
-        net = post.post_likes - post.post_dislikes
+        let net = post.post_likes - post.post_dislikes
 
         if (state.current_user) { // user is logged in
             var upgrey   = post.postvote_up   ? `style='color: grey; pointer-events: none;' title='you liked this'    ` : ``
@@ -946,8 +953,9 @@ async function render(state) { /////////////////////////////////////////
         var u = c.user_name ? `<a href='/user/${c.user_name}'>${c.user_name}</a>` : 'anonymous'
 
         if (state.current_user) {
-            var del = state.current_user.user_id == c.comment_author ?
-                `<a href='#' onclick="$.get('/delete_comment/${ c.comment_id }', function() { $('#comment-${ c.comment_id }').remove() });return false">delete</a>` : ''
+            let nonce_parms = create_nonce_parms()
+            var del   = state.current_user.user_id == c.comment_author ?
+                `<a href='#' onclick="$.get('/delete_comment?comment_id=${ c.comment_id }&post_id=${ c.comment_post_id }&${ nonce_parms }', function() { $('#comment-${ c.comment_id }').remove() });return false">delete</a>` : ''
         }
 
         return `<div class="comment" id="comment-${ c.comment_id }" >${ u } ${ format_date(c.comment_date) } ${ del }<br>${ c.comment_content }</div>`
