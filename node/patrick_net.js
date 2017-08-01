@@ -241,6 +241,7 @@ function first_words(string, num) {
 }
 
 function text2hashtag(text) { // given some text, pull out first hashtag as link
+	let matches = null
     if (matches = text.match(/[\s>]#(\w{1,32})/)) return `in <a href='/topic/${matches[1]}'>#${matches[1]}</a>`
     else                                          return ''
 }
@@ -331,13 +332,42 @@ function brandit(url) { // add ref=[domain name] to a url
 
 function clean_upload_path(path, filename) {
 
-    filename.replace(/[^\w\.-]/gi, '') // allow only alphanum and dot in image name to mitigate scripting tricks
+	// allow only alphanum, dot, dash in image name to mitigate scripting tricks
+    // always lowercase upload names so we don't get collisions on stupid case-insensitive Mac fs between "This.jpg" and "this.jpg", for example
+    filename = filename.replace(/[^\w\.-]/gi, '').toLowerCase()
+
+    let ext     = null
+    let matches = null
+	if (matches = filename.match(/(\.\w{3,4})$/)) ext = matches[1] // include the dot, like .png
+
+    if (filename.length > 128 ) filename = md5(filename) + ext // filename was too long to be backed up, so hash it to shorten it
 
     /*
+
+    $ud = upload_dir();
+    $number = '';
     while (FS.existsSync(`${path}/${filename}`)) { // avoid name collisions so one user cannot overwrite another's image
         $filename = str_replace( "$number$ext", ++$number . $ext, $filename );
         if ($number > 10) die("Too many copies of $filename");
     }
+
+
+    // Move the file to the uploads dir
+    $newname = "$ud/$filename";
+    if (false === rename($oldname, $newname)) die("File $oldname could not be moved to $newname");
+
+    if (preg_match( '/\.(jpg|jpeg)$/i' , $newname, $matches) && file_exists('/usr/bin/jpegoptim') ) {
+        $output = shell_exec("/usr/bin/jpegoptim $newname 2>&1");  // minimize size of new jpeg
+    }
+
+    if (preg_match( '/\.(png)$/i' , $newname, $matches) && file_exists('/usr/bin/optipng') ) {
+        $output = shell_exec("/usr/bin/optipng $newname 2>&1");  // minimize size of new png
+    }
+
+    $stat = stat(dirname($newname));
+    @chmod($newname, $stat['mode'] & 0000666);
+
+    return $newname;
     */
 
     return filename
@@ -393,19 +423,17 @@ function getimagesize(file) {
             })
 
             identify.stderr.on('data', data => { // remove the file because something is wrong with it
-                reject([null,null])
                 console.log(`stderr from 'identify': ${data}`)
+                reject('invalid image')
             })
 
             identify.on('close', code => {
                 // if code is non-zero, remove the file because something is wrong with it
-                if (code > 0) reject([null,null])
+                console.log(`code from 'identify': ${code}`)
+                if (code > 0) reject('invalid image')
             })
 
-        } else {
-            console.log(`image not found: ${file}`)
-            reject([null,null])
-        }
+        } else reject(`image not found: ${file}`)
     })
 }
 
@@ -772,7 +800,7 @@ async function render(state) { /////////////////////////////////////////
 
             let [curpage, slimit, order, order_by] = page()
 
-            // These MATCH() requests require the existence of fulltext index:
+            // These match() requests require the existence of fulltext index:
             //      create fulltext index post_title_content_index on posts (post_title, post_content)
 
             let sql = `select * from posts where match(post_title, post_content) against ('${s}') ${order_by} limit ${slimit}`
@@ -855,8 +883,6 @@ async function render(state) { /////////////////////////////////////////
 
             if (!state.current_user) return die('you must be logged in to upload images')
 
-            var http       = require('http')
-
             var form = new FORMIDABLE.IncomingForm()
 
             form.maxFieldsSize = 7 * 1024 * 1024 // max upload is 4MB, but this seems to fail; nginx config will block larger images anyway
@@ -878,18 +904,20 @@ async function render(state) { /////////////////////////////////////////
                 FS.rename(files.image.path, `${abs_path}/${clean_name}`, async function (err) { // note that files.image.path includes filename at end
                     if (err) throw err
 
-                    let dims = await getimagesize(`${abs_path}/${clean_name}`)
+                    let addendum = ''
+                    let dims     = await getimagesize(`${abs_path}/${clean_name}`).catch(error => { addendum = `"${error}"` }) // catch if not a valid image
 
-                    if (dims[0] > 600) {
+                    if (dims && (dims[0] > 600)) {
                         await resize_image(`${abs_path}/${clean_name}`, max_dim = 600) // limit max width to 600 px
-                        dims = await getimagesize(`${abs_path}/${clean_name}`)
+                        dims = await getimagesize(`${abs_path}/${clean_name}`)         // get the new reduced image dimensions
+                        addendum = `"<img src='${url_path}/${clean_name}' width='${dims[0]}' height='${dims[1]}' >"`
                     }
 
                     let content = `
                         <html>
                             <script language="javascript" type="text/javascript">
                                 var textarea = parent.document.getElementById('ta')
-                                textarea.value = textarea.value + "<img src='${url_path}/${clean_name}' width='${dims[0]}' height='${dims[1]}' >"
+                                textarea.value = textarea.value + ${addendum}
                             </script>
                         </html>`
 
