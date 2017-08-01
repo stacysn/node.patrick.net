@@ -364,45 +364,48 @@ function segments(path) { // return url path split up as array of cleaned \w str
     return URL.parse(path).path.replace(/\?.*/,'').split('/').map(segment => segment.replace(/\W/g,''))
 }
 
-function limit_image_width(file, max_width = 600) {
+function getimagesize(file) {
+    console.log(`getting size of ${file}`)
+    return new Promise(function(fulfill, reject) {
+        if (require('fs').existsSync(file)) {
 
-    if (require('fs').existsSync(file)) {
+            const { spawn } = require('child_process')
+            const identify  = spawn('identify', ['-format', '%w %h', file]) // identify -format '%w %h' file
 
-        const { spawn } = require('child_process')
-        const identify  = spawn('identify', ['-format', '%w %h', file]) // identify -format '%w %h' file
+            identify.stdout.on('data', data => {
+                let dims = data.toString('utf8').replace(/\n/,'').split(' ') // data is returned as string like '600 328\n'
+                fulfill([dims[0], dims[1]]) // width and height
+            })
 
-        identify.stdout.on('data', data => {
+            identify.stderr.on('data', data => { // remove the file because something is wrong with it
+                reject([null,null])
+                console.log(`stderr from 'identify': ${data}`)
+            })
 
-            let dims   = data.toString('utf8').replace(/\n/,'').split(' ')
-            let width  = dims[0]
-            let height = dims[1]
-            if (width > max_width) resize_image(file, max_width = 600)
-        })
+            identify.on('close', code => {
+                // if code is non-zero, remove the file because something is wrong with it
+                reject([null,null])
+            })
 
-        identify.stderr.on('data', data => { // remove the file because something is wrong with it
-            console.log(`stderr from 'identify': ${data}`)
-        })
-
-        identify.on('close', code => {
-            // if code is non-zero, remove the file because something is wrong with it
-            console.log(`child process exited with code ${code}`)
-        })
-
-    } else console.log(`image not found: ${file}`)
+        } else {
+            console.log(`image not found: ${file}`)
+            reject([null,null])
+        }
+    })
 }
 
 function resize_image(file, max_dim = 600) { // max_dim is maximum dimension in either direction
-    if (require('fs').existsSync(file)) {
-        const { spawn } = require('child_process')
-        const mogrify   = spawn('mogrify', ['-resize', max_dim, file]) // /usr/bin/mogrify -resize $max_dim $file
-
-        console.log(`resized ${file} to max dimension of ${max_dim}`)
-/*
-        $image_attr = getimagesize( $file )
-        $width      = $image_attr[0]
-        $height     = $image_attr[1]
-*/
-    } else console.log(`image not found: ${file}`)
+    return new Promise(function(fulfill, reject) {
+        if (require('fs').existsSync(file)) {
+            const { spawn } = require('child_process')
+            const mogrify   = spawn('mogrify', ['-resize', max_dim, file]) // /usr/bin/mogrify -resize $max_dim $file
+            console.log(`resized ${file} to max dimension of ${max_dim}`)
+            fulfill()
+        } else {
+            console.log(`image not found: ${file}`)
+            reject()
+        }
+    })
 }
 
 async function render(state) { /////////////////////////////////////////
@@ -855,16 +858,22 @@ async function render(state) { /////////////////////////////////////////
 
                 files.image.name.replace(/[^0-9a-z\.]/gi, '') // allow only alphanum and dot in image name to mitigate scripting tricks
 
-                fs.rename(files.image.path, `${datepath}/${files.image.name}`, function (err) {
+                fs.rename(files.image.path, `${datepath}/${files.image.name}`, async function (err) {
                     if (err) throw err
 
-                    limit_image_width(`${datepath}/${files.image.name}`) // limit max width to 600 px
+                    let dims = await getimagesize(`${datepath}/${files.image.name}`)
+                    console.log(`old dims are ${dims}`)
+
+                    if (dims[0] > 600) await resize_image(`${datepath}/${files.image.name}`, max_dim = 600) // limit max width to 600 px
+
+                    let newdims = await getimagesize(`${datepath}/${files.image.name}`)
+                    console.log(`newdims are ${newdims}`)
 
                     let content = `
                         <html>
                             <script language="javascript" type="text/javascript">
                                 var textarea = parent.document.getElementById('ta')
-                                textarea.value = textarea.value + "<img src='${rel_to_root}/${files.image.name}' >"
+                                textarea.value = textarea.value + "<img src='${rel_to_root}/${files.image.name}' width='${newdims[0]}' height='${newdims[1]}' >"
                             </script>
                         </html>`
 
@@ -1008,8 +1017,8 @@ async function render(state) { /////////////////////////////////////////
 
         if (start > 0) {
             ret = ret +
-                `<a href='${post_path(state.post)}?{page}=${maxpage}#comments' title='Jump to first comment' >&laquo; First</a> &nbsp; &nbsp;
-                 <a href='${post_path(state.post)}?{page}=${previouspage}#comments' title='Previous page of comments' >&laquo; Previous</a> &nbsp; &nbsp; `
+                `<a href='${post_path(state.post)}?page=${maxpage}#comments' title='Jump to first comment' >&laquo; First</a> &nbsp; &nbsp;
+                 <a href='${post_path(state.post)}?page=${previouspage}#comments' title='Previous page of comments' >&laquo; Previous</a> &nbsp; &nbsp; `
         }
 
         let s = (state.post.post_comments == 1) ? '' : 's'
@@ -1427,9 +1436,9 @@ async function render(state) { /////////////////////////////////////////
         // This allows permalinks regardless of page number.
 
         let page = 0 // default to first page of comments
+        let c = intval(_GET('c'))
 
-        if (_GET('c')) {
-          var c = intval(_GET('c'))
+        if (c) {
           // Get all the comments, sorted from greatest to least.
           // What page of 40 from the end is our comment in? Start counting with page 0 being the most recent comments.
           let results = await query(`select floor(count(*)/40 - 0.01) as f from comments
