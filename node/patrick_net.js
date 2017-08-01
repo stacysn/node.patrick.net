@@ -3,13 +3,15 @@
 
 try { CONF = require('./conf.json') } catch(e) { console.log(e.message); process.exit(1) } // conf.json is required
 
+CHEERIO     = require('cheerio')         // installed via npm to parse html
 CLUSTER     = require('cluster')
-CHEERIO     = require('cheerio')         // installed via npm
 CRYPTO      = require('crypto')
+FORMIDABLE  = require('formidable')      // installed via npm for image uploading
+FS          = require('fs')
 HTTP        = require('http')
-MOMENT      = require('moment-timezone') // installed via npm
-MYSQL       = require('mysql')           // installed via npm
-NODEMAILER  = require('nodemailer')      // installed via npm
+MOMENT      = require('moment-timezone') // installed via npm for time parsing
+MYSQL       = require('mysql')           // installed via npm to interfact to mysql
+NODEMAILER  = require('nodemailer')      // installed via npm to send emails
 OS          = require('os')
 QUERYSTRING = require('querystring')
 URL         = require('url')
@@ -327,6 +329,20 @@ function brandit(url) { // add ref=[domain name] to a url
     return url
 }
 
+function clean_upload_path(path, filename) {
+
+    filename.replace(/[^\w\.-]/gi, '') // allow only alphanum and dot in image name to mitigate scripting tricks
+
+    /*
+    while (FS.existsSync(`${path}/${filename}`)) { // avoid name collisions so one user cannot overwrite another's image
+        $filename = str_replace( "$number$ext", ++$number . $ext, $filename );
+        if ($number > 10) die("Too many copies of $filename");
+    }
+    */
+
+    return filename
+}
+
 function query(sql, sql_parms, state) {
 
     return new Promise(function(fulfill, reject) {
@@ -366,7 +382,7 @@ function segments(path) { // return url path split up as array of cleaned \w str
 
 function getimagesize(file) {
     return new Promise(function(fulfill, reject) {
-        if (require('fs').existsSync(file)) {
+        if (FS.existsSync(file)) {
 
             const { spawn } = require('child_process')
             const identify  = spawn('identify', ['-format', '%w %h', file]) // identify -format '%w %h' file
@@ -395,7 +411,7 @@ function getimagesize(file) {
 
 function resize_image(file, max_dim = 600) { // max_dim is maximum dimension in either direction
     return new Promise(function(fulfill, reject) {
-        if (require('fs').existsSync(file)) {
+        if (FS.existsSync(file)) {
             const { spawn } = require('child_process')
             const mogrify   = spawn('mogrify', ['-resize', max_dim, file]) // /usr/bin/mogrify -resize $max_dim $file
 
@@ -839,11 +855,9 @@ async function render(state) { /////////////////////////////////////////
 
             if (!state.current_user) return die('you must be logged in to upload images')
 
-            var formidable = require('formidable')
-            var fs         = require('fs')
             var http       = require('http')
 
-            var form = new formidable.IncomingForm()
+            var form = new FORMIDABLE.IncomingForm()
 
             form.maxFieldsSize = 7 * 1024 * 1024 // max upload is 4MB, but this seems to fail; nginx config will block larger images anyway
             form.maxFields = 1                   // only one image at a time
@@ -852,29 +866,30 @@ async function render(state) { /////////////////////////////////////////
             //form.on('progress', function(bytesReceived, bytesExpected) { console.log(`${bytesReceived}, ${bytesExpected}`) })
 
             form.parse(state.req, async function (err, fields, files) {
-                let d = new Date()
-                let mm = ('0' + (d.getMonth() + 1)).slice(-2)
-                let rel_to_root = `/${CONF.upload_dir}/${d.getFullYear()}/${mm}`
-                let datepath = `${CONF.doc_root}${rel_to_root}`
-                if (!fs.existsSync(datepath)) fs.mkdirSync(datepath)
+                let d        = new Date()
+                let mm       = ('0' + (d.getMonth() + 1)).slice(-2)
+                let url_path = `/${CONF.upload_dir}/${d.getFullYear()}/${mm}`
+                let abs_path = `${CONF.doc_root}${url_path}`
 
-                files.image.name.replace(/[^0-9a-z\.]/gi, '') // allow only alphanum and dot in image name to mitigate scripting tricks
+                if (!FS.existsSync(abs_path)) FS.mkdirSync(abs_path)
 
-                fs.rename(files.image.path, `${datepath}/${files.image.name}`, async function (err) {
+                let clean_name = clean_upload_path(abs_path, files.image.name)
+
+                FS.rename(files.image.path, `${abs_path}/${clean_name}`, async function (err) { // note that files.image.path includes filename at end
                     if (err) throw err
 
-                    let dims = await getimagesize(`${datepath}/${files.image.name}`)
+                    let dims = await getimagesize(`${abs_path}/${clean_name}`)
 
                     if (dims[0] > 600) {
-                        await resize_image(`${datepath}/${files.image.name}`, max_dim = 600) // limit max width to 600 px
-                        dims = await getimagesize(`${datepath}/${files.image.name}`)
+                        await resize_image(`${abs_path}/${clean_name}`, max_dim = 600) // limit max width to 600 px
+                        dims = await getimagesize(`${abs_path}/${clean_name}`)
                     }
 
                     let content = `
                         <html>
                             <script language="javascript" type="text/javascript">
                                 var textarea = parent.document.getElementById('ta')
-                                textarea.value = textarea.value + "<img src='${rel_to_root}/${files.image.name}' width='${dims[0]}' height='${dims[1]}' >"
+                                textarea.value = textarea.value + "<img src='${url_path}/${clean_name}' width='${dims[0]}' height='${dims[1]}' >"
                             </script>
                         </html>`
 
