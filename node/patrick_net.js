@@ -365,7 +365,6 @@ function segments(path) { // return url path split up as array of cleaned \w str
 }
 
 function getimagesize(file) {
-    console.log(`getting size of ${file}`)
     return new Promise(function(fulfill, reject) {
         if (require('fs').existsSync(file)) {
 
@@ -384,7 +383,7 @@ function getimagesize(file) {
 
             identify.on('close', code => {
                 // if code is non-zero, remove the file because something is wrong with it
-                reject([null,null])
+                if (code > 0) reject([null,null])
             })
 
         } else {
@@ -399,8 +398,11 @@ function resize_image(file, max_dim = 600) { // max_dim is maximum dimension in 
         if (require('fs').existsSync(file)) {
             const { spawn } = require('child_process')
             const mogrify   = spawn('mogrify', ['-resize', max_dim, file]) // /usr/bin/mogrify -resize $max_dim $file
-            console.log(`resized ${file} to max dimension of ${max_dim}`)
-            fulfill()
+
+            mogrify.on('close', code => {
+                if (code > 0) reject([null,null]) // todo: if code is non-zero, remove the file because something is wrong with it
+                else          fulfill()
+            })
         } else {
             console.log(`image not found: ${file}`)
             reject()
@@ -849,7 +851,7 @@ async function render(state) { /////////////////////////////////////////
             // todo: implement upload progress meter with this
             //form.on('progress', function(bytesReceived, bytesExpected) { console.log(`${bytesReceived}, ${bytesExpected}`) })
 
-            form.parse(state.req, function (err, fields, files) {
+            form.parse(state.req, async function (err, fields, files) {
                 let d = new Date()
                 let mm = ('0' + (d.getMonth() + 1)).slice(-2)
                 let rel_to_root = `/${CONF.upload_dir}/${d.getFullYear()}/${mm}`
@@ -862,18 +864,17 @@ async function render(state) { /////////////////////////////////////////
                     if (err) throw err
 
                     let dims = await getimagesize(`${datepath}/${files.image.name}`)
-                    console.log(`old dims are ${dims}`)
 
-                    if (dims[0] > 600) await resize_image(`${datepath}/${files.image.name}`, max_dim = 600) // limit max width to 600 px
-
-                    let newdims = await getimagesize(`${datepath}/${files.image.name}`)
-                    console.log(`newdims are ${newdims}`)
+                    if (dims[0] > 600) {
+                        await resize_image(`${datepath}/${files.image.name}`, max_dim = 600) // limit max width to 600 px
+                        dims = await getimagesize(`${datepath}/${files.image.name}`)
+                    }
 
                     let content = `
                         <html>
                             <script language="javascript" type="text/javascript">
                                 var textarea = parent.document.getElementById('ta')
-                                textarea.value = textarea.value + "<img src='${rel_to_root}/${files.image.name}' width='${newdims[0]}' height='${newdims[1]}' >"
+                                textarea.value = textarea.value + "<img src='${rel_to_root}/${files.image.name}' width='${dims[0]}' height='${dims[1]}' >"
                             </script>
                         </html>`
 
