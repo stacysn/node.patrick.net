@@ -343,8 +343,6 @@ function clean_upload_path(path, filename) {
     if (filename.length > 128 ) filename = md5(filename) + ext // filename was too long to be backed up, so hash it to shorten it
 
     /*
-
-    $ud = upload_dir();
     $number = '';
     while (FS.existsSync(`${path}/${filename}`)) { // avoid name collisions so one user cannot overwrite another's image
         $filename = str_replace( "$number$ext", ++$number . $ext, $filename );
@@ -366,8 +364,6 @@ function clean_upload_path(path, filename) {
 
     $stat = stat(dirname($newname));
     @chmod($newname, $stat['mode'] & 0000666);
-
-    return $newname;
     */
 
     return filename
@@ -423,14 +419,17 @@ function getimagesize(file) {
             })
 
             identify.stderr.on('data', data => { // remove the file because something is wrong with it
+                FS.unlinkSync(file)
                 console.log(`stderr from 'identify': ${data}`)
                 reject('invalid image')
             })
 
             identify.on('close', code => {
-                // if code is non-zero, remove the file because something is wrong with it
-                console.log(`code from 'identify': ${code}`)
-                if (code > 0) reject('invalid image')
+                if (code > 0) { // if code is non-zero, remove the file because something is wrong with it
+                    console.log(`code from 'identify': ${code}`)
+                    FS.unlinkSync(file)
+                    reject('invalid image')
+                }
             })
 
         } else reject(`image not found: ${file}`)
@@ -907,9 +906,11 @@ async function render(state) { /////////////////////////////////////////
                     let addendum = ''
                     let dims     = await getimagesize(`${abs_path}/${clean_name}`).catch(error => { addendum = `"${error}"` }) // catch if not a valid image
 
-                    if (dims && (dims[0] > 600)) {
-                        await resize_image(`${abs_path}/${clean_name}`, max_dim = 600) // limit max width to 600 px
-                        dims = await getimagesize(`${abs_path}/${clean_name}`)         // get the new reduced image dimensions
+                    if (dims) {
+                        if (dims[0] > 600) {
+                            await resize_image(`${abs_path}/${clean_name}`, max_dim = 600) // limit max width to 600 px
+                            dims = await getimagesize(`${abs_path}/${clean_name}`)         // get the new reduced image dimensions
+                        }
                         addendum = `"<img src='${url_path}/${clean_name}' width='${dims[0]}' height='${dims[1]}' >"`
                     }
 
