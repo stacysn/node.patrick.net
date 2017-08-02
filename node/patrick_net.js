@@ -330,45 +330,6 @@ function brandit(url) { // add ref=[domain name] to a url
     return url
 }
 
-function clean_upload_path(path, filename) {
-
-	// allow only alphanum, dot, dash in image name to mitigate scripting tricks
-    // always lowercase upload names so we don't get collisions on stupid case-insensitive Mac fs between "This.jpg" and "this.jpg", for example
-    filename = filename.replace(/[^\w\.-]/gi, '').toLowerCase()
-
-    let ext     = null
-    let matches = null
-	if (matches = filename.match(/(\.\w{3,4})$/)) ext = matches[1] // include the dot, like .png
-
-    if (filename.length > 128 ) filename = md5(filename) + ext // filename was too long to be backed up, so hash it to shorten it
-
-    /*
-    $number = '';
-    while (FS.existsSync(`${path}/${filename}`)) { // avoid name collisions so one user cannot overwrite another's image
-        $filename = str_replace( "$number$ext", ++$number . $ext, $filename );
-        if ($number > 10) die("Too many copies of $filename");
-    }
-
-
-    // Move the file to the uploads dir
-    $newname = "$ud/$filename";
-    if (false === rename($oldname, $newname)) die("File $oldname could not be moved to $newname");
-
-    if (preg_match( '/\.(jpg|jpeg)$/i' , $newname, $matches) && file_exists('/usr/bin/jpegoptim') ) {
-        $output = shell_exec("/usr/bin/jpegoptim $newname 2>&1");  // minimize size of new jpeg
-    }
-
-    if (preg_match( '/\.(png)$/i' , $newname, $matches) && file_exists('/usr/bin/optipng') ) {
-        $output = shell_exec("/usr/bin/optipng $newname 2>&1");  // minimize size of new png
-    }
-
-    $stat = stat(dirname($newname));
-    @chmod($newname, $stat['mode'] & 0000666);
-    */
-
-    return filename
-}
-
 function query(sql, sql_parms, state) {
 
     return new Promise(function(fulfill, reject) {
@@ -1001,6 +962,35 @@ async function render(state) { /////////////////////////////////////////
                 ${ state.header_data.posts.toLocaleString('en') } posts by
                 <a href='/users'>${ state.header_data.tot.toLocaleString('en') } registered users</a>,
                 ${ state.header_data.onlines.length } online now: ${ online_list }`
+    }
+
+    function clean_upload_path(path, filename) {
+
+        // allow only alphanum, dot, dash in image name to mitigate scripting tricks
+        // always lowercase upload names so we don't get collisions on stupid case-insensitive Mac fs between "This.jpg" and "this.jpg", for example
+        filename = filename.replace(/[^\w\.-]/gi, '').toLowerCase()
+
+        let ext     = null
+        let matches = null
+        if (matches = filename.match(/(\.\w{3,4})$/)) ext = matches[1] // include the dot, like .png
+
+        if (filename.length > 128 ) filename = md5(filename) + ext // filename was too long to be backed up, so hash it to shorten it
+
+        // prepend user_id to image so that we know who uploaded it, and so that other users cannot overwrite it
+        filename = `${state.current_user.user_id}_${filename}`
+
+        /*
+
+        if (preg_match( '/\.(jpg|jpeg)$/i' , $newname, $matches) && file_exists('/usr/bin/jpegoptim') ) {
+            $output = shell_exec("/usr/bin/jpegoptim $newname 2>&1");  // minimize size of new jpeg
+        }
+
+        if (preg_match( '/\.(png)$/i' , $newname, $matches) && file_exists('/usr/bin/optipng') ) {
+            $output = shell_exec("/usr/bin/optipng $newname 2>&1");  // minimize size of new png
+        }
+        */
+
+        return filename
     }
 
     function comment(c) {
