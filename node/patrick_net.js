@@ -461,8 +461,9 @@ async function render(state) { /////////////////////////////////////////
             let post_id    = intval(_GET('post_id'))
 
             if (comment_id && post_id) {
-                // delete comment only if current user is comment_author
-                await query('delete from comments where comment_id = ? and comment_author = ?', [comment_id, state.current_user.user_id], state)
+                // delete comment only if current user is comment_author or admin (user 1)
+                await query('delete from comments where comment_id = ? and (comment_author = ? or 1 = ?)',
+						    [comment_id, state.current_user.user_id, state.current_user.user_id], state)
                 await query('update posts set post_comments=(select count(*) from comments where comment_post_id=?) where post_id = ?',
                             [post_id, post_id], state)
                             // we select the count(*) from comments to make the comment counts self-correcting in case they get off somehow
@@ -1000,32 +1001,14 @@ async function render(state) { /////////////////////////////////////////
 
         if (state.current_user) {
             let nonce_parms = create_nonce_parms()
-            var del   = state.current_user.user_id == c.comment_author ?
-                `<a href='#' onclick="$.get('/delete_comment?comment_id=${ c.comment_id }&post_id=${ c.comment_post_id }&${ nonce_parms }', function() { $('#comment-${ c.comment_id }').remove() });return false">delete</a>` : ''
+            var del = (state.current_user.user_id == c.comment_author || state.current_user.user_id == 1) ?
+                `<a href='#' onclick="if (confirm('Really delete?')) { $.get('/delete_comment?comment_id=${ c.comment_id }&post_id=${ c.comment_post_id }&${ nonce_parms }', function() { $('#comment-${ c.comment_id }').remove() }); return false}">delete</a>` : ''
         }
 
-        return `<div class="comment" id="comment-${ c.comment_id }" >${n} ${u} ${ format_date(c.comment_date) } ${ del }<br>${ c.comment_content }</div>`
+        let img = user_icon(c, 0.4, `'align='left' hspace='5' vspace='2'`) // scale image down
+        let datelink = `<a href='/post/${c.comment_post_id}/?c=${c.comment_id}#comment-${c.comment_id}' title='permalink' >${format_date(c.comment_date)}</a>`
+
 /*
-
-    $s  = "<div class='comment' id='comment-$comment->comment_id' >";
-    $s .= "$num &nbsp; ";
-
-
-    $n = get_userrow($comment->comment_author)->user_name;
-
-    $formatted_date = zdate($comment->comment_date);
-
-
-    if (get_post($post_id)->post_private)
-        $s .= icon($comment->comment_author, 0.5) . ' ' . user_realname($comment->comment_author) . ' &nbsp; ';
-    else
-        $s .= icon($comment->comment_author, 0.5) . ' ' . name_posts($comment->comment_author) . ' &nbsp; '; // removed icons for now! xxxxx
-
-    $s .= "<a href='". post_id2path($comment->comment_post_id) ."?c=$comment->comment_id#comment-$comment->comment_id' title='permalink' >$formatted_date</a> &nbsp;";
-
-    //$s .= show_civility($comment->comment_author); // xxxxxx
-
-    $s .= ' &nbsp; ';
 
     $comment_likes    = $comment->comment_likes    ? "($comment->comment_likes)"    : "";
     $comment_dislikes = $comment->comment_dislikes ? "($comment->comment_dislikes)" : "";
@@ -1072,7 +1055,6 @@ async function render(state) { /////////////////////////////////////////
         $s .= " <a href='/edit_comment.php?action=editcomment&c=$comment->comment_id'>edit</a> &nbsp; ";
 
     if ($current_user->user_level == 4) { // only admin can delete comments
-
         $ts = time();
         $nonce=get_nonce($ts);
         $nonce_parms = "ts=$ts&nonce=$nonce";
@@ -1080,17 +1062,11 @@ async function render(state) { /////////////////////////////////////////
         $confirm_del = 'onClick="javascript:return confirm(\'Really delete?\')"';
         $s .= " <a href='/delete_comment.php?comment_id=$comment->comment_id&$nonce_parms' $confirm_del >delete</a> &nbsp; ";
     }
-
-    $share_link  = urlencode('https://patrick.net' . post_id2path($post_id) . "?c=$comment->comment_id#comment-$comment->comment_id");
-    $s .= "<a href='mailto:?subject=Patrick.net comment&body=$share_link' title='email this' ><img src='/images/mailicon.jpg' width=15 height=12 ></a> &nbsp;";
-
-    $s .= "<p><div id='comment-$comment->comment_id-text' >$comment->comment_content</div></div><p>";
-
-    return "<font size=-1>$s</font>";
-    //return "$s";
-}
-
 */
+        let share_link = encodeURI(`https://patrick.net/post/${c.comment_post_id}/?c=${c.comment_id}#comment-${c.comment_id}`)
+        let mailto = `<a href='mailto:?subject=Patrick.net comment&body=${share_link}' title='email this' ><img src='/images/mailicon.jpg' width=15 height=12 ></a>`
+        return `<div class="comment" id="comment-${ c.comment_id }" ><font size=-1>${n} ${img} ${u} &nbsp; ${datelink} &nbsp; ${mailto} &nbsp; ${ del }</font><br>
+                ${ c.comment_content }</div>`
     }
 
     function comment_box() {
