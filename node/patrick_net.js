@@ -431,18 +431,20 @@ async function render(state) { /////////////////////////////////////////
 
         accept_post : async function() {
 
+            if (!state.current_user) return send_html(200, '') // do nothing if not logged in
+
             await collect_post_data(state)
 
             post_data               = state.post_data
             post_data.post_content  = strip_tags(post_data.post_content) // remove all but a small set of allowed html tags
-            post_data.post_author   = state.current_user.user_id ? state.current_user.user_id : 0
             post_data.post_approved = 1 // todo: create a function to check content before approving!
 
-            if (intval(post_data.post_id)) {
+            if (intval(post_data.post_id)) { // editing old post
                 await query('update posts set ?, post_modified=now() where post_id=?', [post_data, intval(post_data.post_id)], state)
                 var p = intval(post_data.post_id)
             }
-            else {
+            else { // new post
+                post_data.post_author = state.current_user.user_id
                 var results = await query('insert into posts set ?, post_modified=now()', post_data, state)
                 var p = results.insertId
             }
@@ -500,10 +502,10 @@ async function render(state) { /////////////////////////////////////////
 
             var results = await query(`select * from posts left join users on user_id=post_author where post_id=?`, [post_id], state)
 
-            state.post = results[0]
-
-            if (0 == results.length) return send_html(404, `No post with id "${post_id}"`)
+            if (!results.length) return send_html(404, `No post with id "${post_id}"`)
             else {
+                state.post = results[0]
+
                 let content = html(
                     midpage(
                         post_form()
@@ -579,7 +581,7 @@ async function render(state) { /////////////////////////////////////////
 
                 state.comment = results[0]
 
-                send_html(200, comment(state.comment)) // send html right away, before updating users and posts tables
+                send_html(200, format_comment(state.comment)) // send html right away, before updating users and posts tables
 
                 await query('update users set user_last_comment_ip = ? where user_id = ?', [state.ip, state.current_user.user_id], state)
                 await query('update posts set post_modified = ?, post_comments=(select count(*) from comments where comment_post_id=?) where post_id = ?',
@@ -993,7 +995,7 @@ async function render(state) { /////////////////////////////////////////
         return filename
     }
 
-    function comment(c) {
+    function format_comment(c, n=0) {
         var u = c.user_name ? `<a href='/user/${c.user_name}'>${c.user_name}</a>` : 'anonymous'
 
         if (state.current_user) {
@@ -1002,7 +1004,93 @@ async function render(state) { /////////////////////////////////////////
                 `<a href='#' onclick="$.get('/delete_comment?comment_id=${ c.comment_id }&post_id=${ c.comment_post_id }&${ nonce_parms }', function() { $('#comment-${ c.comment_id }').remove() });return false">delete</a>` : ''
         }
 
-        return `<div class="comment" id="comment-${ c.comment_id }" >${ u } ${ format_date(c.comment_date) } ${ del }<br>${ c.comment_content }</div>`
+        return `<div class="comment" id="comment-${ c.comment_id }" >${n} ${u} ${ format_date(c.comment_date) } ${ del }<br>${ c.comment_content }</div>`
+/*
+
+    $s  = "<div class='comment' id='comment-$comment->comment_id' >";
+    $s .= "$num &nbsp; ";
+
+
+    $n = get_userrow($comment->comment_author)->user_name;
+
+    $formatted_date = zdate($comment->comment_date);
+
+
+    if (get_post($post_id)->post_private)
+        $s .= icon($comment->comment_author, 0.5) . ' ' . user_realname($comment->comment_author) . ' &nbsp; ';
+    else
+        $s .= icon($comment->comment_author, 0.5) . ' ' . name_posts($comment->comment_author) . ' &nbsp; '; // removed icons for now! xxxxx
+
+    $s .= "<a href='". post_id2path($comment->comment_post_id) ."?c=$comment->comment_id#comment-$comment->comment_id' title='permalink' >$formatted_date</a> &nbsp;";
+
+    //$s .= show_civility($comment->comment_author); // xxxxxx
+
+    $s .= ' &nbsp; ';
+
+    $comment_likes    = $comment->comment_likes    ? "($comment->comment_likes)"    : "";
+    $comment_dislikes = $comment->comment_dislikes ? "($comment->comment_dislikes)" : "";
+
+    if (is_user_logged_in()) {
+
+        $liketext    = $upvoted   ? 'you like this'    : '&#8593;&nbsp;like';
+        $disliketext = $downvoted ? 'you dislike this' : '&#8595;&nbsp;dislike';
+
+        $s .= "<a HREF='#' id='like_$comment->comment_id' onclick=\"like('like_$comment->comment_id');return false\">$liketext $comment_likes</A> &nbsp; ";
+
+        $s .= "<a HREF='#' id='dislike_$comment->comment_id' onclick=\"dislike('dislike_$comment->comment_id');return false\">$disliketext $comment_dislikes</A> &nbsp; ";
+
+
+        if (preg_match('/jail/', $_SERVER['REQUEST_URI']) and (1 == $current_user->user_id)) {
+
+        if (preg_match('/jail/', $_SERVER['REQUEST_URI']) and (1 == $current_user->user_id)) {
+            $s .= " <a href='/liberate.php?comment_id=$comment->comment_id' >liberate</a> &nbsp; ";
+        }
+        elseif ($post_id and $current_user->user_pbias >= 3) {
+            if (!get_post($post_id)->post_private) {
+                $ts = time();
+                $nonce=get_nonce($ts);
+                $nonce_parms = "ts=$ts&nonce=$nonce";
+
+                $confirm_adhom = 'onClick="javascript:return confirm(\'Really mark as uncivil?\')"';
+                $s .= " <a href='/uncivil.php?comment_id=$comment->comment_id&$nonce_parms' $confirm_adhom title='attacks person, not point' >uncivil</a> &nbsp; ";
+            }
+        }
+
+    }
+    else { // not logged in. assume not registered, put link to reg page.
+        $s .= "<a HREF='/login.php?action=registerform'>&#8593;&nbsp;like $comment_likes</A> &nbsp; ";
+        $s .= "<a HREF='/login.php?action=registerform'>&#8595;&nbsp;dislike $comment_dislikes</A> &nbsp; ";
+    }
+
+    if ($post_id) {
+        $commenter = get_userrow($comment->comment_author);
+        $s .= "<a href=\"#commentform\" onclick=\"addquote('$comment->comment_post_id', '$comment->comment_id', '$commenter->user_name'); return false;\" title=\"Select some text then click this to quote\" >quote</a> &nbsp; ";
+        // xxxxxx
+    }
+
+    if ( ($current_user->user_id == $comment->comment_author) or ($current_user->user_level == 4) )
+        $s .= " <a href='/edit_comment.php?action=editcomment&c=$comment->comment_id'>edit</a> &nbsp; ";
+
+    if ($current_user->user_level == 4) { // only admin can delete comments
+
+        $ts = time();
+        $nonce=get_nonce($ts);
+        $nonce_parms = "ts=$ts&nonce=$nonce";
+
+        $confirm_del = 'onClick="javascript:return confirm(\'Really delete?\')"';
+        $s .= " <a href='/delete_comment.php?comment_id=$comment->comment_id&$nonce_parms' $confirm_del >delete</a> &nbsp; ";
+    }
+
+    $share_link  = urlencode('https://patrick.net' . post_id2path($post_id) . "?c=$comment->comment_id#comment-$comment->comment_id");
+    $s .= "<a href='mailto:?subject=Patrick.net comment&body=$share_link' title='email this' ><img src='/images/mailicon.jpg' width=15 height=12 ></a> &nbsp;";
+
+    $s .= "<p><div id='comment-$comment->comment_id-text' >$comment->comment_content</div></div><p>";
+
+    return "<font size=-1>$s</font>";
+    //return "$s";
+}
+
+*/
     }
 
     function comment_box() {
@@ -1026,8 +1114,9 @@ async function render(state) { /////////////////////////////////////////
 
     function comment_list() {
         if (state.comments) {
-            var formatted = state.comments.map( (item) => {
-                return comment(item)
+			let n = 0
+            let formatted = state.comments.map( (item) => {
+                return format_comment(item, ++n)
             })
 
             return formatted.join('')
@@ -1417,8 +1506,8 @@ async function render(state) { /////////////////////////////////////////
 
             if (!state.post.post_title.match(/thunderdome/)) {
 
-                let confirm_adhom = `onClick="javascript:return confirm('Really mark as ad hominem?')"`
-                adhom = ` &nbsp; <a href='/adhominem?post_id=${state.post.post_id}&${nonce_parms}' ${confirm_adhom} title='attacks person, not point' >ad hominem</a> &nbsp;` 
+                let confirm_adhom = `onClick="javascript:return confirm('Really mark as uncivil?')"`
+                adhom = ` &nbsp; <a href='/uncivil?post_id=${state.post.post_id}&${nonce_parms}' ${confirm_adhom} title='attacks person, not point' >uncivil</a> &nbsp;` 
             }
         }
 
