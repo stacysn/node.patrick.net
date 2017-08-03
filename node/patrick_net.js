@@ -241,7 +241,7 @@ function first_words(string, num) {
 }
 
 function text2hashtag(text) { // given some text, pull out first hashtag as link
-	let matches = null
+    let matches = null
     if (matches = text.match(/[\s>]#(\w{1,32})/)) return `in <a href='/topic/${matches[1]}'>#${matches[1]}</a>`
     else                                          return ''
 }
@@ -429,9 +429,9 @@ async function render(state) { /////////////////////////////////////////
             send_html(200, content)
         },
 
-        accept_comment : async function() { // insert new comment or update old comment
+        accept_comment : async function() { // insert new comment
 
-            if (!valid_nonce()) { // do not die, because that will return a whole html page into the midpage slot
+            if (!valid_nonce()) { // do not die, because that will return a whole html page to be appended into the #newcomment slot
                 state.message = 'invalid nonce'
                 return send_html(200, popup())
             }
@@ -451,7 +451,6 @@ async function render(state) { /////////////////////////////////////////
                 return send_html(200, popup())
             }
             else {
-
                 post_data.comment_author   = state.current_user ? state.current_user.user_id : 0
                 post_data.comment_content  = strip_tags(post_data.comment_content.linkify()) // linkify, imagify, etc, stripping non-approved tags
                 post_data.comment_dislikes = 0
@@ -459,29 +458,54 @@ async function render(state) { /////////////////////////////////////////
                 post_data.comment_approved = 1
                 post_data.comment_date     = new Date().toISOString().slice(0, 19).replace('T', ' ') // mysql datetime format
  
-                if (post_data.comment_post_id) {
-                    var insert_result = await query('insert into comments set ?', post_data, state)
-                    var comment_id = insert_result.insertId
-                }
-                else if (post_data.comment_id) {
-                    var comment_id = post_data.comment_id
-                    await query('update comments set ? where comment_id = ?', [post_data, comment_id], state)
-                }
-                else die('need either a comment_post_id or a comment_id to use accept_comment')
+                const insert_result = await query('insert into comments set ?', post_data, state)
+                const comment_id = insert_result.insertId
 
                 // now select the inserted row so that we pick up the comment_date time and user data for displaying the comment
-                results = await query('select * from comments left join users on comment_author=user_id where comment_id = ?',
-                                      [comment_id], state)
+                results = await query('select * from comments left join users on comment_author=user_id where comment_id = ?', [comment_id], state)
 
                 state.comment = results[0]
 
-                if (post_data.comment_post_id) send_html(200, format_comment(state.comment)) // send html fragment
-                else                           redirect(`/post/${}?c=${c}#comment-${c}`)
+                send_html(200, format_comment(state.comment)) // send html fragment
 
                 await query('update users set user_last_comment_ip = ? where user_id = ?', [state.ip, state.current_user.user_id], state)
                 await query('update posts set post_modified = ?, post_comments=(select count(*) from comments where comment_post_id=?) where post_id = ?',
                             [post_data.comment_date, post_data.comment_post_id, post_data.comment_post_id], state)
                             // we select the count(*) from comments to make the comment counts self-correcting in case they get off somehow
+            }
+        },
+
+        accept_edited_comment : async function() { // update old comment
+
+            if (!valid_nonce()) return die('invalid nonce')
+
+            await collect_post_data(state)
+            const post_data = state.post_data
+
+            if (!post_data.comment_content) return die('please go back and enter some content')
+
+            // rate limit by user's ip address
+            var results = await query('select (unix_timestamp(now()) - unix_timestamp(user_last_comment_time)) as ago from users where user_last_comment_time is not null and user_last_comment_ip = ? order by user_last_comment_time desc limit 1',
+                [state.ip], state)
+
+            if (results.length && results[0].ago < 2) { // this ip already commented less than two seconds ago
+                return die('You are posting comments too quickly! Please slow down')
+            }
+            else {
+                post_data.comment_content  = strip_tags(post_data.comment_content.linkify()) // linkify, imagify, etc, stripping non-approved tags
+                post_data.comment_dislikes = 0
+                post_data.comment_likes    = 0
+                post_data.comment_approved = 1
+ 
+                const comment_id = post_data.comment_id
+                await query('update comments set ? where comment_id = ? and (comment_author = ? or 1 = ?)',
+                            [post_data, comment_id, state.current_user.user_id, state.current_user.user_id], state)
+
+                // now select the inserted row so that we pick up the comment_post_id
+                results = await query('select * from comments where comment_id = ?', [comment_id], state)
+                state.comment = results[0]
+
+                redirect(`/post/${state.comment.comment_post_id}?c=${comment_id}#comment-${comment_id}`)
             }
         },
 
@@ -519,7 +543,7 @@ async function render(state) { /////////////////////////////////////////
             if (comment_id && post_id) {
                 // delete comment only if current user is comment_author or admin (user 1)
                 await query('delete from comments where comment_id = ? and (comment_author = ? or 1 = ?)',
-						    [comment_id, state.current_user.user_id, state.current_user.user_id], state)
+                            [comment_id, state.current_user.user_id, state.current_user.user_id], state)
                 await query('update posts set post_comments=(select count(*) from comments where comment_post_id=?) where post_id = ?',
                             [post_id, post_id], state)
                             // we select the count(*) from comments to make the comment counts self-correcting in case they get off somehow
@@ -561,12 +585,10 @@ async function render(state) { /////////////////////////////////////////
             if (!results.length) return send_html(404, `No comment with id "${comment_id}"`)
             else {
                 state.comment = results[0]
-                state.message = 'edit comment'
 
                 let content = html(
                     midpage(
-                        h1(),
-                        comment_box()
+                        comment_edit_box()
                     )
                 )
 
@@ -1096,27 +1118,16 @@ async function render(state) { /////////////////////////////////////////
         </font><br>${ c.comment_content }</div>`
     }
 
-    function comment_box() {
-
-        let nonce_parms = create_nonce_parms()
-
-        if (_GET('c')) { // editing existing comment
-            let comment_id = intval(_GET('c'))
-            var content = state.comment.comment_content
-            var hidden = `<input type='hidden' name='comment_id' value='${comment_id}' />`
-        } else { // new comment, just give post_id
-            var content = ''
-            var hidden = `<input type='hidden' name='comment_post_id' value='${state.post.post_id}' />`
-        }
+    function comment_box() { // add new comment, just updates page without reload
 
         return `
         <div  id='newcomment' ></div>
         ${state.current_user ? upload_form() : ''}
         <form id='commentform' >
-            <textarea id='ta' name='comment_content' class='form-control' rows='10' placeholder='write a comment...' >${content}</textarea><p>
-            ${hidden}
+            <textarea id='ta' name='comment_content' class='form-control' rows='10' placeholder='write a comment...' ></textarea><p>
+            <input type='hidden' name='comment_post_id' value='${state.post.post_id}' />
             <button class='btn btn-success btn-sm'
-                onclick="$.post('/accept_comment?${nonce_parms}', $('#commentform').serialize()).done(function(data) {
+                onclick="$.post('/accept_comment?${create_nonce_parms()}', $('#commentform').serialize()).done(function(data) {
                     if (data) $('#newcomment').append(data)
                     document.getElementById('commentform').reset() // clear the textbox
                 })
@@ -1124,9 +1135,24 @@ async function render(state) { /////////////////////////////////////////
         </form>`
     }
 
+    function comment_edit_box() { // edit existing comment, redirect back to whole post page
+
+        const comment_id = intval(_GET('c'))
+
+        return `
+        <h1>edit comment</h1>
+        ${state.current_user ? upload_form() : ''}
+        <form id='commentform' action='/accept_edited_comment?${create_nonce_parms()}' method='post' >
+            <textarea id='ta' name='comment_content' class='form-control' rows='10' placeholder='write a comment...' >${state.comment.comment_content}</textarea><p>
+            <input type='hidden' name='comment_id' value='${comment_id}' />
+            <button type='submit' id='submit' class='btn btn-success btn-sm'>submit</button>
+        </form>
+        <script type="text/javascript">document.getElementById('ta').focus();</script>`
+    }
+
     function comment_list() {
         if (state.comments) {
-			let n = 0
+            let n = 0
             let formatted = state.comments.map( (item) => {
                 return format_comment(item, ++n)
             })
