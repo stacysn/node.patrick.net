@@ -1,7 +1,7 @@
 Diversity destroys community.
 
 All academic studies of the diversity have shown the same result: the more diverse a community, the less mutual trust, mutual understanding, and civic
-engagement there is, because there is no longer any sense of shared purpose or values, or a shared past. Measures of selfishness, lonliness, and
+engagement there is, because there is no longer any sense of shared purpose or values, or a shared past. Measures of selfishness, loneliness, and
 meaninglessness all increase with diversity.
 
 http://www.amerika.org/politics/diversity-sabotages-community/
