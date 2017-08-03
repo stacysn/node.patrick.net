@@ -1809,7 +1809,7 @@ async function render(state) { /////////////////////////////////////////
 
         // if post_modified > last time they viewed this post, then give them a link to earliest unread comment
         let last_viewed = Date.parse(last_view) / 1000
-        let modified        = Date.parse(post.post_modified) / 1000
+        let modified    = Date.parse(post.post_modified) / 1000
 
         if (modified > last_viewed) {
 
@@ -1869,6 +1869,9 @@ async function render(state) { /////////////////////////////////////////
     }
 
     function valid_nonce() {
+
+        if (intval(_GET('ts')) < (Date.now() - 3600000)) return false // don't accept timestamps older than an hour
+
         if (get_nonce(_GET('ts')) == _GET('nonce')) return true
         else                                        return false
     }
