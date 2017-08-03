@@ -429,7 +429,63 @@ async function render(state) { /////////////////////////////////////////
             send_html(200, content)
         },
 
-        accept_post : async function() {
+        accept_comment : async function() { // insert new comment or update old comment
+
+            if (!valid_nonce()) { // do not die, because that will return a whole html page into the midpage slot
+                state.message = 'invalid nonce'
+                return send_html(200, popup())
+            }
+
+            await collect_post_data(state)
+
+            post_data = state.post_data
+
+            if (!post_data.comment_content) return send_html(200, '') // empty comment
+
+            // rate limit by user's ip address
+            var results = await query('select (unix_timestamp(now()) - unix_timestamp(user_last_comment_time)) as ago from users where user_last_comment_time is not null and user_last_comment_ip = ? order by user_last_comment_time desc limit 1',
+                [state.ip], state)
+
+            if (results.length && results[0].ago < 2) { // this ip already commented less than two seconds ago
+                state.message = 'You are posting comments too quickly! Please slow down'
+                return send_html(200, popup())
+            }
+            else {
+
+                post_data.comment_author   = state.current_user ? state.current_user.user_id : 0
+                post_data.comment_content  = strip_tags(post_data.comment_content.linkify()) // linkify, imagify, etc, stripping non-approved tags
+                post_data.comment_dislikes = 0
+                post_data.comment_likes    = 0
+                post_data.comment_approved = 1
+                post_data.comment_date     = new Date().toISOString().slice(0, 19).replace('T', ' ') // mysql datetime format
+ 
+                if (post_data.comment_post_id) {
+                    var insert_result = await query('insert into comments set ?', post_data, state)
+                    var comment_id = insert_result.insertId
+                }
+                else if (post_data.comment_id) {
+                    var comment_id = post_data.comment_id
+                    await query('update comments set ? where comment_id = ?', [post_data, comment_id], state)
+                }
+                else die('need either a comment_post_id or a comment_id to use accept_comment')
+
+                // now select the inserted row so that we pick up the comment_date time and user data for displaying the comment
+                results = await query('select * from comments left join users on comment_author=user_id where comment_id = ?',
+                                      [comment_id], state)
+
+                state.comment = results[0]
+
+                if (post_data.comment_post_id) send_html(200, format_comment(state.comment)) // send html fragment
+                else                           redirect(`/post/${}?c=${c}#comment-${c}`)
+
+                await query('update users set user_last_comment_ip = ? where user_id = ?', [state.ip, state.current_user.user_id], state)
+                await query('update posts set post_modified = ?, post_comments=(select count(*) from comments where comment_post_id=?) where post_id = ?',
+                            [post_data.comment_date, post_data.comment_post_id, post_data.comment_post_id], state)
+                            // we select the count(*) from comments to make the comment counts self-correcting in case they get off somehow
+            }
+        },
+
+        accept_post : async function() { // insert new post or update old post
 
             if (!state.current_user) return send_html(200, '') // do nothing if not logged in
 
@@ -495,13 +551,35 @@ async function render(state) { /////////////////////////////////////////
             else return die('need a post_id')
         },
 
+        edit_comment : async function () {
+
+            if (!valid_nonce()) return die('invalid nonce')
+
+            let comment_id = intval(_GET('c'))
+            let results = await query(`select * from comments left join users on user_id=comment_author where comment_id=?`, [comment_id], state)
+
+            if (!results.length) return send_html(404, `No comment with id "${comment_id}"`)
+            else {
+                state.comment = results[0]
+                state.message = 'edit comment'
+
+                let content = html(
+                    midpage(
+                        h1(),
+                        comment_box()
+                    )
+                )
+
+                send_html(200, content)
+            }
+        },
+
         edit_post : async function () {
 
             if (!valid_nonce()) return die('invalid nonce')
 
-            let post_id = intval(_GET('p')) // get post's db row number from url, eg 47 from /post/47/slug-goes-here
-
-            var results = await query(`select * from posts left join users on user_id=post_author where post_id=?`, [post_id], state)
+            let post_id = intval(_GET('p'))
+            let results = await query(`select * from posts left join users on user_id=post_author where post_id=?`, [post_id], state)
 
             if (!results.length) return send_html(404, `No post with id "${post_id}"`)
             else {
@@ -542,53 +620,6 @@ async function render(state) { /////////////////////////////////////////
             )
 
             send_html(200, content)
-        },
-
-        insert_comment : async function() {
-
-            if (!valid_nonce()) { // do not die, because that will return a whole html page into the midpage slot
-                state.message = 'invalid nonce'
-                return send_html(200, popup())
-            }
-
-            await collect_post_data(state)
-
-            post_data = state.post_data
-
-            if (!post_data.comment_content) return send_html(200, '') // empty comment
-
-            // rate limit by user's ip address
-            var results = await query('select (unix_timestamp(now()) - unix_timestamp(user_last_comment_time)) as ago from users where user_last_comment_time is not null and user_last_comment_ip = ? order by user_last_comment_time desc limit 1',
-                [state.ip], state)
-
-            if (results.length && results[0].ago < 2) { // this ip already commented less than two seconds ago
-                state.message = 'You are posting comments too quickly! Please slow down'
-                return send_html(200, popup())
-            }
-            else {
-
-                post_data.comment_author   = state.current_user ? state.current_user.user_id : 0
-                post_data.comment_content  = strip_tags(post_data.comment_content.linkify()) // linkify, imagify, etc, stripping non-approved tags
-                post_data.comment_dislikes = 0
-                post_data.comment_likes    = 0
-                post_data.comment_approved = 1
-                post_data.comment_date     = new Date().toISOString().slice(0, 19).replace('T', ' ') // mysql datetime format
-
-                var insert_result = await query('insert into comments set ?', post_data, state)
-
-                // now select the inserted row so that we pick up the comment_date time and user data for displaying the comment
-                results = await query('select * from comments left join users on comment_author=user_id where comment_id = ?',
-                                      [insert_result.insertId], state)
-
-                state.comment = results[0]
-
-                send_html(200, format_comment(state.comment)) // send html right away, before updating users and posts tables
-
-                await query('update users set user_last_comment_ip = ? where user_id = ?', [state.ip, state.current_user.user_id], state)
-                await query('update posts set post_modified = ?, post_comments=(select count(*) from comments where comment_post_id=?) where post_id = ?',
-                            [post_data.comment_date, post_data.comment_post_id, post_data.comment_post_id], state)
-                            // we select the count(*) from comments to make the comment counts self-correcting in case they get off somehow
-            }
         },
 
         key_login : async function() {
@@ -982,8 +1013,7 @@ async function render(state) { /////////////////////////////////////////
         // prepend user_id to image so that we know who uploaded it, and so that other users cannot overwrite it
         filename = `${state.current_user.user_id}_${filename}`
 
-        /*
-
+        /* todo:
         if (preg_match( '/\.(jpg|jpeg)$/i' , $newname, $matches) && file_exists('/usr/bin/jpegoptim') ) {
             $output = shell_exec("/usr/bin/jpegoptim $newname 2>&1");  // minimize size of new jpeg
         }
@@ -1007,9 +1037,7 @@ async function render(state) { /////////////////////////////////////////
 
         let img = user_icon(c, 0.4, `'align='left' hspace='5' vspace='2'`) // scale image down
         let datelink = `<a href='/post/${c.comment_post_id}/?c=${c.comment_id}#comment-${c.comment_id}' title='permalink' >${format_date(c.comment_date)}</a>`
-
 /*
-
     $comment_likes    = $comment->comment_likes    ? "($comment->comment_likes)"    : "";
     $comment_dislikes = $comment->comment_dislikes ? "($comment->comment_dislikes)" : "";
 
@@ -1024,9 +1052,7 @@ async function render(state) { /////////////////////////////////////////
 
 
         if (preg_match('/jail/', $_SERVER['REQUEST_URI']) and (1 == $current_user->user_id)) {
-
-        if (preg_match('/jail/', $_SERVER['REQUEST_URI']) and (1 == $current_user->user_id)) {
-            $s .= " <a href='/liberate.php?comment_id=$comment->comment_id' >liberate</a> &nbsp; ";
+            $s .= " <a href='/liberate.?comment_id=$comment->comment_id' >liberate</a> &nbsp; ";
         }
         elseif ($post_id and $current_user->user_pbias >= 3) {
             if (!get_post($post_id)->post_private) {
@@ -1034,15 +1060,15 @@ async function render(state) { /////////////////////////////////////////
                 $nonce=get_nonce($ts);
                 $nonce_parms = "ts=$ts&nonce=$nonce";
 
-                $confirm_adhom = 'onClick="javascript:return confirm(\'Really mark as uncivil?\')"';
-                $s .= " <a href='/uncivil.php?comment_id=$comment->comment_id&$nonce_parms' $confirm_adhom title='attacks person, not point' >uncivil</a> &nbsp; ";
+                $confirm_uncivil = 'onClick="javascript:return confirm(\'Really mark as uncivil?\')"';
+                $s .= " <a href='/uncivil.?comment_id=$comment->comment_id&$nonce_parms' $confirm_uncivil title='attacks person, not point' >uncivil</a> &nbsp; ";
             }
         }
 
     }
     else { // not logged in. assume not registered, put link to reg page.
-        $s .= "<a HREF='/login.php?action=registerform'>&#8593;&nbsp;like $comment_likes</A> &nbsp; ";
-        $s .= "<a HREF='/login.php?action=registerform'>&#8595;&nbsp;dislike $comment_dislikes</A> &nbsp; ";
+        $s .= "<a HREF='/login.?action=registerform'>&#8593;&nbsp;like $comment_likes</A> &nbsp; ";
+        $s .= "<a HREF='/login.?action=registerform'>&#8595;&nbsp;dislike $comment_dislikes</A> &nbsp; ";
     }
 
     if ($post_id) {
@@ -1051,36 +1077,46 @@ async function render(state) { /////////////////////////////////////////
         // xxxxxx
     }
 
-    if ( ($current_user->user_id == $comment->comment_author) or ($current_user->user_level == 4) )
-        $s .= " <a href='/edit_comment.php?action=editcomment&c=$comment->comment_id'>edit</a> &nbsp; ";
-
-    if ($current_user->user_level == 4) { // only admin can delete comments
-        $ts = time();
-        $nonce=get_nonce($ts);
-        $nonce_parms = "ts=$ts&nonce=$nonce";
-
-        $confirm_del = 'onClick="javascript:return confirm(\'Really delete?\')"';
-        $s .= " <a href='/delete_comment.php?comment_id=$comment->comment_id&$nonce_parms' $confirm_del >delete</a> &nbsp; ";
-    }
 */
+        if ((state.current_user.user_id == c.comment_author) || (state.current_user.user_level == 4)) {
+            let nonce_parms = create_nonce_parms()
+            var edit_link   = `<a href='/edit_comment?c=${c.comment_id}&${nonce_parms}'>edit</a>`
+        }
+
         let share_link = encodeURI(`https://patrick.net/post/${c.comment_post_id}/?c=${c.comment_id}#comment-${c.comment_id}`)
         let mailto = `<a href='mailto:?subject=Patrick.net comment&body=${share_link}' title='email this' ><img src='/images/mailicon.jpg' width=15 height=12 ></a>`
-        return `<div class="comment" id="comment-${ c.comment_id }" ><font size=-1>${n} ${img} ${u} &nbsp; ${datelink} &nbsp; ${mailto} &nbsp; ${ del }</font><br>
-                ${ c.comment_content }</div>`
+        return `<div class="comment" id="comment-${ c.comment_id }" ><font size=-1>
+        ${n}
+        ${img}
+        ${u} &nbsp;
+        ${datelink} &nbsp;
+        ${mailto} &nbsp;
+        ${ edit_link } &nbsp;
+        ${ del } &nbsp;
+        </font><br>${ c.comment_content }</div>`
     }
 
     function comment_box() {
 
         let nonce_parms = create_nonce_parms()
 
+        if (_GET('c')) { // editing existing comment
+            let comment_id = intval(_GET('c'))
+            var content = state.comment.comment_content
+            var hidden = `<input type='hidden' name='comment_id' value='${comment_id}' />`
+        } else { // new comment, just give post_id
+            var content = ''
+            var hidden = `<input type='hidden' name='comment_post_id' value='${state.post.post_id}' />`
+        }
+
         return `
         <div  id='newcomment' ></div>
         ${state.current_user ? upload_form() : ''}
         <form id='commentform' >
-            <textarea id='ta' name='comment_content'    class='form-control' rows='10' placeholder='write a comment...' ></textarea><p>
-            <input type='hidden' name='comment_post_id' value='${ state.post.post_id }' />
+            <textarea id='ta' name='comment_content' class='form-control' rows='10' placeholder='write a comment...' >${content}</textarea><p>
+            ${hidden}
             <button class='btn btn-success btn-sm'
-                onclick="$.post('/insert_comment?${nonce_parms}', $('#commentform').serialize()).done(function(data) {
+                onclick="$.post('/accept_comment?${nonce_parms}', $('#commentform').serialize()).done(function(data) {
                     if (data) $('#newcomment').append(data)
                     document.getElementById('commentform').reset() // clear the textbox
                 })
@@ -1182,8 +1218,8 @@ async function render(state) { /////////////////////////////////////////
         <br>
         <a href='/topics'>topics</a> &nbsp;
         <a href='/random'>random post</a> &nbsp;
-        <a href="/best.php">best comments</a> &nbsp;
-        <a href="/adhom_jail.php">comment jail</a> &nbsp;
+        <a href="/best">best comments</a> &nbsp;
+        <a href="/comment_jail">comment jail</a> &nbsp;
         <br>
         <a href='/post/1303173/2017-02-19-patricks-s-40-proposals'>patrick's 40 proposals</a> &nbsp;
         <br>
@@ -1471,7 +1507,7 @@ async function render(state) { /////////////////////////////////////////
 
     function post() { // format a single post for display
 
-        let adhom         = ''
+        let uncivil         = ''
         let arrowbox_html = arrowbox(state.post)
         let icon          = user_icon(state.post, 1, `align='left' hspace='5' vspace='2'`)
         let incoming      = ''
@@ -1482,8 +1518,8 @@ async function render(state) { /////////////////////////////////////////
 
             if (!state.post.post_title.match(/thunderdome/)) {
 
-                let confirm_adhom = `onClick="javascript:return confirm('Really mark as uncivil?')"`
-                adhom = ` &nbsp; <a href='/uncivil?post_id=${state.post.post_id}&${nonce_parms}' ${confirm_adhom} title='attacks person, not point' >uncivil</a> &nbsp;` 
+                let confirm_uncivil = `onClick="javascript:return confirm('Really mark as uncivil?')"`
+                uncivil = ` &nbsp; <a href='/uncivil?post_id=${state.post.post_id}&${nonce_parms}' ${confirm_uncivil} title='attacks person, not point' >uncivil</a> &nbsp;` 
             }
         }
 
@@ -1517,7 +1553,7 @@ async function render(state) { /////////////////////////////////////////
         }
 
         return `<div class='comment' >${arrowbox_html} ${icon} <h2 style='display:inline' >${ link }</h2>
-                <p>By ${user_link(state.post)} ${follow_button(state.post)} &nbsp; ${format_date(state.post.post_date)} ${adhom} ${incoming}
+                <p>By ${user_link(state.post)} ${follow_button(state.post)} &nbsp; ${format_date(state.post.post_date)} ${uncivil} ${incoming}
                 ${state.post.post_views} views &nbsp; ${state.post.post_comments} comments &nbsp;
                 ${watcheye}
                 <a href="#commentform" onclick="addquote( '${state.post.post_id}', '0', '${current_user_name}' ); return false;"
@@ -1553,7 +1589,7 @@ async function render(state) { /////////////////////////////////////////
         let start = post.post_comments - 40 * (page + 1)
         if (start < 0) start = 0
 
-        // if this gets too slow as user_adhom_comments increases, try a left join, or just start deleting old adhom comments
+        // if this gets too slow as user_uncivil_comments increases, try a left join, or just start deleting old uncivil comments
         let sql = `select sql_calc_found_rows * from comments
                   left join users on comment_author=user_id
                   where comment_post_id = ?
