@@ -1049,16 +1049,13 @@ async function render(state) { /////////////////////////////////////////
     }
 
     function format_comment(c, n=0) {
-        var u = c.user_name ? `<a href='/user/${c.user_name}'>${c.user_name}</a>` : 'anonymous'
 
-        if (state.current_user) {
-            let nonce_parms = create_nonce_parms()
-            var del = (state.current_user.user_id == c.comment_author || state.current_user.user_id == 1) ?
-                `<a href='#' onclick="if (confirm('Really delete?')) { $.get('/delete_comment?comment_id=${ c.comment_id }&post_id=${ c.comment_post_id }&${ nonce_parms }', function() { $('#comment-${ c.comment_id }').remove() }); return false}">delete</a>` : ''
-        }
-
-        let img = user_icon(c, 0.4, `'align='left' hspace='5' vspace='2'`) // scale image down
-        let datelink = `<a href='/post/${c.comment_post_id}/?c=${c.comment_id}#comment-${c.comment_id}' title='permalink' >${format_date(c.comment_date)}</a>`
+        const date_link = get_date_link(c)
+        const del       = get_del_link(c)
+        const edit      = get_edit_link(c)
+        const icon      = user_icon(c, 0.4, `'align='left' hspace='5' vspace='2'`) // scale image down
+        const u         = c.user_name ? `<a href='/user/${c.user_name}'>${c.user_name}</a>` : 'anonymous'
+        const uncivil   = get_uncivil_link(c)
 /*
     $comment_likes    = $comment->comment_likes    ? "($comment->comment_likes)"    : "";
     $comment_dislikes = $comment->comment_dislikes ? "($comment->comment_dislikes)" : "";
@@ -1072,21 +1069,6 @@ async function render(state) { /////////////////////////////////////////
 
         $s .= "<a HREF='#' id='dislike_$comment->comment_id' onclick=\"dislike('dislike_$comment->comment_id');return false\">$disliketext $comment_dislikes</A> &nbsp; ";
 
-
-        if (preg_match('/jail/', $_SERVER['REQUEST_URI']) and (1 == $current_user->user_id)) {
-            $s .= " <a href='/liberate.?comment_id=$comment->comment_id' >liberate</a> &nbsp; ";
-        }
-        elseif ($post_id and $current_user->user_pbias >= 3) {
-            if (!get_post($post_id)->post_private) {
-                $ts = time();
-                $nonce=get_nonce($ts);
-                $nonce_parms = "ts=$ts&nonce=$nonce";
-
-                $confirm_uncivil = 'onClick="javascript:return confirm(\'Really mark as uncivil?\')"';
-                $s .= " <a href='/uncivil.?comment_id=$comment->comment_id&$nonce_parms' $confirm_uncivil title='attacks person, not point' >uncivil</a> &nbsp; ";
-            }
-        }
-
     }
     else { // not logged in. assume not registered, put link to reg page.
         $s .= "<a HREF='/login.?action=registerform'>&#8593;&nbsp;like $comment_likes</A> &nbsp; ";
@@ -1096,25 +1078,20 @@ async function render(state) { /////////////////////////////////////////
     if ($post_id) {
         $commenter = get_userrow($comment->comment_author);
         $s .= "<a href=\"#commentform\" onclick=\"addquote('$comment->comment_post_id', '$comment->comment_id', '$commenter->user_name'); return false;\" title=\"Select some text then click this to quote\" >quote</a> &nbsp; ";
-        // xxxxxx
     }
-
 */
-        if ((state.current_user.user_id == c.comment_author) || (state.current_user.user_level == 4)) {
-            let nonce_parms = create_nonce_parms()
-            var edit_link   = `<a href='/edit_comment?c=${c.comment_id}&${nonce_parms}'>edit</a>`
-        }
 
         let share_link = encodeURI(`https://patrick.net/post/${c.comment_post_id}/?c=${c.comment_id}#comment-${c.comment_id}`)
         let mailto = `<a href='mailto:?subject=Patrick.net comment&body=${share_link}' title='email this' ><img src='/images/mailicon.jpg' width=15 height=12 ></a>`
-        return `<div class="comment" id="comment-${ c.comment_id }" ><font size=-1>
+        return `<div class="comment" id="comment-${c.comment_id}" ><font size=-1>
         ${n}
-        ${img}
+        ${icon}
         ${u} &nbsp;
-        ${datelink} &nbsp;
+        ${date_link} &nbsp;
+        ${uncivil} &nbsp;
+        ${edit} &nbsp;
+        ${del} &nbsp;
         ${mailto} &nbsp;
-        ${ edit_link } &nbsp;
-        ${ del } &nbsp;
         </font><br>${ c.comment_content }</div>`
     }
 
@@ -1301,6 +1278,28 @@ async function render(state) { /////////////////////////////////////////
         return URL.parse(state.req.url, true).query[parm]
     }
 
+    function get_date_link(c) {
+        return `<a href='/post/${c.comment_post_id}/?c=${c.comment_id}#comment-${c.comment_id}' title='permalink' >${format_date(c.comment_date)}</a>`
+    }
+
+    function get_del_link(c) {
+        if (state.current_user) {
+            return (state.current_user.user_id == c.comment_author || state.current_user.user_id == 1) ?
+                `<a href='#' onclick="if (confirm('Really delete?')) { $.get('/delete_comment?comment_id=${ c.comment_id }&post_id=${ c.comment_post_id }&${create_nonce_parms()}', function() { $('#comment-${ c.comment_id }').remove() }); return false}">delete</a>` : ''
+        }
+        else return ''
+    }
+
+    function get_edit_link(c) {
+        if (state.current_user) {
+            if ((state.current_user.user_id == c.comment_author) || (state.current_user.user_level == 4)) {
+                return `<a href='/edit_comment?c=${c.comment_id}&${create_nonce_parms()}'>edit</a>`
+            }
+            else return ''
+        }
+        else return ''
+    }
+
     function get_external_link(post) {
 
         const c = CHEERIO.load(post.post_content)
@@ -1317,12 +1316,6 @@ async function render(state) { /////////////////////////////////////////
         else return ''
     }
 
-    function get_nonce(ts) {
-        // create or check a nonce string for input forms. this makes each form usable only once, and only from the ip that got the form.
-        // hopefully this slows down spammers and cross-site posting tricks
-        return md5(state.ip + CONF.nonce_secret + ts)
-    }
-
     function get_first_image(post) {
 
         const c = CHEERIO.load(post.post_content)
@@ -1331,6 +1324,25 @@ async function render(state) { /////////////////////////////////////////
             return `<div class='icon' ><a href='${post_path(post)}' ><img src='/images/nsfw.png' border=0 width=100 align=top hspace=5 vspace=5 ></a></div>`
           else
             return `<div class='icon' ><a href='${post_path(post)}' ><img src='${c('img').attr('src')}' border=0 width=100 align=top hspace=5 vspace=5 ></a></div>`
+        }
+        else return ''
+    }
+
+    function get_nonce(ts) {
+        // create or check a nonce string for input forms. this makes each form usable only once, and only from the ip that got the form.
+        // hopefully this slows down spammers and cross-site posting tricks
+        return md5(state.ip + CONF.nonce_secret + ts)
+    }
+
+    function get_uncivil_link(c) {
+        if (state.current_user) {
+            if ( URL.parse(state.req.url).pathname.match(/jail/) && (state.current_user.user_level == 4)) {
+                 return `<a href='/liberate?${c.comment_id}=${c.comment_id}' >liberate</a>`
+            }
+            else if (state.post.post_id && state.current_user.user_pbias >= 3) {
+                return `<a href='/uncivil?c=${c.comment_id}&${create_nonce_parms}' 
+                        onClick="javascript:return confirm('Really mark as uncivil?')" title='attacks person, not point' >uncivil</a>`
+            }
         }
         else return ''
     }
