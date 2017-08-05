@@ -337,7 +337,7 @@ function query(sql, sql_parms, state) {
 
         var get_results = function (error, results, fields, timing) { // callback to give to state.db.query()
 
-            console.log(query.sql)
+            //console.log(query.sql)
 
             if (error) {
                 console.log(error)
@@ -670,6 +670,10 @@ async function render(state) { /////////////////////////////////////////
             }
         },
 
+        like : async function() {
+            send_html(200, '')
+        },
+
         logout : async function() {
 
             state.current_user = null
@@ -701,14 +705,14 @@ async function render(state) { /////////////////////////////////////////
             send_html(200, content)
         },
 
-        post : async function() { // show a single post
+        post : async function() { // show a single post and its comments
 
             let current_user_id = state.current_user ? state.current_user.user_id : 0
             let post_id         = intval(segments(state.req.url)[2]) // get post's db row number from url, eg 47 from /post/47/slug-goes-here
 
             var results = await query(`select * from posts
                                        left join postvotes on (postvote_post_id=post_id and postvote_user_id=?)
-                                       left join postviews on (postview_post_id=post_id and postview_user_id=? )
+                                       left join postviews on (postview_post_id=post_id and postview_user_id=?)
                                        left join users on user_id=post_author
                                        where post_id=?`,
                                        [current_user_id, current_user_id, post_id], state)
@@ -1058,31 +1062,29 @@ async function render(state) { /////////////////////////////////////////
 
     function format_comment(c, n=0) {
 
-        const date_link = get_date_link(c)
-        const del       = get_del_link(c)
-        const edit      = get_edit_link(c)
-        const icon      = user_icon(c, 0.4, `'align='left' hspace='5' vspace='2'`) // scale image down
-        const u         = c.user_name ? `<a href='/user/${c.user_name}'>${c.user_name}</a>` : 'anonymous'
-        const uncivil   = get_uncivil_link(c)
+        var comment_dislikes = c.comment_dislikes ? `(c.comment_dislikes)` : ''
+        var comment_likes    = c.comment_likes    ? `(c.comment_likes)`    : ''
+        var date_link        = get_date_link(c)
+        var del              = get_del_link(c)
+        var edit             = get_edit_link(c)
+        var icon             = user_icon(c, 0.4, `'align='left' hspace='5' vspace='2'`) // scale image down
+        var u                = c.user_name ? `<a href='/user/${c.user_name}'>${c.user_name}</a>` : 'anonymous'
+        var uncivil          = get_uncivil_link(c)
+
+        if (state.current_user) {
+            var liketext    = c.commentvote_up   ? 'you like this'    : '&#8593;&nbsp;like';
+            var disliketext = c.commentvote_down ? 'you dislike this' : '&#8595;&nbsp;dislike';
+
+            var like    = `<a HREF='#' id='like_${c.comment_id}' onclick="like('like_${c.comment_id}');return false">${liketext} (${c.comment_likes})</A>`
+            var dislike = `<a HREF='#' id='dislike_${c.comment_id}' onclick="dislike('dislike_${c.comment_id}');return false">${disliketext} (${c.comment_dislikes})</A>`
+
+        }
+        else { // not logged in. assume not registered, put link to reg page
+            var like    = `<a HREF='/login.?action=registerform'>&#8593;&nbsp;like (${comment_likes})</A> &nbsp; `;
+            var dislike = `<a HREF='/login.?action=registerform'>&#8595;&nbsp;dislike (${comment_dislikes})</A> &nbsp; `;
+        }
+
 /*
-    $comment_likes    = $comment->comment_likes    ? "($comment->comment_likes)"    : "";
-    $comment_dislikes = $comment->comment_dislikes ? "($comment->comment_dislikes)" : "";
-
-    if (is_user_logged_in()) {
-
-        $liketext    = $upvoted   ? 'you like this'    : '&#8593;&nbsp;like';
-        $disliketext = $downvoted ? 'you dislike this' : '&#8595;&nbsp;dislike';
-
-        $s .= "<a HREF='#' id='like_$comment->comment_id' onclick=\"like('like_$comment->comment_id');return false\">$liketext $comment_likes</A> &nbsp; ";
-
-        $s .= "<a HREF='#' id='dislike_$comment->comment_id' onclick=\"dislike('dislike_$comment->comment_id');return false\">$disliketext $comment_dislikes</A> &nbsp; ";
-
-    }
-    else { // not logged in. assume not registered, put link to reg page.
-        $s .= "<a HREF='/login.?action=registerform'>&#8593;&nbsp;like $comment_likes</A> &nbsp; ";
-        $s .= "<a HREF='/login.?action=registerform'>&#8595;&nbsp;dislike $comment_dislikes</A> &nbsp; ";
-    }
-
     if ($post_id) {
         $commenter = get_userrow($comment->comment_author);
         $s .= "<a href=\"#commentform\" onclick=\"addquote('$comment->comment_post_id', '$comment->comment_id', '$commenter->user_name'); return false;\" title=\"Select some text then click this to quote\" >quote</a> &nbsp; ";
@@ -1096,6 +1098,8 @@ async function render(state) { /////////////////////////////////////////
         ${icon}
         ${u} &nbsp;
         ${date_link} &nbsp;
+        ${like} &nbsp;
+        ${dislike} &nbsp;
         ${uncivil} &nbsp;
         ${edit} &nbsp;
         ${del} &nbsp;
@@ -1137,6 +1141,7 @@ async function render(state) { /////////////////////////////////////////
 
     function comment_list() {
         if (state.comments) {
+
             let n = 0
             let formatted = state.comments.map( (item) => {
                 return format_comment(item, ++n)
@@ -1249,11 +1254,6 @@ async function render(state) { /////////////////////////////////////////
             <a href='#' title='top of page' >top</a> &nbsp; <a href='#footer' title='bottom of page' >bottom</a> &nbsp; <a href='/' title='home page' >home</a>
         </div>
         <script>
-        function tweet(content) {
-            $.get( "/tweet?comment_id="+content.split("_")[1], function(data) {
-                document.getElementById(content).innerHTML = data;
-            });
-        }
         function like(content) {
             $.get( "/like?comment_id="+content.split("_")[1], function(data) {
                 document.getElementById(content).innerHTML = data;
@@ -1620,12 +1620,12 @@ async function render(state) { /////////////////////////////////////////
         let c = intval(_GET('c'))
 
         if (c) {
-          // Get all the comments, sorted from greatest to least.
-          // What page of 40 from the end is our comment in? Start counting with page 0 being the most recent comments.
-          let results = await query(`select floor(count(*)/40 - 0.01) as f from comments
-                                    where comment_post_id=? and comment_id >= ? order by comment_id`, [post.post_id, c], state)
+            // Get all the comments, sorted from greatest to least.
+            // What page of 40 from the end is our comment in? Start counting with page 0 being the most recent comments.
+            let results = await query(`select floor(count(*)/40 - 0.01) as f from comments
+                                       where comment_post_id=? and comment_id >= ? order by comment_id`, [user_id, post.post_id, c], state)
 
-                if (results[0]) page = results[0].f
+            if (results[0]) page = results[0].f
         }
 
         if (!page) page = intval(_GET('page')) // if page is not set from c above, use _GET('page')
@@ -1635,13 +1635,15 @@ async function render(state) { /////////////////////////////////////////
         if (start < 0) start = 0
 
         // if this gets too slow as user_uncivil_comments increases, try a left join, or just start deleting old uncivil comments
+        let user_id = state.current_user ? state.current_user.user_id : 0
         let sql = `select sql_calc_found_rows * from comments
-                  left join users on comment_author=user_id
-                  where comment_post_id = ?
-                  and comment_adhom_when is null
-                  order by comment_date limit ?, 40`
+                   left join users on comment_author=user_id
+                   left join commentvotes on (comment_id = commentvote_comment_id and commentvote_user_id = ?)
+                   where comment_post_id = ?
+                   and comment_adhom_when is null
+                   order by comment_date limit ?, 40`
 
-        let results = await query(sql, [post.post_id, start], state)
+        let results = await query(sql, [user_id, post.post_id, start], state)
 
         //let results = await query('select * from comments left join users on comment_author=user_id where comment_post_id=? order by comment_date',
         //    [post.post_id], state)
