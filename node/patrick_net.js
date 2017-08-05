@@ -337,7 +337,7 @@ function query(sql, sql_parms, state) {
 
         var get_results = function (error, results, fields, timing) { // callback to give to state.db.query()
 
-            //console.log(query.sql)
+            console.log(query.sql)
 
             if (error) {
                 console.log(error)
@@ -534,23 +534,20 @@ async function render(state) { /////////////////////////////////////////
 
         delete_comment : async function() { // delete a comment
 
-            if (!state.current_user) return send_html(200, '') // do nothing if not logged in
-            if (!valid_nonce())      return send_html(200, '') // do nothing if invalid nonce
+            const comment_id = intval(_GET('comment_id'))
+            const post_id    = intval(_GET('post_id'))
 
-            let comment_id = intval(_GET('comment_id'))
-            let post_id    = intval(_GET('post_id'))
+            if (!state.current_user)      return send_html(200, '')
+            if (!valid_nonce())           return send_html(200, '')
+            if (!(comment_id && post_id)) return send_html(200, '')
 
-            if (comment_id && post_id) {
-                // delete comment only if current user is comment_author or admin (user 1)
-                await query('delete from comments where comment_id = ? and (comment_author = ? or 1 = ?)',
-                            [comment_id, state.current_user.user_id, state.current_user.user_id], state)
-                await query('update posts set post_comments=(select count(*) from comments where comment_post_id=?) where post_id = ?',
-                            [post_id, post_id], state)
-                            // we select the count(*) from comments to make the comment counts self-correcting in case they get off somehow
+            await query('delete from comments where comment_id = ? and (comment_author = ? or 1 = ?)',
+                        [comment_id, state.current_user.user_id, state.current_user.user_id], state)
+            await query('update posts set post_comments=(select count(*) from comments where comment_post_id=?) where post_id = ?',
+                        [post_id, post_id], state)
+                        // we select the count(*) from comments to make the comment counts self-correcting in case they get off somehow
 
-                send_html(200, '')
-            }
-            else return send_html(200, '')
+            send_html(200, '')
         },
 
         delete_post : async function() { // delete a whole post, but not its comments
@@ -894,6 +891,17 @@ async function render(state) { /////////////////////////////////////////
             send_html(200, content)
         },
 
+        uncivil : async function() { // move a comment to comment jail, or a post to post moderation
+
+            const comment_id = intval(_GET('c'))
+
+            if (state.current_user && valid_nonce() && comment_id) {
+                await query('update comments set comment_adhom_reporter=?, comment_adhom_when=now() where comment_id = ? and (comment_author = ? or 1 = ?)',
+                        [state.current_user.user_id, comment_id, state.current_user.user_id, state.current_user.user_id], state)
+            }
+
+            send_html(200, '') // blank response in all cases
+        },
 
         upload : async function() {
 
@@ -1283,49 +1291,49 @@ async function render(state) { /////////////////////////////////////////
     }
 
     function get_del_link(c) {
-        if (state.current_user) {
-            return (state.current_user.user_id == c.comment_author || state.current_user.user_id == 1) ?
-                `<a href='#' onclick="if (confirm('Really delete?')) { $.get('/delete_comment?comment_id=${ c.comment_id }&post_id=${ c.comment_post_id }&${create_nonce_parms()}', function() { $('#comment-${ c.comment_id }').remove() }); return false}">delete</a>` : ''
-        }
-        else return ''
+
+        if (!state.current_user) return ''
+
+        return (state.current_user.user_id == c.comment_author || state.current_user.user_id == 1) ?
+            `<a href='#' onclick="if (confirm('Really delete?')) { $.get('/delete_comment?comment_id=${ c.comment_id }&post_id=${ c.comment_post_id }&${create_nonce_parms()}', function() { $('#comment-${ c.comment_id }').remove() }); return false}">delete</a>` : ''
     }
 
     function get_edit_link(c) {
-        if (state.current_user) {
-            if ((state.current_user.user_id == c.comment_author) || (state.current_user.user_level == 4)) {
-                return `<a href='/edit_comment?c=${c.comment_id}&${create_nonce_parms()}'>edit</a>`
-            }
-            else return ''
+
+        if (!state.current_user) return ''
+
+        if ((state.current_user.user_id == c.comment_author) || (state.current_user.user_level == 4)) {
+            return `<a href='/edit_comment?c=${c.comment_id}&${create_nonce_parms()}'>edit</a>`
         }
-        else return ''
+
+        return ''
     }
 
     function get_external_link(post) {
 
         const c = CHEERIO.load(post.post_content)
 
-        if (c('a').length) {
-            let extlink = c('a').attr('href')
-            let host = URL.parse(extlink).host
+        if (!c('a').length) return ''
 
-            if (!(['http:', 'https:'].indexOf(URL.parse(extlink).protocol) > -1)) return '' // ignore invalid protocols
-            if (new RegExp(CONF.domain).test(host))                               return '' // ignore links back to own domain
+        let extlink = c('a').attr('href')
+        let host = URL.parse(extlink).host
 
-            return `<a href='${brandit(extlink)}' target='_blank' title='original story at ${host}' ><img src='/images/ext_link.png'></a>`
-        }
-        else return ''
+        if (!(['http:', 'https:'].indexOf(URL.parse(extlink).protocol) > -1)) return '' // ignore invalid protocols
+        if (new RegExp(CONF.domain).test(host))                               return '' // ignore links back to own domain
+
+        return `<a href='${brandit(extlink)}' target='_blank' title='original story at ${host}' ><img src='/images/ext_link.png'></a>`
     }
 
     function get_first_image(post) {
 
         const c = CHEERIO.load(post.post_content)
-        if (c('img').length) {
-          if (post.post_nsfw)
+
+        if (!c('img').length) return ''
+
+        if (post.post_nsfw)
             return `<div class='icon' ><a href='${post_path(post)}' ><img src='/images/nsfw.png' border=0 width=100 align=top hspace=5 vspace=5 ></a></div>`
-          else
+        else
             return `<div class='icon' ><a href='${post_path(post)}' ><img src='${c('img').attr('src')}' border=0 width=100 align=top hspace=5 vspace=5 ></a></div>`
-        }
-        else return ''
     }
 
     function get_nonce(ts) {
@@ -1335,16 +1343,17 @@ async function render(state) { /////////////////////////////////////////
     }
 
     function get_uncivil_link(c) {
-        if (state.current_user) {
-            if ( URL.parse(state.req.url).pathname.match(/jail/) && (state.current_user.user_level == 4)) {
-                 return `<a href='/liberate?${c.comment_id}=${c.comment_id}' >liberate</a>`
-            }
-            else if (state.post.post_id && state.current_user.user_pbias >= 3) {
-                return `<a href='/uncivil?c=${c.comment_id}&${create_nonce_parms}' 
-                        onClick="javascript:return confirm('Really mark as uncivil?')" title='attacks person, not point' >uncivil</a>`
-            }
+
+        if (!state.current_user) return ''
+
+        if (URL.parse(state.req.url).pathname.match(/jail/) && (state.current_user.user_level == 4)) {
+             return `<a href='/liberate?${c.comment_id}=${c.comment_id}' >liberate</a>`
         }
-        else return ''
+        
+        if (state.post.post_id && state.current_user.user_pbias >= 3) {
+            return (state.current_user.user_id == c.comment_author || state.current_user.user_id == 1) ?
+                `<a href='#' onclick="if (confirm('Really mark as uncivil?')) { $.get('/uncivil?c=${ c.comment_id }&${create_nonce_parms()}', function() { $('#comment-${ c.comment_id }').remove() }); return false}" title='attacks person, not point' >uncivil</a>` : ''
+        }
     }
 
     function h1() {
@@ -1352,7 +1361,6 @@ async function render(state) { /////////////////////////////////////////
     }
 
     function header() {
-
         return `<div class='comment' >
             <div style='float:right' >${ icon_or_loginprompt(state) }</div>
             <a href='/' ><h1 class='sitename' title='back to home page' >${ CONF.domain }</h1></a><br>
@@ -1555,9 +1563,8 @@ async function render(state) { /////////////////////////////////////////
         if (state.current_user && state.current_user.user_pbias >= 3) {
 
             if (!state.post.post_title.match(/thunderdome/)) {
-
                 let confirm_uncivil = `onClick="javascript:return confirm('Really mark as uncivil?')"`
-                uncivil = ` &nbsp; <a href='/uncivil?post_id=${state.post.post_id}&${nonce_parms}' ${confirm_uncivil} title='attacks person, not point' >uncivil</a> &nbsp;` 
+                uncivil = ` &nbsp; <a href='/uncivil?p=${state.post.post_id}&${nonce_parms}' ${confirm_uncivil} title='attacks person, not point' >uncivil</a> &nbsp;` 
             }
         }
 
