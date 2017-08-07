@@ -670,8 +670,122 @@ async function render(state) { /////////////////////////////////////////
             }
         },
 
-        like : async function() {
-            send_html(200, '')
+        like : async function() { // given a comment or post, upvote it
+
+            if (!state.current_user) return `<a href='#' onclick="midpage.innerHTML = registerform.innerHTML; return false" >Please register</a>`
+
+            if (intval(_GET('comment_id'))) {
+                let comment_id = intval(_GET('comment_id'))
+                let row = await query(`select commentvote_up, count(*) as c from commentvotes where commentvote_user_id=? and commentvote_comment_id=?`,
+                                      [state.current_user.user_id, comment_id], state)
+                let vote = row[0]
+
+                if (vote.commentvote_up) { // undo an upvote on a comment
+                    await query(`update comments set comment_likes=comment_likes-1 where comment_id=?`, [comment_id], state)
+
+                    await query(`insert into commentvotes (commentvote_user_id, commentvote_comment_id, commentvote_up)
+                                 values (?, ?, 0) on duplicate key update commentvote_up=0`, [state.current_user.user_id, comment_id], state)
+
+                    let row = await query(`select * from comments where comment_id=?`, [comment_id], state)
+
+                    await query(`update users set user_likes=user_likes-1 where user_id=?`, [row[0].comment_author], state)
+
+                    return send_html(200, `&#8593;&nbsp;like (${row[0].comment_likes})`)
+                }
+                await query(`update comments set comment_likes=comment_likes+1 where comment_id=?`, [comment_id], state)
+
+                await query(`insert into commentvotes (commentvote_user_id, commentvote_comment_id, commentvote_up) values (?, ?, 1)
+                             on duplicate key update commentvote_up=1`, [state.current_user.user_id, comment_id], state)
+
+                let comment_row = await query(`select * from comments where comment_id=?`, [comment_id], state)
+
+                await query(`update users set user_likes=user_likes+1 where user_id=?`, [comment_row.comment_author], state)
+
+                send_html(200, `&#8593;&nbsp;you like this (${comment_row[0].comment_likes})`)
+
+            /*
+                // Now mail the user that his comment was liked, iff he has user_summonable set and $vote was null (ie, has not voted before).
+                $path = post_id2path($comment_row.comment_post_id)
+                $comment_url = "https://patrick.net$path?c=$comment_row.comment_id#comment-$comment_row.comment_id"
+
+                if (intval(await get_var("select user_summonable from users where user_id=$comment_row.comment_author")) and (0 == $vote.c) ) {
+                    $u = get_userrow($comment_row.comment_author)
+
+                    $name = real_if_private($comment_row.comment_post_id, $current_user.user_id)
+
+                    $subject  = "$name liked your comment"
+
+                    $notify_message  = '<html><body><head><base href="https://patrick.net/" ></head>'
+                    $notify_message .= "<a href='https://patrick.net/users/$name'>$name</a> liked the comment you made here:<p>\r\n\r\n"
+                    $notify_message .= "<a href='$comment_url'>$comment_url</a><p>$comment_row.comment_content<p>\r\n\r\n"
+                    $notify_message .= "<font size='-1'>Stop getting <A HREF='https://patrick.net/profile?key=$u.user_activation_key#user_summonable'>notified of likes</A></font><br>\r\n\r\n"
+                    $notify_message .= '</body></html>'
+
+                    format_mail($u.user_email, $subject, $notify_message)
+                }
+
+                // Now if Patrick was the liker, then the user gets a bias bump up.
+                if (1 == $user_id) {
+                    await query("update users set user_pbias=user_pbias+1 where user_id=$comment_row.comment_author")
+                }
+            */
+            }
+            else if (intval(_GET('post_id'))) {
+                let post_id = intval(_GET('post_id'))
+            /*
+
+                $post_id = substr(intval($_GET['post_id']), 0, 12);
+             
+                $vote = await query("select postvote_up, count(*) as c from postvotes where postvote_user_id=$user_id and postvote_post_id=$post_id");
+
+                if ( $vote->postvote_up ) { // undo an postvote_up on a post
+
+                    $sql = "update posts set post_likes=post_likes-1 where post_id=$post_id";
+                    $db->query($sql);
+
+                    $sql = "insert into postvotes (postvote_user_id, postvote_post_id, postvote_up) values ($user_id, $post_id, 0) on duplicate key update postvote_up=0";
+                    $db->query($sql);
+
+                    $post_row = await query("select * from posts where post_id=$post_id");
+                    $db->query("update users set user_likes=user_likes-1 where user_id=$post_row->post_author");
+
+                    print intval($db->get_var("select post_likes - post_dislikes from posts where post_id=$post_id"));
+                    exit;
+                }
+
+                $sql = "update posts set post_likes=post_likes+1 where post_id=$post_id";
+                $db->query($sql);
+
+                $sql = "insert into postvotes (postvote_user_id, postvote_post_id, postvote_up) values ($user_id, $post_id, 1) on duplicate key update postvote_up=1";
+                $db->query($sql);
+
+                $post_row = await query("select * from posts where post_id=$post_id");
+                $db->query("update users set user_likes=user_likes+1 where user_id=$post_row->post_author");
+
+                print intval($db->get_var("select post_likes - post_dislikes from posts where post_id=$post_id"));
+
+                // Now mail the user that his post was liked, IFF he has user_summonable set and the count of previous votes on this post is zero.
+
+                if (intval($db->get_var("select user_summonable from users where user_id=$post_row->post_author")) and (0 == $vote->c) ) {
+                    $u = get_userrow($post_row->post_author);
+
+                    $name = real_if_private($post_row->post_id, $current_user->user_id);
+
+                    $subject  = "$name liked your post";
+
+                    $post_url = "https://patrick.net" . post_id2path($post_row->post_id);
+
+                    $notify_message  = '<html><body>';
+                    $notify_message .= "<a href='https://patrick.net/users/$user->user_name'>$name</a> liked the post you started here:<p>\r\n\r\n";
+                    $notify_message .= "<a href='$post_url'>$post_url</a><p>Titled \"$post_row->post_title\"<p>\r\n\r\n";
+                    $notify_message .= "<font size='-1'>Stop getting <A HREF='https://patrick.net/profile?key=$u->user_activation_key#user_summonable'>notified of likes</A></font><br>\r\n\r\n";
+                    $notify_message .= '</body></html>';
+
+                    format_mail($u->user_email, $subject, $notify_message);
+                }
+            */
+            }
+            else return send_html(200, '') // send empty string if no comment_id or post_id
         },
 
         logout : async function() {
@@ -1062,8 +1176,8 @@ async function render(state) { /////////////////////////////////////////
 
     function format_comment(c, n=0) {
 
-        var comment_dislikes = c.comment_dislikes ? `(c.comment_dislikes)` : ''
-        var comment_likes    = c.comment_likes    ? `(c.comment_likes)`    : ''
+        var comment_dislikes = intval(c.comment_dislikes)
+        var comment_likes    = intval(c.comment_likes)
         var date_link        = get_date_link(c)
         var del              = get_del_link(c)
         var edit             = get_edit_link(c)
@@ -1075,13 +1189,13 @@ async function render(state) { /////////////////////////////////////////
             var liketext    = c.commentvote_up   ? 'you like this'    : '&#8593;&nbsp;like';
             var disliketext = c.commentvote_down ? 'you dislike this' : '&#8595;&nbsp;dislike';
 
-            var like    = `<a HREF='#' id='like_${c.comment_id}' onclick="like('like_${c.comment_id}');return false">${liketext} (${c.comment_likes})</A>`
-            var dislike = `<a HREF='#' id='dislike_${c.comment_id}' onclick="dislike('dislike_${c.comment_id}');return false">${disliketext} (${c.comment_dislikes})</A>`
+            var like    = `<a href='#' id='like_${c.comment_id}' onclick="like('like_${c.comment_id}');return false">${liketext} (${c.comment_likes})</a>`
+            var dislike = `<a href='#' id='dislike_${c.comment_id}' onclick="dislike('dislike_${c.comment_id}');return false">${disliketext} (${c.comment_dislikes})</a>`
 
         }
         else { // not logged in. assume not registered, put link to reg page
-            var like    = `<a HREF='/login.?action=registerform'>&#8593;&nbsp;like (${comment_likes})</A> &nbsp; `;
-            var dislike = `<a HREF='/login.?action=registerform'>&#8595;&nbsp;dislike (${comment_dislikes})</A> &nbsp; `;
+            var like    = `<a href='#' onclick="midpage.innerHTML = registerform.innerHTML; return false" >&#8593;&nbsp;like (${comment_likes})</a>`
+            var dislike = `<a href='#' onclick="midpage.innerHTML = registerform.innerHTML; return false" >&#8593;&nbsp;dislike (${comment_likes})</a>`
         }
 
 /*
@@ -1221,6 +1335,7 @@ async function render(state) { /////////////////////////////////////////
             }
         }
         else return `<a href='/login?action=registerform' title='Register to get emails of new posts by ${f.user_name}' >${b}</a>`
+        // todo: fix this! won't work as is
     }
 
     function footer() {
@@ -1623,7 +1738,7 @@ async function render(state) { /////////////////////////////////////////
             // Get all the comments, sorted from greatest to least.
             // What page of 40 from the end is our comment in? Start counting with page 0 being the most recent comments.
             let results = await query(`select floor(count(*)/40 - 0.01) as f from comments
-                                       where comment_post_id=? and comment_id >= ? order by comment_id`, [user_id, post.post_id, c], state)
+                                       where comment_post_id=? and comment_id >= ? order by comment_id`, [post.post_id, c], state)
 
             if (results[0]) page = results[0].f
         }
