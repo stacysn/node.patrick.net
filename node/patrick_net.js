@@ -691,19 +691,19 @@ async function render(state) { /////////////////////////////////////////
                 send_html(200, `&#8593;&nbsp;you like this (${comment_row.comment_likes})`)
 
                 // Now mail the comment author that his comment was liked, iff he has user_summonable set
-                let comment_url = `https://CONF.domain/post/${comment_row.comment_post_id}?c=${comment_row.comment_id}#comment-${comment_row.comment_id}`
-                console.log(comment_url)
+                let comment_url = `https://${CONF.domain}/post/${comment_row.comment_post_id}?c=${comment_row.comment_id}#comment-${comment_row.comment_id}`
 
                 let result2 = await query(`select * from users where user_id=?`, [comment_row.comment_author], state)
-                let u = results2[0]
+                let u = result2[0]
 
                 if (intval(u.user_summonable)) {
 
                     let subject  = `${state.current_user.user_name} liked your comment`
 
                     let message = `<html><body><head><base href='https://${CONF.domain}/' ></head>
-                    <a href='https://CONF.domain/users/name' >name</a> liked the comment you made here:<p>\r\n\r\n
-                    <a href='comment_url' >comment_url</a><p>${comment_row.comment_content}<p>\r\n\r\n
+                    <a href='https://${CONF.domain}/users/${state.current_user.user_name}' >${state.current_user.user_name}</a>
+                        liked the comment you made here:<p>\r\n\r\n
+                    <a href='${comment_url}' >${comment_url}</a><p>${comment_row.comment_content}<p>\r\n\r\n
                     <font size='-1'>Stop getting <A HREF='https://${CONF.domain}/profile#user_summonable'>notified of likes</A>
                     </font></body></html>`
 
@@ -711,7 +711,9 @@ async function render(state) { /////////////////////////////////////////
                 }
 
                 // Now if Patrick was the liker, then the user gets a bias bump up.
-                if (1 == state.current_user.user_id) await query(`update users set user_pbias=user_pbias+1 where user_id=${comment_row.comment_author}`)
+                if (1 == state.current_user.user_id) {
+                    await query(`update users set user_pbias=user_pbias+1 where user_id=?`, [comment_row.comment_author], state)
+                }
             }
             else if (intval(_GET('post_id'))) {
                 let post_id = intval(_GET('post_id'))
@@ -1447,7 +1449,7 @@ async function render(state) { /////////////////////////////////////////
              return `<a href='/liberate?${c.comment_id}=${c.comment_id}' >liberate</a>`
         }
         
-        if (state.post.post_id && state.current_user.user_pbias >= 3) {
+        if (state.current_user.user_pbias >= 3) {
             return (state.current_user.user_id == c.comment_author || state.current_user.user_id == 1) ?
                 `<a href='#' onclick="if (confirm('Really mark as uncivil?')) { $.get('/uncivil?c=${ c.comment_id }&${create_nonce_parms()}', function() { $('#comment-${ c.comment_id }').remove() }); return false}" title='attacks person, not point' >uncivil</a>` : ''
         }
