@@ -568,17 +568,11 @@ async function render(state) { /////////////////////////////////////////
                                       [state.current_user.user_id, comment_id], state)
                 let vote = row[0]
 
-                if (vote.commentvote_down) { // undo an downvote on a comment
-                    await query(`update comments set comment_dislikes=comment_dislikes-1 where comment_id=?`, [comment_id], state)
-
-                    await query(`insert into commentvotes (commentvote_user_id, commentvote_comment_id, commentvote_down)
-                                 values (?, ?, 0) on duplicate key update commentvote_down=0`, [state.current_user.user_id, comment_id], state)
+                if (vote.c) { // already voted on this comment
 
                     let row = await query(`select * from comments where comment_id=?`, [comment_id], state)
 
-                    await query(`update users set user_dislikes=user_dislikes-1 where user_id=?`, [row[0].comment_author], state)
-
-                    return send_html(200, `&#8595;&nbsp;dislike (${row[0].comment_dislikes})`)
+                    return send_html(200, `&#8595;&nbsp; you dislike this (${row[0].comment_dislikes})`)
                 }
                 await query(`update comments set comment_dislikes=comment_dislikes+1 where comment_id=?`, [comment_id], state)
 
@@ -590,7 +584,7 @@ async function render(state) { /////////////////////////////////////////
 
                 await query(`update users set user_dislikes=user_dislikes+1 where user_id=?`, [comment_row.comment_author], state)
 
-                send_html(200, `&#8595;&nbsp;you like this (${comment_row.comment_dislikes})`)
+                send_html(200, `&#8595;&nbsp;you dislike this (${comment_row.comment_dislikes})`)
 
                 // no emailing done of dislikes
 
@@ -739,17 +733,11 @@ async function render(state) { /////////////////////////////////////////
                                       [state.current_user.user_id, comment_id], state)
                 let vote = row[0]
 
-                if (vote.commentvote_up) { // undo an upvote on a comment
-                    await query(`update comments set comment_likes=comment_likes-1 where comment_id=?`, [comment_id], state)
-
-                    await query(`insert into commentvotes (commentvote_user_id, commentvote_comment_id, commentvote_up)
-                                 values (?, ?, 0) on duplicate key update commentvote_up=0`, [state.current_user.user_id, comment_id], state)
+                if (vote.c) { // already voted on this
 
                     let row = await query(`select * from comments where comment_id=?`, [comment_id], state)
 
-                    await query(`update users set user_likes=user_likes-1 where user_id=?`, [row[0].comment_author], state)
-
-                    return send_html(200, `&#8593;&nbsp;like (${row[0].comment_likes})`)
+                    return send_html(200, `&#8593;&nbsp; you like this (${row[0].comment_likes})`)
                 }
                 await query(`update comments set comment_likes=comment_likes+1 where comment_id=?`, [comment_id], state)
 
