@@ -683,11 +683,14 @@ async function render(state) { /////////////////////////////////////////
 
             state.posts = await query(sql, [current_user_id, current_user_id], state)
 
+            let results2   = await query('select found_rows() as f', [], state)
+            let found_rows = results2[0].f
+
             let content = html(
                 midpage(
                     tabs(order),
                     post_list(),
-                    pagination_links(state.posts.length, curpage, `&order=${order}`)
+                    pagination_links(found_rows, curpage, `&order=${order}`)
                 )
             )
 
@@ -972,17 +975,20 @@ async function render(state) { /////////////////////////////////////////
             // These match() requests require the existence of fulltext index:
             //      create fulltext index post_title_content_index on posts (post_title, post_content)
 
-            let sql = `select * from posts where match(post_title, post_content) against ('${s}') ${order_by} limit ${slimit}`
+            let sql = `select sql_calc_found_rows * from posts where match(post_title, post_content) against ('${s}') ${order_by} limit ${slimit}`
 
             state.posts       = await query(sql, [], state)
             state.message     = `search results for "${s}"`
+
+            let results2   = await query('select found_rows() as f', [], state)
+            let found_rows = results2[0].f
 
             let content = html(
                 midpage(
                     h1(),
                     tabs(order, `&s=${us}`),
                     post_list(),
-                    pagination_links(state.posts.length, curpage, `&s=${us}&order=${order}`)
+                    pagination_links(found_rows, curpage, `&s=${us}&order=${order}`)
                 )
             )
 
@@ -1110,16 +1116,31 @@ async function render(state) { /////////////////////////////////////////
 
         user : async function() {
 
-            var user_name = segments(state.req.url)[2] // like /user/Patrick
-            var sql       = 'select * from users where user_name=?'
-            var sql_parms = [user_name]
-
-            let results = await query(sql, sql_parms, state)
+            let user_name = segments(state.req.url)[2].replace(/[^\w._ -]/g, '') // like /user/Patrick
+            let results = await query(`select * from users where user_name=?`, [user_name], state)
             let u = results[0]
+            let current_user_id = state.current_user ? state.current_user.user_id : 0
+            let [curpage, slimit, order, order_by] = page()
+
+            // left joins to also get each post's viewing and voting data for the current user if there is one
+            let sql = `select sql_calc_found_rows * from posts
+                       left join postviews on postview_post_id=post_id and postview_user_id= ?
+                       left join postvotes on postvote_post_id=post_id and postvote_user_id= ?
+                       left join users     on user_id=post_author
+                       where post_approved=1 and user_id=?
+                       ${order_by} limit ${slimit}`
+
+            state.posts = await query(sql, [current_user_id, current_user_id, u.user_id], state)
+
+            let results2   = await query('select found_rows() as f', [], state)
+            let found_rows = results2[0].f
 
             let content = html(
                 midpage(
-                    user_info(u)
+                    user_info(u),
+                    tabs(order),
+                    post_list(),
+                    pagination_links(found_rows, curpage, `&order=${order}`)
                 )
             )
 
@@ -2035,6 +2056,14 @@ async function render(state) { /////////////////////////////////////////
                 : ''
     }
 
+    function user_links_link(u) {
+        if (u.user_referers) {
+            let s = u.user_referers == 1 ? '' : 's'
+            let uusername = encodeURI(u.user_name)
+            return `<a href='/links?user_name=${uusername}'>${u.user_referers} links<img src='/images/goldstar.gif' width='18' height='17' ></a>`
+        }
+    }
+
     function user_info(u) {
         let img = user_icon(u)
 
@@ -2046,7 +2075,17 @@ async function render(state) { /////////////////////////////////////////
         }
         else var edit_or_logout = ''
 
-        return `${edit_or_logout}<center><a href='/user/${ u.user_name }' >${ img }</a><h2>${ u.user_name }</h2></p>joined ${ u.user_registered }</center>`
+        return `${edit_or_logout}
+                <center>
+                <a href='/user/${u.user_name}' >${ img }</a><h2>${u.user_name}</h2>
+                <p>joined ${ format_date(u.user_registered) }
+                ${u.user_country ? u.user_country : ''}
+                ${user_links_link(u)}
+                ${u.user_posts} posts
+                <a href='/comments?a={u.user_id}'>${u.user_comments} comments</a> &nbsp;
+                ${follow_button(u)}
+				</center>`
+
     }
 
     function user_link(u) {
