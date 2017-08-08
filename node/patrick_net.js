@@ -261,27 +261,6 @@ function get_transporter() {
     })
 }
 
-async function send_login_link(state) {
-
-  if (!/^\w.*@.+\.\w+$/.test(state.post_data.user_email)) return 'Please go back and enter a valid email'
-
-    let baseurl  = (/^dev\./.test(OS.hostname())) ? CONF.baseurl_dev : CONF.baseurl // CONF.baseurl_dev is for testing email
-    let key      = get_nonce(Date.now())
-    let key_link = `${ baseurl }/key_login?key=${ key }`
-
-    var results = await query('update users set user_activation_key=? where user_email=?', [key, state.post_data.user_email], state)
-
-    if (results.changedRows) {
-
-        let message = `Click here to log in and get your password: <a href='${ key_link }'>${ key_link }</a>`
-
-        format_mail(state.post_data.user_email, `Your ${ CONF.domain } login info`, message)
-
-        return 'Please check your email for the login link'
-    }
-    else return `Could not find user with email ${ state.post_data.user_email }`
-}
-
 function format_mail(email, subject, message) {
 
     let mailOptions = {
@@ -1894,6 +1873,27 @@ async function render(state) { /////////////////////////////////////////
         state.res.writeHead(code, headers)
         state.res.end(html)
         if (state.db) state.db.release()
+    }
+
+    async function send_login_link(state) {
+
+      if (!/^\w.*@.+\.\w+$/.test(state.post_data.user_email)) return 'Please go back and enter a valid email'
+
+        let baseurl  = (/^dev\./.test(OS.hostname())) ? CONF.baseurl_dev : CONF.baseurl // CONF.baseurl_dev is for testing email
+        let key      = get_nonce(Date.now())
+        let key_link = `${ baseurl }/key_login?key=${ key }`
+
+        var results = await query('update users set user_activation_key=? where user_email=?', [key, state.post_data.user_email], state)
+
+        if (results.changedRows) {
+
+            let message = `Click here to log in and get your password: <a href='${ key_link }'>${ key_link }</a>`
+
+            format_mail(state.post_data.user_email, `Your ${ CONF.domain } login info`, message)
+
+            return 'Please check your email for the login link'
+        }
+        else return `Could not find user with email ${ state.post_data.user_email }`
     }
 
     function share_post(post) {
