@@ -691,6 +691,7 @@ async function render(state) { /////////////////////////////////////////
                 send_html(200, `&#8593;&nbsp;you like this (${comment_row.comment_likes})`)
 
                 // Now mail the comment author that his comment was liked, iff he has user_summonable set
+                // todo: AND if current user has no record of voting on this comment! (to prevent clicking like over and over to annoy author with email)
                 let comment_url = `https://${CONF.domain}/post/${comment_row.comment_post_id}?c=${comment_row.comment_id}#comment-${comment_row.comment_id}`
 
                 let result2 = await query(`select * from users where user_id=?`, [comment_row.comment_author], state)
@@ -717,57 +718,56 @@ async function render(state) { /////////////////////////////////////////
             }
             else if (intval(_GET('post_id'))) {
                 let post_id = intval(_GET('post_id'))
-            /*
-                post_id = substr(intval(_GET['post_id']), 0, 12);
-             
-                vote = await query("select postvote_up, count(*) as c from postvotes where postvote_user_id=user_id and postvote_post_id=post_id");
 
-                if ( vote.postvote_up ) { // undo an postvote_up on a post
+                let row = await query(`select postvote_up, count(*) as c from postvotes where postvote_user_id=? and postvote_post_id=?`,
+                                      [state.current_user.user_id, post_id], state)
+                let vote = row[0]
 
-                    sql = "update posts set post_likes=post_likes-1 where post_id=post_id";
-                    await query(sql);
+                if (vote.postvote_up) { // undo an postvote_up on a post
 
-                    sql = "insert into postvotes (postvote_user_id, postvote_post_id, postvote_up) values (user_id, post_id, 0) on duplicate key update postvote_up=0";
-                    await query(sql);
+                    await query(`update posts set post_likes=post_likes-1 where post_id=?`, [post_id], state)
 
-                    post_row = await query("select * from posts where post_id=post_id");
-                    await query("update users set user_likes=user_likes-1 where user_id=post_row.post_author");
+                    await query(`insert into postvotes (postvote_user_id, postvote_post_id, postvote_up) values (?, ?, 0)
+                                 on duplicate key update postvote_up=0`, [state.current_user.user_id, post_id], state)
 
-                    print intval(db.get_var("select post_likes - post_dislikes from posts where post_id=post_id"));
-                    exit;
+                    let result = await query(`select * from posts where post_id=?`, [post_id], state)
+                    let post_row = result[0]
+
+                    await query(`update users set user_likes=user_likes-1 where user_id=?`, [post_row.post_author], state)
+
+                    return send_html(200, String(post_row.post_likes - post_row.post_dislikes))
                 }
 
-                sql = "update posts set post_likes=post_likes+1 where post_id=post_id";
-                await query(sql);
+                await query(`update posts set post_likes=post_likes+1 where post_id=?`, [post_id], state)
 
-                sql = "insert into postvotes (postvote_user_id, postvote_post_id, postvote_up) values (user_id, post_id, 1) on duplicate key update postvote_up=1";
-                await query(sql);
+                await query(`insert into postvotes (postvote_user_id, postvote_post_id, postvote_up) values (?, ?, 1)
+                             on duplicate key update postvote_up=0`, [state.current_user.user_id, post_id], state)
 
-                post_row = await query("select * from posts where post_id=post_id");
-                await query("update users set user_likes=user_likes+1 where user_id=post_row.post_author");
+                let result = await query(`select * from posts where post_id=?`, [post_id], state)
+                let post_row = result[0]
 
-                print intval(db.get_var("select post_likes - post_dislikes from posts where post_id=post_id"));
+                await query(`update users set user_likes=user_likes+1 where user_id=?`, [post_row.post_author], state)
 
-                // Now mail the user that his post was liked, IFF he has user_summonable set and the count of previous votes on this post is zero.
+                send_html(200, String(post_row.post_likes - post_row.post_dislikes)) // don't return until we send email
 
-                if (intval(db.get_var("select user_summonable from users where user_id=post_row.post_author")) and (0 == vote.c) ) {
-                    u = get_userrow(post_row.post_author);
+                let post_url = 'https://' + CONF.domain +  post2path(post_row)
 
-                    name = real_if_private(post_row.post_id, current_user.user_id);
+                let result2 = await query(`select * from users where user_id=?`, [post_row.post_author], state)
+                let u = result2[0]
 
-                    subject  = "name liked your post";
+                if (intval(u.user_summonable)) {
 
-                    post_url = "https://CONF.domain" . post2path(post_row.post_id);
+                    let subject  = `${state.current_user.user_name} liked your post`
 
-                    message  = '<html><body>';
-                    message .= "<a href='https://CONF.domain/users/user.user_name'>name</a> liked the post you started here:<p>\r\n\r\n";
-                    message .= "<a href='post_url'>post_url</a><p>Titled \"post_row.post_title\"<p>\r\n\r\n";
-                    message .= "<font size='-1'>Stop getting <A HREF='https://CONF.domain/profile?key=u.user_activation_key#user_summonable'>notified of likes</A></font><br>\r\n\r\n";
-                    message .= '</body></html>';
+                    let message = `<html><body><head><base href='https://${CONF.domain}/' ></head>
+                    <a href='https://${CONF.domain}/users/${state.current_user.user_name}' >${state.current_user.user_name}</a>
+                        liked the post you made here:<p>\r\n\r\n
+                    <a href='${post_url}' >${post_url}</a><p>${post_row.post_content}<p>\r\n\r\n
+                    <font size='-1'>Stop getting <A HREF='https://${CONF.domain}/profile#user_summonable'>notified of likes</A>
+                    </font></body></html>`
 
-                    format_mail(u.user_email, subject, message);
+                    format_mail(u.user_email, subject, message)
                 }
-            */
             }
             else return send_html(200, '') // send empty string if no comment_id or post_id
         },
