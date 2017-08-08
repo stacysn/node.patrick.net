@@ -273,21 +273,28 @@ async function send_login_link(state) {
 
     if (results.changedRows) {
 
-        let mailOptions = {
-            from:    CONF.admin_email,
-            to:      state.post_data.user_email,
-            subject: `Your ${ CONF.domain } login info`,
-            html:    `Click here to log in and get your password: <a href='${ key_link }'>${ key_link }</a>`
-        }
+        let message = `Click here to log in and get your password: <a href='${ key_link }'>${ key_link }</a>`
 
-        get_transporter().sendMail(mailOptions, (error, info) => {
-            if (error) console.log('error in send_login_link: ' + error)
-            else       console.log('send_login_link %s sent: %s', info.messageId, info.response)
-        })
+        format_mail(state.post_data.user_email, `Your ${ CONF.domain } login info`, message)
 
         return 'Please check your email for the login link'
     }
     else return `Could not find user with email ${ state.post_data.user_email }`
+}
+
+function format_mail(email, subject, message) {
+
+    let mailOptions = {
+        from:    CONF.admin_email,
+        to:      email,
+        subject: subject,
+        html:    message
+    }
+
+    get_transporter().sendMail(mailOptions, (error, info) => {
+        if (error) console.log('error in format_mail: ' + error)
+        else       console.log('%s sent: %s', info.messageId, info.response)
+    })
 }
 
 String.prototype.linkify = function(ref) {
@@ -697,91 +704,87 @@ async function render(state) { /////////////////////////////////////////
                 await query(`insert into commentvotes (commentvote_user_id, commentvote_comment_id, commentvote_up) values (?, ?, 1)
                              on duplicate key update commentvote_up=1`, [state.current_user.user_id, comment_id], state)
 
-                let comment_row = await query(`select * from comments where comment_id=?`, [comment_id], state)
+                let result = await query(`select * from comments where comment_id=?`, [comment_id], state)
+                let comment_row = result[0]
 
                 await query(`update users set user_likes=user_likes+1 where user_id=?`, [comment_row.comment_author], state)
 
-                send_html(200, `&#8593;&nbsp;you like this (${comment_row[0].comment_likes})`)
+                send_html(200, `&#8593;&nbsp;you like this (${comment_row.comment_likes})`)
 
-            /*
-                // Now mail the user that his comment was liked, iff he has user_summonable set and $vote was null (ie, has not voted before).
-                $path = post_id2path($comment_row.comment_post_id)
-                $comment_url = "https://patrick.net$path?c=$comment_row.comment_id#comment-$comment_row.comment_id"
+                // Now mail the comment author that his comment was liked, iff he has user_summonable set
+                let comment_url = `https://CONF.domain/post/${comment_row.comment_post_id}?c=${comment_row.comment_id}#comment-${comment_row.comment_id}`
+                console.log(comment_url)
 
-                if (intval(await get_var("select user_summonable from users where user_id=$comment_row.comment_author")) and (0 == $vote.c) ) {
-                    $u = get_userrow($comment_row.comment_author)
+                let result2 = await query(`select * from users where user_id=?`, [comment_row.comment_author], state)
+                let u = results2[0]
 
-                    $name = real_if_private($comment_row.comment_post_id, $current_user.user_id)
+                if (intval(u.user_summonable)) {
 
-                    $subject  = "$name liked your comment"
+                    let subject  = `${state.current_user.user_name} liked your comment`
 
-                    $notify_message  = '<html><body><head><base href="https://patrick.net/" ></head>'
-                    $notify_message .= "<a href='https://patrick.net/users/$name'>$name</a> liked the comment you made here:<p>\r\n\r\n"
-                    $notify_message .= "<a href='$comment_url'>$comment_url</a><p>$comment_row.comment_content<p>\r\n\r\n"
-                    $notify_message .= "<font size='-1'>Stop getting <A HREF='https://patrick.net/profile?key=$u.user_activation_key#user_summonable'>notified of likes</A></font><br>\r\n\r\n"
-                    $notify_message .= '</body></html>'
+                    let message = `<html><body><head><base href='https://${CONF.domain}/' ></head>
+                    <a href='https://CONF.domain/users/name' >name</a> liked the comment you made here:<p>\r\n\r\n
+                    <a href='comment_url' >comment_url</a><p>${comment_row.comment_content}<p>\r\n\r\n
+                    <font size='-1'>Stop getting <A HREF='https://${CONF.domain}/profile#user_summonable'>notified of likes</A>
+                    </font></body></html>`
 
-                    format_mail($u.user_email, $subject, $notify_message)
+                    format_mail(u.user_email, subject, message)
                 }
 
                 // Now if Patrick was the liker, then the user gets a bias bump up.
-                if (1 == $user_id) {
-                    await query("update users set user_pbias=user_pbias+1 where user_id=$comment_row.comment_author")
-                }
-            */
+                if (1 == state.current_user.user_id) await query(`update users set user_pbias=user_pbias+1 where user_id=${comment_row.comment_author}`)
             }
             else if (intval(_GET('post_id'))) {
                 let post_id = intval(_GET('post_id'))
             /*
-
-                $post_id = substr(intval($_GET['post_id']), 0, 12);
+                post_id = substr(intval(_GET['post_id']), 0, 12);
              
-                $vote = await query("select postvote_up, count(*) as c from postvotes where postvote_user_id=$user_id and postvote_post_id=$post_id");
+                vote = await query("select postvote_up, count(*) as c from postvotes where postvote_user_id=user_id and postvote_post_id=post_id");
 
-                if ( $vote->postvote_up ) { // undo an postvote_up on a post
+                if ( vote.postvote_up ) { // undo an postvote_up on a post
 
-                    $sql = "update posts set post_likes=post_likes-1 where post_id=$post_id";
-                    $db->query($sql);
+                    sql = "update posts set post_likes=post_likes-1 where post_id=post_id";
+                    await query(sql);
 
-                    $sql = "insert into postvotes (postvote_user_id, postvote_post_id, postvote_up) values ($user_id, $post_id, 0) on duplicate key update postvote_up=0";
-                    $db->query($sql);
+                    sql = "insert into postvotes (postvote_user_id, postvote_post_id, postvote_up) values (user_id, post_id, 0) on duplicate key update postvote_up=0";
+                    await query(sql);
 
-                    $post_row = await query("select * from posts where post_id=$post_id");
-                    $db->query("update users set user_likes=user_likes-1 where user_id=$post_row->post_author");
+                    post_row = await query("select * from posts where post_id=post_id");
+                    await query("update users set user_likes=user_likes-1 where user_id=post_row.post_author");
 
-                    print intval($db->get_var("select post_likes - post_dislikes from posts where post_id=$post_id"));
+                    print intval(db.get_var("select post_likes - post_dislikes from posts where post_id=post_id"));
                     exit;
                 }
 
-                $sql = "update posts set post_likes=post_likes+1 where post_id=$post_id";
-                $db->query($sql);
+                sql = "update posts set post_likes=post_likes+1 where post_id=post_id";
+                await query(sql);
 
-                $sql = "insert into postvotes (postvote_user_id, postvote_post_id, postvote_up) values ($user_id, $post_id, 1) on duplicate key update postvote_up=1";
-                $db->query($sql);
+                sql = "insert into postvotes (postvote_user_id, postvote_post_id, postvote_up) values (user_id, post_id, 1) on duplicate key update postvote_up=1";
+                await query(sql);
 
-                $post_row = await query("select * from posts where post_id=$post_id");
-                $db->query("update users set user_likes=user_likes+1 where user_id=$post_row->post_author");
+                post_row = await query("select * from posts where post_id=post_id");
+                await query("update users set user_likes=user_likes+1 where user_id=post_row.post_author");
 
-                print intval($db->get_var("select post_likes - post_dislikes from posts where post_id=$post_id"));
+                print intval(db.get_var("select post_likes - post_dislikes from posts where post_id=post_id"));
 
                 // Now mail the user that his post was liked, IFF he has user_summonable set and the count of previous votes on this post is zero.
 
-                if (intval($db->get_var("select user_summonable from users where user_id=$post_row->post_author")) and (0 == $vote->c) ) {
-                    $u = get_userrow($post_row->post_author);
+                if (intval(db.get_var("select user_summonable from users where user_id=post_row.post_author")) and (0 == vote.c) ) {
+                    u = get_userrow(post_row.post_author);
 
-                    $name = real_if_private($post_row->post_id, $current_user->user_id);
+                    name = real_if_private(post_row.post_id, current_user.user_id);
 
-                    $subject  = "$name liked your post";
+                    subject  = "name liked your post";
 
-                    $post_url = "https://patrick.net" . post_id2path($post_row->post_id);
+                    post_url = "https://CONF.domain" . post2path(post_row.post_id);
 
-                    $notify_message  = '<html><body>';
-                    $notify_message .= "<a href='https://patrick.net/users/$user->user_name'>$name</a> liked the post you started here:<p>\r\n\r\n";
-                    $notify_message .= "<a href='$post_url'>$post_url</a><p>Titled \"$post_row->post_title\"<p>\r\n\r\n";
-                    $notify_message .= "<font size='-1'>Stop getting <A HREF='https://patrick.net/profile?key=$u->user_activation_key#user_summonable'>notified of likes</A></font><br>\r\n\r\n";
-                    $notify_message .= '</body></html>';
+                    message  = '<html><body>';
+                    message .= "<a href='https://CONF.domain/users/user.user_name'>name</a> liked the post you started here:<p>\r\n\r\n";
+                    message .= "<a href='post_url'>post_url</a><p>Titled \"post_row.post_title\"<p>\r\n\r\n";
+                    message .= "<font size='-1'>Stop getting <A HREF='https://CONF.domain/profile?key=u.user_activation_key#user_summonable'>notified of likes</A></font><br>\r\n\r\n";
+                    message .= '</body></html>';
 
-                    format_mail($u->user_email, $subject, $notify_message);
+                    format_mail(u.user_email, subject, message);
                 }
             */
             }
@@ -1205,8 +1208,8 @@ async function render(state) { /////////////////////////////////////////
     }
 */
 
-        let share_link = encodeURI(`https://patrick.net/post/${c.comment_post_id}/?c=${c.comment_id}#comment-${c.comment_id}`)
-        let mailto = `<a href='mailto:?subject=Patrick.net comment&body=${share_link}' title='email this' ><img src='/images/mailicon.jpg' width=15 height=12 ></a>`
+        let share_link = encodeURI(`https://${CONF.domain}/post/${c.comment_post_id}/?c=${c.comment_id}#comment-${c.comment_id}`)
+        let mailto = `<a href='mailto:?subject=${CONF.domain} comment&body=${share_link}' title='email this' ><img src='/images/mailicon.jpg' width=15 height=12 ></a>`
         return `<div class="comment" id="comment-${c.comment_id}" ><font size=-1>
         ${n}
         ${icon}
@@ -1283,17 +1286,17 @@ async function render(state) { /////////////////////////////////////////
 
         if (start > 0) {
             ret = ret +
-                `<a href='${post_path(state.post)}?page=${maxpage}#comments' title='Jump to first comment' >&laquo; First</a> &nbsp; &nbsp;
-                 <a href='${post_path(state.post)}?page=${previouspage}#comments' title='Previous page of comments' >&laquo; Previous</a> &nbsp; &nbsp; `
+                `<a href='${post2path(state.post)}?page=${maxpage}#comments' title='Jump to first comment' >&laquo; First</a> &nbsp; &nbsp;
+                 <a href='${post2path(state.post)}?page=${previouspage}#comments' title='Previous page of comments' >&laquo; Previous</a> &nbsp; &nbsp; `
         }
 
         let s = (state.post.post_comments == 1) ? '' : 's'
 
         ret = ret + `Comment${s} ${from_one_start} - ${end} of ${state.post.post_comments} &nbsp; &nbsp; `
 
-        if (page  > 0) ret = ret + `<a href='${post_path(state.post)}?page=${nextpage}#comments'>Next &raquo;</a> &nbsp; &nbsp; `
+        if (page  > 0) ret = ret + `<a href='${post2path(state.post)}?page=${nextpage}#comments'>Next &raquo;</a> &nbsp; &nbsp; `
 
-        ret = ret + `<a href='${post_path(state.post)}#comment-${state.post.post_latest_comment_id}' title='Jump to last comment' >Last &raquo;</a></br>`
+        ret = ret + `<a href='${post2path(state.post)}#comment-${state.post.post_latest_comment_id}' title='Jump to last comment' >Last &raquo;</a></br>`
 
         return ret
     }
@@ -1360,8 +1363,8 @@ async function render(state) { /////////////////////////////////////////
         <br>
         <a href='/post/1282722/2015-07-11-37-bogus-arguments-about-housing'>37 bogus arguments about housing</a> &nbsp;
         <br>
-        <a href='/post/1206569/2011-12-30-free-patrick-net-bumper-stickers'>get a free bumper sticker:</a><br>
-        <a href='/post/1206569/2011-12-30-free-patrick-net-bumper-stickers'><img src='/images/bumpersticker.png' width=300 ></a>
+        <a href='/post/1206569/free-bumper-stickers'>get a free bumper sticker:</a><br>
+        <a href='/post/1206569/free-bumper-stickers'><img src='/images/bumpersticker.png' width=300 ></a>
         <br>
         <form method="get" action="/" ><input name="s" type="text" placeholder="search..." size="20" ></form>
         </center>
@@ -1446,9 +1449,9 @@ async function render(state) { /////////////////////////////////////////
         if (!c('img').length) return ''
 
         if (post.post_nsfw)
-            return `<div class='icon' ><a href='${post_path(post)}' ><img src='/images/nsfw.png' border=0 width=100 align=top hspace=5 vspace=5 ></a></div>`
+            return `<div class='icon' ><a href='${post2path(post)}' ><img src='/images/nsfw.png' border=0 width=100 align=top hspace=5 vspace=5 ></a></div>`
         else
-            return `<div class='icon' ><a href='${post_path(post)}' ><img src='${c('img').attr('src')}' border=0 width=100 align=top hspace=5 vspace=5 ></a></div>`
+            return `<div class='icon' ><a href='${post2path(post)}' ><img src='${c('img').attr('src')}' border=0 width=100 align=top hspace=5 vspace=5 ></a></div>`
     }
 
     function get_nonce(ts) {
@@ -1691,11 +1694,11 @@ async function render(state) { /////////////////////////////////////////
         }
 
         if (state.post.postview_want_email) {
-            var watcheye = `<a href='${post_path(state.post)}?want_email=0' title='stop getting comments by email' >
+            var watcheye = `<a href='${post2path(state.post)}?want_email=0' title='stop getting comments by email' >
                   <IMG SRC='/content/openeye.png'> unwatch</A> (${state.post.watchers}) &nbsp;`
         }
         else {
-            var watcheye = `<a href='${post_path(state.post)}?want_email=1' title='Get comments by email for this post' >
+            var watcheye = `<a href='${post2path(state.post)}?want_email=1' title='Get comments by email for this post' >
                   <IMG SRC='/content/closedeye.png'> watch</A> (${state.post.watchers}) &nbsp;`
         }
 
@@ -1796,7 +1799,7 @@ async function render(state) { /////////////////////////////////////////
     }
 
     function post_link(post) {
-        let path = post_path(post)
+        let path = post2path(post)
         return `<a href='${path}'>${post.post_title}</a>`
     }
 
@@ -1814,7 +1817,7 @@ async function render(state) { /////////////////////////////////////////
 
                 if (state.current_user) { // user is logged in
                     if (!post.postview_last_view)
-                        var unread = `<a href='${post_path(post)}' ><img src='/content/unread_post.gif' width='45' height='16' title='You never read this one' ></a>`
+                        var unread = `<a href='${post2path(post)}' ><img src='/content/unread_post.gif' width='45' height='16' title='You never read this one' ></a>`
                     else 
                         var unread = unread_comments_icon(post, post.postview_last_view) // last view by this user, from left join
                 }
@@ -1830,7 +1833,7 @@ async function render(state) { /////////////////////////////////////////
 
                 if (post.post_comments) {
                     let s = (post.post_comments == 1) ? '' : 's';
-                    let path = post_path(post)
+                    let path = post2path(post)
                     // should add commas to post_comments here
                     var latest = `<a href='${path}'>${post.post_comments}&nbsp;comment${s}</a>, latest <a href='${path}#comment-${post.post_latest_comment_id}' >${ago}</a>`
                 }
@@ -1845,7 +1848,7 @@ async function render(state) { /////////////////////////////////////////
         return formatted.join('')
     }
 
-    function post_path(post) {
+    function post2path(post) {
         let slug = slugify(`${post.post_title}`)
         return `/post/${post.post_id}/${slug}`
     }
@@ -1895,7 +1898,7 @@ async function render(state) { /////////////////////////////////////////
 
     function share_post(post) {
         let share_title = encodeURI(post.post_title).replace(/%20/g,' ')
-        share_link  = encodeURI('https://patrick.net' +  post_path(post) )
+        share_link  = encodeURI('https://' + CONF.domain +  post2path(post) )
         return `<a href='mailto:?subject=${share_title}&body=${share_link}' title='email this' ><img src='/images/mailicon.jpg' width=15 height=12 ></a>`
     }
 
