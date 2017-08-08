@@ -975,7 +975,9 @@ async function render(state) { /////////////////////////////////////////
             // These match() requests require the existence of fulltext index:
             //      create fulltext index post_title_content_index on posts (post_title, post_content)
 
-            let sql = `select sql_calc_found_rows * from posts where match(post_title, post_content) against ('${s}') ${order_by} limit ${slimit}`
+            let sql = `select sql_calc_found_rows * from posts
+                       left join users on user_id=post_author
+                       where match(post_title, post_content) against ('${s}') ${order_by} limit ${slimit}`
 
             state.posts       = await query(sql, [], state)
             state.message     = `search results for "${s}"`
@@ -1422,7 +1424,7 @@ async function render(state) { /////////////////////////////////////////
         <a href='/post/1206569/free-bumper-stickers'>get a free bumper sticker:</a><br>
         <a href='/post/1206569/free-bumper-stickers'><img src='/images/bumpersticker.png' width=300 ></a>
         <br>
-        <form method="get" action="/" ><input name="s" type="text" placeholder="search..." size="20" ></form>
+        <form method="get" action="/search" ><input name="s" type="text" placeholder="search..." size="20" ></form>
         </center>
         <div class="fixed">
             <a href='#' title='top of page' >top</a> &nbsp; <a href='#footer' title='bottom of page' >bottom</a> &nbsp; <a href='/' title='home page' >home</a>
