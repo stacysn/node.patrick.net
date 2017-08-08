@@ -558,6 +558,79 @@ async function render(state) { /////////////////////////////////////////
             else return die('need a post_id')
         },
 
+        dislike : async function() { // given a comment or post, downvote it
+
+            if (!state.current_user) return `<a href='#' onclick="midpage.innerHTML = registerform.innerHTML; return false" >Please register</a>`
+
+            if (intval(_GET('comment_id'))) {
+                let comment_id = intval(_GET('comment_id'))
+                let row = await query(`select commentvote_up, count(*) as c from commentvotes where commentvote_user_id=? and commentvote_comment_id=?`,
+                                      [state.current_user.user_id, comment_id], state)
+                let vote = row[0]
+
+                if (vote.commentvote_down) { // undo an downvote on a comment
+                    await query(`update comments set comment_dislikes=comment_dislikes-1 where comment_id=?`, [comment_id], state)
+
+                    await query(`insert into commentvotes (commentvote_user_id, commentvote_comment_id, commentvote_down)
+                                 values (?, ?, 0) on duplicate key update commentvote_down=0`, [state.current_user.user_id, comment_id], state)
+
+                    let row = await query(`select * from comments where comment_id=?`, [comment_id], state)
+
+                    await query(`update users set user_dislikes=user_dislikes-1 where user_id=?`, [row[0].comment_author], state)
+
+                    return send_html(200, `&#8595;&nbsp;dislike (${row[0].comment_dislikes})`)
+                }
+                await query(`update comments set comment_dislikes=comment_dislikes+1 where comment_id=?`, [comment_id], state)
+
+                await query(`insert into commentvotes (commentvote_user_id, commentvote_comment_id, commentvote_down) values (?, ?, 1)
+                             on duplicate key update commentvote_up=1`, [state.current_user.user_id, comment_id], state)
+
+                let result = await query(`select * from comments where comment_id=?`, [comment_id], state)
+                let comment_row = result[0]
+
+                await query(`update users set user_dislikes=user_dislikes+1 where user_id=?`, [comment_row.comment_author], state)
+
+                send_html(200, `&#8595;&nbsp;you like this (${comment_row.comment_dislikes})`)
+
+                // no emailing done of dislikes
+
+                // Now if Patrick was the disliker, then the user gets a bias bump down.
+                if (1 == state.current_user.user_id) {
+                    await query(`update users set user_pbias=user_pbias-1 where user_id=?`, [comment_row.comment_author], state)
+                }
+            }
+            else if (intval(_GET('post_id'))) {
+                let post_id = intval(_GET('post_id'))
+
+                let row = await query(`select postvote_down, count(*) as c from postvotes where postvote_user_id=? and postvote_post_id=?`,
+                                      [state.current_user.user_id, post_id], state)
+                let vote = row[0]
+
+                if (vote.c) { // if they have voted before on this, just return
+
+                    let result = await query(`select * from posts where post_id=?`, [post_id], state)
+                    let post_row = result[0]
+
+                    return send_html(200, String(post_row.post_likes - post_row.post_dislikes))
+                }
+
+                await query(`update posts set post_dislikes=post_dislikes+1 where post_id=?`, [post_id], state)
+
+                await query(`insert into postvotes (postvote_user_id, postvote_post_id, postvote_down) values (?, ?, 1)
+                             on duplicate key update postvote_down=0`, [state.current_user.user_id, post_id], state)
+
+                let result = await query(`select * from posts where post_id=?`, [post_id], state)
+                let post_row = result[0]
+
+                await query(`update users set user_dislikes=user_dislikes+1 where user_id=?`, [post_row.post_author], state)
+
+                return send_html(200, String(post_row.post_likes - post_row.post_dislikes))
+
+                // no email done of post dislikes
+            }
+            else return send_html(200, '') // send empty string if no comment_id or post_id
+        },
+
         edit_comment : async function () {
 
             if (!valid_nonce()) return die('invalid nonce')
@@ -723,17 +796,10 @@ async function render(state) { /////////////////////////////////////////
                                       [state.current_user.user_id, post_id], state)
                 let vote = row[0]
 
-                if (vote.postvote_up) { // undo an postvote_up on a post
-
-                    await query(`update posts set post_likes=post_likes-1 where post_id=?`, [post_id], state)
-
-                    await query(`insert into postvotes (postvote_user_id, postvote_post_id, postvote_up) values (?, ?, 0)
-                                 on duplicate key update postvote_up=0`, [state.current_user.user_id, post_id], state)
+                if (vote.c) { // if they have voted before on this, just return
 
                     let result = await query(`select * from posts where post_id=?`, [post_id], state)
                     let post_row = result[0]
-
-                    await query(`update users set user_likes=user_likes-1 where user_id=?`, [post_row.post_author], state)
 
                     return send_html(200, String(post_row.post_likes - post_row.post_dislikes))
                 }
