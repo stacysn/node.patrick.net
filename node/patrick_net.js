@@ -350,7 +350,7 @@ Array.prototype.sortByProp = function(p){
 }
 
 function segments(path) { // return url path split up as array of cleaned \w strings
-    return URL.parse(path).path.replace(/\?.*/,'').split('/').map(segment => segment.replace(/\W/g,''))
+    return URL.parse(path).path.replace(/\?.*/,'').split('/').map(segment => segment.replace(/[^\w%]/g,''))
 }
 
 function getimagesize(file) {
@@ -1118,7 +1118,7 @@ async function render(state) { /////////////////////////////////////////
 
         user : async function() {
 
-            let user_name = segments(state.req.url)[2].replace(/[^\w._ -]/g, '') // like /user/Patrick
+            let user_name = decodeURIComponent(segments(state.req.url)[2]).replace(/[^\w._ -]/g, '') // like /user/Patrick
             let results = await query(`select * from users where user_name=?`, [user_name], state)
             let u = results[0]
             let current_user_id = state.current_user ? state.current_user.user_id : 0
