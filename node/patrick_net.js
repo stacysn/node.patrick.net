@@ -518,6 +518,69 @@ async function render(state) { /////////////////////////////////////////
             redirect(`/post/${p}`)
         },
 
+        comments : async function() { // show a list of comments by user, or by comment-frequence, or from a search
+
+			let page      = _GET('apage') ? intval($_GET('apage')) : 1
+			let offset    = (page - 1) * 20
+			let start     = offset
+            let title     = ''
+            let list      = {}
+
+			if (_GET('a')) { // a is author name
+                let a = decodeURIComponent(_GET('a').replace(/[^\w %]/, ''))
+				list = await get_comment_list_by_author(a, start, 25)
+				title = `<h2>${a}'s comments</h2>`
+			}
+			else if (_GET('n')) { // n is number of comments per author, so we can see all comments by one-comment authors, for example
+                let n = intval(_GET('n'))
+				list = await get_comment_list_by_number(intval(_GET('n')), start, 25)
+				title = `<h2>comments by users with ${n} comments</h2>`
+			}
+			else if (_GET('s')) {
+                let s = _GET('s').replace(/[^\w %]/, '')
+				list = await get_comment_list(s, start, 25) // Comment search
+				title = `<h2>comments that contain "${s}"</h2>`
+			}
+            else return send_html(200, `invalid request`)
+
+			return send_html(200, JSON.stringify(list))
+			/*
+
+			?>
+			<form name="searchform" action="" method="get" > 
+			  <fieldset> 
+			  <input type="text" name="s" value="<? if (s) echo stripslashes(s); ?>" size="17" /> 
+			  <input type="submit" name="submit" value="Search comments &raquo;"  />  
+			  </fieldset> 
+			</form><p>
+			<?
+
+			comments       = array_slice(_comments, 0, 20)
+			extra_comments = array_slice(_comments, 20)
+
+			page_links = paginate_links( array(
+				'base'    => add_query_arg( 'apage', '%#%' ), 
+				'format'  => '',
+				'total'   => ceil(total / 20),
+				'current' => page
+			))
+
+			if ( page_links )
+				echo "<p class='pagenav'>page_links</p>"
+
+			if (comments) {
+				comment_list(offset)
+			} else {
+				?><p><strong>No comments found.</strong></p><?
+			}
+
+			if ( page_links )
+				echo "<p class='pagenav'>page_links</p>"
+			?>
+
+			*/
+        },
+
         delete_comment : async function() { // delete a comment
 
             const comment_id = intval(_GET('comment_id'))
@@ -1462,6 +1525,40 @@ async function render(state) { /////////////////////////////////////////
         return URL.parse(state.req.url, true).query[parm]
     }
 
+	async function get_comment_list(s, start, num) {
+
+		let comments = await query(`select sql_calc_found_rows * from comments where match(comment_content) against ('s')
+                                    order by comment_date desc limit start, num`, [s], state)
+
+		let result = await query(`select found_rows() as f`, [], state)
+        let total  = result[0].f
+
+		return {comments, total}
+	}
+
+	async function get_comment_list_by_author(a, start, num) {
+
+        let comments = await query(`select sql_calc_found_rows * from comments left join users on comment_author=user_id
+                                    where user_name = ? order by comment_date desc limit ?, ?`, [a, start, num], state)
+
+		let result = await query(`select found_rows() as f`, [], state)
+        let total  = result[0].f
+
+		return {comments : comments, total : total}
+	}
+
+	async function get_comment_list_by_number(n, start, num) {
+
+		let comments = await query(`select sql_calc_found_rows * from comments, users force index (user_comments_index)
+                                    where comments.comment_author = users.user_id and user_comments = ? order by comment_date desc limit ?, ?`,
+                                    [n, start, num], state)
+
+		let result = await query(`select found_rows() as f`, [], state)
+        let total  = result[0].f
+
+		return {comments, total}
+	}
+
     function get_date_link(c) {
         return `<a href='/post/${c.comment_post_id}/?c=${c.comment_id}#comment-${c.comment_id}' title='permalink' >${format_date(c.comment_date)}</a>`
     }
@@ -2084,7 +2181,7 @@ async function render(state) { /////////////////////////////////////////
                 ${u.user_country ? u.user_country : ''}
                 ${user_links_link(u)}
                 ${u.user_posts} posts
-                <a href='/comments?a={u.user_id}'>${u.user_comments} comments</a> &nbsp;
+                <a href='/comments?a=${u.user_id}'>${u.user_comments} comments</a> &nbsp;
                 ${follow_button(u)}
 				</center>`
 
