@@ -520,27 +520,31 @@ async function render(state) { /////////////////////////////////////////
 
         comments : async function() { // show a list of comments by user, or by comment-frequence, or from a search
 
-			let page      = _GET('apage') ? intval($_GET('apage')) : 1
-			let offset    = (page - 1) * 20
-			let start     = offset
-            let total     = 0
+			let page   = _GET('apage') ? intval($_GET('apage')) : 1
+			let offset = (page - 1) * 20
+			let start  = offset
+            let total  = 0
+            let results = null
 
 			if (_GET('a')) { // a is author name
-                let a = decodeURIComponent(_GET('a').replace(/[^\w %]/, ''))
-				state.comments = (await get_comment_list_by_author(a, start, 25)).comments
-				state.message  = `<h2>${a}'s comments</h2>`
+                let a         = decodeURIComponent(_GET('a').replace(/[^\w %]/, ''))
+				results       = await get_comment_list_by_author(a, start, 40)
+				state.message = `<h2>${a}'s comments</h2>`
 			}
 			else if (_GET('n')) { // n is number of comments per author, so we can see all comments by one-comment authors, for example
-                let n = intval(_GET('n'))
-				state.comments = (await get_comment_list_by_number(n, start, 25)).comments
-				state.message  = `<h2>comments by users with ${n} comments</h2>`
+                let n         = intval(_GET('n'))
+				results       = await get_comment_list_by_number(n, start, 40)
+				state.message = `<h2>comments by users with ${n} comments</h2>`
 			}
-			else if (_GET('s')) { // Comment search
-                let s = _GET('s').replace(/[^\w %]/, '')
-				state.comments = (await get_comment_list(s, start, 25)).comments
-				state.message  = `<h2>comments that contain "${s}"</h2>`
+			else if (_GET('s')) { // comment search
+                let s         = _GET('s').replace(/[^\w %]/, '')
+                results       = await get_comment_list(s, start, 40)
+				state.message = `<h2>comments that contain "${s}"</h2>`
 			}
             else return send_html(200, `invalid request`)
+
+            state.comments = results.comments
+            total          = results.total
 
             let content = html(
                 midpage(
