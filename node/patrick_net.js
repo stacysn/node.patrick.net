@@ -523,27 +523,34 @@ async function render(state) { /////////////////////////////////////////
 			let page      = _GET('apage') ? intval($_GET('apage')) : 1
 			let offset    = (page - 1) * 20
 			let start     = offset
-            let title     = ''
-            let list      = {}
+            let total     = 0
 
 			if (_GET('a')) { // a is author name
                 let a = decodeURIComponent(_GET('a').replace(/[^\w %]/, ''))
-				list = await get_comment_list_by_author(a, start, 25)
-				title = `<h2>${a}'s comments</h2>`
+				state.comments = (await get_comment_list_by_author(a, start, 25)).comments
+				state.message  = `<h2>${a}'s comments</h2>`
 			}
 			else if (_GET('n')) { // n is number of comments per author, so we can see all comments by one-comment authors, for example
                 let n = intval(_GET('n'))
-				list = await get_comment_list_by_number(intval(_GET('n')), start, 25)
-				title = `<h2>comments by users with ${n} comments</h2>`
+				state.comments = (await get_comment_list_by_number(n, start, 25)).comments
+				state.message  = `<h2>comments by users with ${n} comments</h2>`
 			}
-			else if (_GET('s')) {
+			else if (_GET('s')) { // Comment search
                 let s = _GET('s').replace(/[^\w %]/, '')
-				list = await get_comment_list(s, start, 25) // Comment search
-				title = `<h2>comments that contain "${s}"</h2>`
+				state.comments = (await get_comment_list(s, start, 25)).comments
+				state.message  = `<h2>comments that contain "${s}"</h2>`
 			}
             else return send_html(200, `invalid request`)
 
-			return send_html(200, JSON.stringify(list))
+            let content = html(
+                midpage(
+                    h1(),
+                    //comment_pagination(start, page),
+                    comment_list() // give it the right comment number parm here
+                )
+            )
+
+            return send_html(200, content)
 			/*
 
 			?>
@@ -577,7 +584,6 @@ async function render(state) { /////////////////////////////////////////
 			if ( page_links )
 				echo "<p class='pagenav'>page_links</p>"
 			?>
-
 			*/
         },
 
@@ -932,8 +938,7 @@ async function render(state) { /////////////////////////////////////////
                                        left join postvotes on (postvote_post_id=post_id and postvote_user_id=?)
                                        left join postviews on (postview_post_id=post_id and postview_user_id=?)
                                        left join users on user_id=post_author
-                                       where post_id=?`,
-                                       [current_user_id, current_user_id, post_id], state)
+                                       where post_id=?`, [current_user_id, current_user_id, post_id], state)
 
             state.post = results[0]
 
@@ -1377,12 +1382,11 @@ async function render(state) { /////////////////////////////////////////
         <script type="text/javascript">document.getElementById('ta').focus();</script>`
     }
 
-    function comment_list() {
+    function comment_list(n=1) {
         if (state.comments) {
 
-            let n = 0
             let formatted = state.comments.map( (item) => {
-                return format_comment(item, ++n)
+                return format_comment(item, n++)
             })
 
             return formatted.join('')
@@ -2181,7 +2185,7 @@ async function render(state) { /////////////////////////////////////////
                 ${u.user_country ? u.user_country : ''}
                 ${user_links_link(u)}
                 ${u.user_posts} posts
-                <a href='/comments?a=${u.user_id}'>${u.user_comments} comments</a> &nbsp;
+                <a href='/comments?a=${encodeURI(u.user_name)}'>${u.user_comments} comments</a> &nbsp;
                 ${follow_button(u)}
 				</center>`
 
