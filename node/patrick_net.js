@@ -3,15 +3,15 @@
 
 try { CONF = require('./conf.json') } catch(e) { console.log(e.message); process.exit(1) } // conf.json is required
 
-CHEERIO     = require('cheerio')         // installed via npm to parse html
+CHEERIO     = require('cheerio')         // via npm to parse html
 CLUSTER     = require('cluster')
 CRYPTO      = require('crypto')
-FORMIDABLE  = require('formidable')      // installed via npm for image uploading
+FORMIDABLE  = require('formidable')      // via npm for image uploading
 FS          = require('fs')
 HTTP        = require('http')
-MOMENT      = require('moment-timezone') // installed via npm for time parsing
-MYSQL       = require('mysql')           // installed via npm to interfact to mysql
-NODEMAILER  = require('nodemailer')      // installed via npm to send emails
+MOMENT      = require('moment-timezone') // via npm for time parsing
+MYSQL       = require('mysql')           // via npm to interfact to mysql
+NODEMAILER  = require('nodemailer')      // via npm to send emails
 OS          = require('os')
 QUERYSTRING = require('querystring')
 URL         = require('url')
@@ -549,7 +549,7 @@ async function render(state) { /////////////////////////////////////////
             let content = html(
                 midpage(
                     h1(),
-                    //comment_pagination(start, page),
+                    //comment_pagination(start, page, total),
                     comment_list() // give it the right comment number parm here
                 )
             )
@@ -948,7 +948,7 @@ async function render(state) { /////////////////////////////////////////
 
             if (0 == results.length) return send_html(404, `No post with id "${post_id}"`)
             else {
-                var [comments, start, page] = await post_comment_list(state.post) // pick up the comment list for this post
+                var [comments, offset, page] = await post_comment_list(state.post) // pick up the comment list for this post
                 state.comments = comments
 
                 results = await query(`select count(*) as c from postviews where postview_post_id=? and postview_want_email=1`, [post_id], state)
@@ -957,9 +957,9 @@ async function render(state) { /////////////////////////////////////////
                 let content = html(
                     midpage(
                         post(),
-                        comment_pagination(start, page),
-                        comment_list(),
-                        comment_pagination(start, page),
+                        comment_pagination(offset, page, state.post.post_comments),
+                        comment_list(offset + 1), // mysql offset is greatest item number to ignore, next item is first returned
+                        comment_pagination(offset, page, state.post.post_comments),
                         comment_box()
                     )
                 )
@@ -1397,31 +1397,27 @@ async function render(state) { /////////////////////////////////////////
         }
     }
 
-    function comment_pagination(start, page) {
+    function comment_pagination(offset, page, total) { // get pagination links for a list of comments
 
-        if (!state.post.post_comments) return
-
-        let end = (state.post.post_comments > start + 40) ? start + 40 : state.post.post_comments
-        let from_one_start = start + 1
-
+        let end = (total > offset + 40) ? offset + 40 : total
         let previouspage = 0
         let nextpage = 0
 
-        if (start > 0) previouspage = page + 1
-        if (page  > 0) nextpage     = page - 1
+        if (offset > 0) previouspage = page + 1
+        if (page   > 0) nextpage     = page - 1
 
-        let maxpage = Math.floor(state.post.post_comments / 40)
+        let maxpage = Math.floor(total / 40)
         let ret = `<p id='comments'>`
 
-        if (start > 0) {
+        if (offset > 0) {
             ret = ret +
                 `<a href='${post2path(state.post)}?page=${maxpage}#comments' title='Jump to first comment' >&laquo; First</a> &nbsp; &nbsp;
                  <a href='${post2path(state.post)}?page=${previouspage}#comments' title='Previous page of comments' >&laquo; Previous</a> &nbsp; &nbsp; `
         }
 
-        let s = (state.post.post_comments == 1) ? '' : 's'
+        let s = (total == 1) ? '' : 's'
 
-        ret = ret + `Comment${s} ${from_one_start} - ${end} of ${state.post.post_comments} &nbsp; &nbsp; `
+        ret = ret + `Comment${s} ${offset + 1} - ${end} of ${total} &nbsp; &nbsp; `
 
         if (page  > 0) ret = ret + `<a href='${post2path(state.post)}?page=${nextpage}#comments'>Next &raquo;</a> &nbsp; &nbsp; `
 
@@ -1912,8 +1908,8 @@ async function render(state) { /////////////////////////////////////////
         if (!page) page = intval(_GET('page')) // if page is not set from c above, use _GET('page')
         if (!page) page = 0
 
-        let start = post.post_comments - 40 * (page + 1)
-        if (start < 0) start = 0
+        let offset = post.post_comments - 40 * (page + 1) // count back by pages to find first comment number on page
+        if (offset < 0) offset = 0
 
         // if this gets too slow as user_uncivil_comments increases, try a left join, or just start deleting old uncivil comments
         let user_id = state.current_user ? state.current_user.user_id : 0
@@ -1922,14 +1918,14 @@ async function render(state) { /////////////////////////////////////////
                    left join commentvotes on (comment_id = commentvote_comment_id and commentvote_user_id = ?)
                    where comment_post_id = ?
                    and comment_adhom_when is null
-                   order by comment_date limit ?, 40`
+                   order by comment_date limit 40 offset ?`
 
-        let results = await query(sql, [user_id, post.post_id, start], state)
+        let results = await query(sql, [user_id, post.post_id, offset], state)
 
         //let results = await query('select * from comments left join users on comment_author=user_id where comment_post_id=? order by comment_date',
         //    [post.post_id], state)
 
-        return [results, start, page]
+        return [results, offset, page]
     }
 
     function post_form() { // used both for composing new posts and for editing existing posts; distinction is the presence of p, an existing post_id
