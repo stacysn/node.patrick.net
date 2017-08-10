@@ -1,4 +1,4 @@
-// Copyright 2017 by Patrick Killelea under the ISC license
+// Copyright 2017 by Patrick Killelea under the GPLv2 license
 // globals are capitalized
 
 try { CONF = require('./conf.json') } catch(e) { console.log(e.message); process.exit(1) } // conf.json is required
