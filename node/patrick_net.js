@@ -62,7 +62,7 @@ function get_connection_from_pool(state) {
         state.ip = state.req.headers['x-forwarded-for']
 
         if (LOCKS[state.ip]) {
-            console.log(`Rate limit exceeded by ${ state.ip } by asking for ${ state.req.url }`)
+            console.log(`Rate limit exceeded by ${ state.ip } by asking for ${state.req.url}`)
             reject(state)
             return send_html(403, 'Rate Limit Exceeded')
         }
@@ -75,7 +75,7 @@ function get_connection_from_pool(state) {
                 threadId : db.threadId,
                 ts       : Date.now()
             }
-            console.log(`dblock for ${ state.ip } when asking for ${ state.req.url }`)
+            console.log(`dblock for ${state.ip} when asking for ${state.req.url}`)
 
             fulfill(state)
         })
@@ -1340,7 +1340,7 @@ async function render(state) { /////////////////////////////////////////
 
         let share_link = encodeURI(`https://${CONF.domain}/post/${c.comment_post_id}/?c=${c.comment_id}#comment-${c.comment_id}`)
         let mailto = `<a href='mailto:?subject=${CONF.domain} comment&body=${share_link}' title='email this' ><img src='/images/mailicon.jpg' width=15 height=12 ></a>`
-        return `<div class="comment" id="comment-${c.comment_id}" ><font size=-1>
+        return `<div class="comment" id="comment-${n}" ><font size=-1>
         ${n}
         ${icon}
         ${u} &nbsp;
@@ -1399,6 +1399,8 @@ async function render(state) { /////////////////////////////////////////
 
     function comment_pagination(offset, page, total) { // get pagination links for a list of comments
 
+        // offset is mysql offset, ie greatest row number which is _not_ in the result set
+
         let end = (total > offset + 40) ? offset + 40 : total
         let previouspage = 0
         let nextpage = 0
@@ -1409,19 +1411,29 @@ async function render(state) { /////////////////////////////////////////
         let maxpage = Math.floor(total / 40)
         let ret = `<p id='comments'>`
 
+        let path  = URL.parse(state.req.url).pathname // "pathNAME" is url path without ? parms, unlike "path"
+        let query = URL.parse(state.req.url).query
+
         if (offset > 0) {
+            
+            let maxpage_q      = query ? query.replace(/page=\d+/, `page=${maxpage}`)      : `page=${maxpage}`
+            let previouspage_q = query ? query.replace(/page=\d+/, `page=${previouspage}`) : `page=${previouspage}`
+
             ret = ret +
-                `<a href='${post2path(state.post)}?page=${maxpage}#comments' title='Jump to first comment' >&laquo; First</a> &nbsp; &nbsp;
-                 <a href='${post2path(state.post)}?page=${previouspage}#comments' title='Previous page of comments' >&laquo; Previous</a> &nbsp; &nbsp; `
+                `<a href='${path}?${maxpage_q}#comments'      title='Jump to first comment' >&laquo; First</a> &nbsp; &nbsp;
+                 <a href='${path}?${previouspage_q}#comments' title='Previous page of comments' >&laquo; Previous</a> &nbsp; &nbsp; `
         }
 
         let s = (total == 1) ? '' : 's'
 
         ret = ret + `Comment${s} ${offset + 1} - ${end} of ${total} &nbsp; &nbsp; `
 
-        if (page  > 0) ret = ret + `<a href='${post2path(state.post)}?page=${nextpage}#comments'>Next &raquo;</a> &nbsp; &nbsp; `
+        if (page > 0) {
+            let nextpage_q = query.replace(/page=\d+/, `page=${nextpage}`)
+            ret = ret + `<a href='${path}?${nextpage_q}#comments'>Next &raquo;</a> &nbsp; &nbsp; `
+        }
 
-        ret = ret + `<a href='${post2path(state.post)}#comment-${state.post.post_latest_comment_id}' title='Jump to last comment' >Last &raquo;</a></br>`
+        ret = ret + `<a href='${path}#comment-${total}' title='Jump to last comment' >Last &raquo;</a></br>`
 
         return ret
     }
@@ -2230,7 +2242,7 @@ async function render(state) { /////////////////////////////////////////
         }
     }
     else {
-        let err = `${ state.req.url } is not a valid url`
+        let err = `${state.req.url} is not a valid url`
         console.log(err)
         send_html(404, err)
     }
