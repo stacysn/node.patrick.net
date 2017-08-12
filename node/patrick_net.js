@@ -758,7 +758,7 @@ async function render(state) { /////////////////////////////////////////
                 midpage(
                     tabs(order),
                     post_list(),
-                    pagination_links(found_rows, curpage, `&order=${order}`)
+                    post_pagination(found_rows, curpage, `&order=${order}`)
                 )
             )
 
@@ -1055,10 +1055,10 @@ async function render(state) { /////////////////////////////////////////
             let content = html(
                 midpage(
                     h1(),
-                    pagination_links(found_rows, curpage, `&s=${us}&order=${order}`),
+                    post_pagination(found_rows, curpage, `&s=${us}&order=${order}`),
                     tabs(order, `&s=${us}`),
                     post_list(),
-                    pagination_links(found_rows, curpage, `&s=${us}&order=${order}`)
+                    post_pagination(found_rows, curpage, `&s=${us}&order=${order}`)
                 )
             )
 
@@ -1098,7 +1098,7 @@ async function render(state) { /////////////////////////////////////////
                     h1(),
                     tabs(order, `&topic=${topic}`),
                     post_list(),
-                    pagination_links(state.posts.length, curpage, `&topic=${topic}&order=${order}`)
+                    post_pagination(state.posts.length, curpage, `&topic=${topic}&order=${order}`)
                 )
             )
 
@@ -1210,7 +1210,7 @@ async function render(state) { /////////////////////////////////////////
                     user_info(u),
                     tabs(order),
                     post_list(),
-                    pagination_links(found_rows, curpage, `&order=${order}`)
+                    post_pagination(found_rows, curpage, `&order=${order}`)
                 )
             )
 
@@ -1422,7 +1422,7 @@ async function render(state) { /////////////////////////////////////////
             var previous_offset = (offset - 40 > 0) ? offset - 40 : 0
             var next_offset     = (offset + 40 > total - 40) ? total - 40 : offset + 40 // last page will always be 40 comments
 
-            if (offset >= 40 || (typeof offset !== 'undefined')) { // don't need these links if we are on the first page
+            if (offset != 0) { // don't need these links if we are on the first page
                 var first_link    = `${pathname}?${query.replace(/offset=\d+/, 'offset=0')}#comments`
                 var previous_link = `${pathname}?${query.replace(/offset=\d+/, 'offset=' + previous_offset)}#comments`
             }
@@ -1431,7 +1431,7 @@ async function render(state) { /////////////////////////////////////////
                 var next_link = `${pathname}?${query.replace(/offset=\d+/, 'offset=' + next_offset)}#comments`
             }
 
-            var last_link = `${pathname}?${query}#comment-${total}`
+            var last_link = `${pathname}?${query.replace(/offset=\d+/, 'offset=' + (total - 40))}#comment-${total}`
         }
 
         if (typeof first_link !== 'undefined') {
@@ -1443,13 +1443,13 @@ async function render(state) { /////////////////////////////////////////
         }
 
         let max_on_this_page = (total > offset + 40) ? offset + 40 : total
-        ret = ret + `Comments ${offset + 1} to ${max_on_this_page} of ${total} &nbsp; &nbsp; `
+        ret = ret + `Comments ${offset + 1} - ${max_on_this_page} of ${total} &nbsp; &nbsp; `
 
         if (typeof next_link !== 'undefined') {
              ret = ret + `<a href='${next_link}' title='Next page of comments' >Next &raquo;</a> &nbsp; &nbsp; `
         }
 
-        return ret + `<a href='${pathname}#comment-${total}' title='Jump to last comment' >Last &raquo;</a></br>`
+        return ret + `<a href='${last_link}' title='Jump to last comment' >Last &raquo;</a></br>`
     }
 
     function create_nonce_parms() {
@@ -1747,7 +1747,7 @@ async function render(state) { /////////////////////////////////////////
                 midpage(
                     popup(),
                     post_list(),
-                    pagination_links()
+                    post_pagination()
                 )
             )
         }
@@ -1837,7 +1837,7 @@ async function render(state) { /////////////////////////////////////////
         return [curpage, slimit, order, order_by]
     }
 
-    function pagination_links(post_count, curpage, extra) {
+    function post_pagination(post_count, curpage, extra) {
 
         let links    = ''
         let nextpage = curpage + 1
