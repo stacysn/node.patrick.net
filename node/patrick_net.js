@@ -275,6 +275,10 @@ function format_mail(email, subject, message) {
     })
 }
 
+Number.prototype.commafy = function() {
+    return this.toLocaleString('en')
+}
+
 String.prototype.linkify = function(ref) {
 
     var urlPattern = /\b(?:https?|ftp):\/\/[a-z0-9-+&@#\/%?=~_|!:,.;]*[a-z0-9-+&@#\/%=~_|]/gim; // http://, https://, ftp://
@@ -1245,9 +1249,9 @@ async function render(state) { /////////////////////////////////////////
 
         var online_list = state.header_data.onlines.map(u => `<a href='/user/${u.online_username}'>${u.online_username}</a>`).join(', ')
 
-        return `${ state.header_data.comments.toLocaleString('en') } comments in
-                ${ state.header_data.posts.toLocaleString('en') } posts by
-                <a href='/users'>${ state.header_data.tot.toLocaleString('en') } registered users</a>,
+        return `${ state.header_data.comments.commafy() } comments in
+                ${ state.header_data.posts.commafy() } posts by
+                <a href='/users'>${ state.header_data.tot.commafy() } registered users</a>,
                 ${ state.header_data.onlines.length } online now: ${ online_list }`
     }
 
@@ -2167,7 +2171,7 @@ async function render(state) { /////////////////////////////////////////
         if (u.user_referers) {
             let s = u.user_referers == 1 ? '' : 's'
             let uusername = encodeURI(u.user_name)
-            return `<a href='/links?user_name=${uusername}'>${u.user_referers} links<img src='/images/goldstar.gif' width='18' height='17' ></a>`
+            return `<a href='/links?user_name=${uusername}'>${u.user_referers.commafy()} links<img src='/images/goldstar.gif' width='18' height='17' ></a>`
         }
     }
 
@@ -2190,8 +2194,8 @@ async function render(state) { /////////////////////////////////////////
                 <p>joined ${ format_date(u.user_registered) }
                 ${u.user_country ? u.user_country : ''}
                 ${user_links_link(u)}
-                ${u.user_posts} posts
-                <a href='/comments?a=${encodeURI(u.user_name)}&offset=${offset}'>${u.user_comments.toLocaleString('en')} comments</a> &nbsp;
+                ${u.user_posts.commafy()} posts
+                <a href='/comments?a=${encodeURI(u.user_name)}&offset=${offset}'>${ u.user_comments.commafy() } comments</a> &nbsp;
                 ${follow_button(u)}
 				</center>`
 
