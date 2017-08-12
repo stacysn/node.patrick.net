@@ -202,9 +202,8 @@ function md5(str) {
     return hash.digest('hex')
 }
 
-function intval(s) { // return integer from a string
-    if (parseInt(s)) return parseInt(s)
-    else             return 0
+function intval(s) { // return integer from a string or float
+    return parseInt(s) ? parseInt(s) : 0
 }
 
 function strip_tags(s) { // use like this: str = strip_tags('<p>There is some <u>text</u> here</p>', '<b><i><u><p><ol><ul>')
@@ -520,37 +519,33 @@ async function render(state) { /////////////////////////////////////////
 
         comments : async function() { // show a list of comments by user, or by comment-frequence, or from a search
 
-			let page   = _GET('apage') ? intval($_GET('apage')) : 1
-			let offset = (page - 1) * 20
-			let start  = offset
-            let total  = 0
+			let offset  = intval(_GET('offset'))
             let results = null
 
 			if (_GET('a')) { // a is author name
                 let a         = decodeURIComponent(_GET('a').replace(/[^\w %]/, ''))
-				results       = await get_comment_list_by_author(a, start, 40)
+				results       = await get_comment_list_by_author(a, offset, 40)
 				state.message = `<h2>${a}'s comments</h2>`
 			}
 			else if (_GET('n')) { // n is number of comments per author, so we can see all comments by one-comment authors, for example
                 let n         = intval(_GET('n'))
-				results       = await get_comment_list_by_number(n, start, 40)
+				results       = await get_comment_list_by_number(n, offset, 40)
 				state.message = `<h2>comments by users with ${n} comments</h2>`
 			}
 			else if (_GET('s')) { // comment search
                 let s         = _GET('s').replace(/[^\w %]/, '')
-                results       = await get_comment_list(s, start, 40)
+                results       = await get_comment_list_by_search(s, offset, 40)
 				state.message = `<h2>comments that contain "${s}"</h2>`
 			}
             else return send_html(200, `invalid request`)
 
             state.comments = results.comments
-            total          = results.total
 
             let content = html(
                 midpage(
                     h1(),
-                    //comment_pagination(start, page, total),
-                    comment_list() // give it the right comment number parm here
+                    comment_pagination(results.total),
+                    comment_list(offset + 1)
                 )
             )
 
@@ -948,7 +943,7 @@ async function render(state) { /////////////////////////////////////////
 
             if (0 == results.length) return send_html(404, `No post with id "${post_id}"`)
             else {
-                var [comments, offset, page] = await post_comment_list(state.post) // pick up the comment list for this post
+                var [comments, offset] = await post_comment_list(state.post) // pick up the comment list for this post
                 state.comments = comments
 
                 results = await query(`select count(*) as c from postviews where postview_post_id=? and postview_want_email=1`, [post_id], state)
@@ -957,9 +952,9 @@ async function render(state) { /////////////////////////////////////////
                 let content = html(
                     midpage(
                         post(),
-                        comment_pagination(offset, page, state.post.post_comments),
+                        comment_pagination(state.post.post_comments),
                         comment_list(offset + 1), // mysql offset is greatest item number to ignore, next item is first returned
-                        comment_pagination(offset, page, state.post.post_comments),
+                        comment_pagination(state.post.post_comments),
                         comment_box()
                     )
                 )
@@ -1051,8 +1046,8 @@ async function render(state) { /////////////////////////////////////////
                        left join users on user_id=post_author
                        where match(post_title, post_content) against ('${s}') ${order_by} limit ${slimit}`
 
-            state.posts       = await query(sql, [], state)
-            state.message     = `search results for "${s}"`
+            state.posts   = await query(sql, [], state)
+            state.message = `search results for "${s}"`
 
             let results2   = await query('select found_rows() as f', [], state)
             let found_rows = results2[0].f
@@ -1060,6 +1055,7 @@ async function render(state) { /////////////////////////////////////////
             let content = html(
                 midpage(
                     h1(),
+                    pagination_links(found_rows, curpage, `&s=${us}&order=${order}`),
                     tabs(order, `&s=${us}`),
                     post_list(),
                     pagination_links(found_rows, curpage, `&s=${us}&order=${order}`)
@@ -1397,45 +1393,63 @@ async function render(state) { /////////////////////////////////////////
         }
     }
 
-    function comment_pagination(offset, page, total) { // get pagination links for a list of comments
+    function comment_pagination(total) { // get pagination links for a list of comments
 
-        // offset is mysql offset, ie greatest row number which is _not_ in the result set
+        if (total <= 40) return '' // 40 or fewer comments need no pagination
+    
+        // offset is mysql offset, ie greatest row number to exclude from the result set
 
-        let end = (total > offset + 40) ? offset + 40 : total
-        let previouspage = 0
-        let nextpage = 0
+        let ret      = `<p id='comments'>`
+        let pathname = URL.parse(state.req.url).pathname // "pathNAME" is url path without the ? parms, unlike "path"
+        let query    = URL.parse(state.req.url).query
 
-        if (offset > 0) previouspage = page + 1
-        if (page   > 0) nextpage     = page - 1
+		// offset missing from url -> showing last 40 comments in set (same as total - 40)
+		// offset 0                -> showing first 40 comments in set
+		// offset n                -> showing first 40 comments after n
 
-        let maxpage = Math.floor(total / 40)
-        let ret = `<p id='comments'>`
+        if (!query || !query.match(/offset=\d+/)) { // we are on the last page of comments, ie offset = total - 40
+            var offset          = total - 40
+            var previous_offset = (total - 80 > 0) ? total - 80 : 0 // second to last page
+            var q               = query ? (query + '&') : ''
 
-        let path  = URL.parse(state.req.url).pathname // "pathNAME" is url path without ? parms, unlike "path"
-        let query = URL.parse(state.req.url).query
+            var first_link      = `${pathname}?${q}offset=0#comments`
+            var previous_link   = `${pathname}?${q}offset=${previous_offset}#comments`
+            // there is no next_link because we are necessarily on the last page of comments
+            var last_link       = `${pathname}${q ? ('?' + q) : ''}#comment-${total}` // don't include the question mark unless q
+        }
+        else { // there is a query string, and it includes offset
+            var offset          = intval(_GET('offset'))
+            var previous_offset = (offset - 40 > 0) ? offset - 40 : 0
+            var next_offset     = (offset + 40 > total - 40) ? total - 40 : offset + 40 // last page will always be 40 comments
 
-        if (offset > 0) {
-            
-            let maxpage_q      = query ? query.replace(/page=\d+/, `page=${maxpage}`)      : `page=${maxpage}`
-            let previouspage_q = query ? query.replace(/page=\d+/, `page=${previouspage}`) : `page=${previouspage}`
+            if (offset >= 40 || (typeof offset !== 'undefined')) { // don't need these links if we are on the first page
+                var first_link    = `${pathname}?${query.replace(/offset=\d+/, 'offset=0')}#comments`
+                var previous_link = `${pathname}?${query.replace(/offset=\d+/, 'offset=' + previous_offset)}#comments`
+            }
 
-            ret = ret +
-                `<a href='${path}?${maxpage_q}#comments'      title='Jump to first comment' >&laquo; First</a> &nbsp; &nbsp;
-                 <a href='${path}?${previouspage_q}#comments' title='Previous page of comments' >&laquo; Previous</a> &nbsp; &nbsp; `
+            if (offset < total - 40) { // don't need next link on last page
+                var next_link = `${pathname}?${query.replace(/offset=\d+/, 'offset=' + next_offset)}#comments`
+            }
+
+            var last_link = `${pathname}?${query}#comment-${total}`
         }
 
-        let s = (total == 1) ? '' : 's'
-
-        ret = ret + `Comment${s} ${offset + 1} - ${end} of ${total} &nbsp; &nbsp; `
-
-        if (page > 0) {
-            let nextpage_q = query.replace(/page=\d+/, `page=${nextpage}`)
-            ret = ret + `<a href='${path}?${nextpage_q}#comments'>Next &raquo;</a> &nbsp; &nbsp; `
+        if (typeof first_link !== 'undefined') {
+            ret = ret + `<a href='${first_link}' title='Jump to first comment' >&laquo; First</a> &nbsp; &nbsp;`
         }
 
-        ret = ret + `<a href='${path}#comment-${total}' title='Jump to last comment' >Last &raquo;</a></br>`
+        if (typeof previous_link !== 'undefined') {
+             ret = ret + `<a href='${previous_link}' title='Previous page of comments' >&laquo; Previous</a> &nbsp; &nbsp; `
+        }
 
-        return ret
+        let max_on_this_page = (total > offset + 40) ? offset + 40 : total
+        ret = ret + `Comments ${offset + 1} to ${max_on_this_page} of ${total} &nbsp; &nbsp; `
+
+        if (typeof next_link !== 'undefined') {
+             ret = ret + `<a href='${next_link}' title='Next page of comments' >Next &raquo;</a> &nbsp; &nbsp; `
+        }
+
+        return ret + `<a href='${pathname}#comment-${total}' title='Jump to last comment' >Last &raquo;</a></br>`
     }
 
     function create_nonce_parms() {
@@ -1541,17 +1555,6 @@ async function render(state) { /////////////////////////////////////////
         return URL.parse(state.req.url, true).query[parm]
     }
 
-	async function get_comment_list(s, start, num) {
-
-		let comments = await query(`select sql_calc_found_rows * from comments where match(comment_content) against ('s')
-                                    order by comment_date desc limit start, num`, [s], state)
-
-		let result = await query(`select found_rows() as f`, [], state)
-        let total  = result[0].f
-
-		return {comments, total}
-	}
-
 	async function get_comment_list_by_author(a, start, num) {
 
         let comments = await query(`select sql_calc_found_rows * from comments left join users on comment_author=user_id
@@ -1568,6 +1571,17 @@ async function render(state) { /////////////////////////////////////////
 		let comments = await query(`select sql_calc_found_rows * from comments, users force index (user_comments_index)
                                     where comments.comment_author = users.user_id and user_comments = ? order by comment_date desc limit ?, ?`,
                                     [n, start, num], state)
+
+		let result = await query(`select found_rows() as f`, [], state)
+        let total  = result[0].f
+
+		return {comments, total}
+	}
+
+	async function get_comment_list_by_search(s, start, num) {
+
+		let comments = await query(`select sql_calc_found_rows * from comments where match(comment_content) against ('s')
+                                    order by comment_date desc limit start, num`, [s], state)
 
 		let result = await query(`select found_rows() as f`, [], state)
         let total  = result[0].f
@@ -1898,30 +1912,22 @@ async function render(state) { /////////////////////////////////////////
 
     async function post_comment_list(post) {
 
-        // If page is not set, show the 40 most recent comments. Same as page 0.
-        // If page is set, show that page, counting backwards from most recent.
-        // So page 1 would be the 40 comments before the most recent.
+        // If offset is not set, select the 40 most recent comments.
+        // But if offset is set, use that instead.
+        // But if c is set, calc offset from that instead.
 
-        // If we were passed a 'c' parm, then calculate the page from that, overriding any page parm.
-        // This allows permalinks regardless of page number.
+        let offset = (post.post_comments - 40 > 0) ? post.post_comments - 40 : 0
 
-        let page = 0 // default to first page of comments
+        if (_GET('offset')) offset = intval(_GET('offset'))
+
+        // If we were passed a 'c' parm, then calculate the offset from that, overriding any offset parm. This allows permalinks.
         let c = intval(_GET('c'))
+        if (c) { // What row number in the result set is comment c?
+            let results = await query(`select count(*) as offset from comments where comment_post_id=? and comment_id < ?
+                                       order by comment_id`, [post.post_id, c], state)
 
-        if (c) {
-            // Get all the comments, sorted from greatest to least.
-            // What page of 40 from the end is our comment in? Start counting with page 0 being the most recent comments.
-            let results = await query(`select floor(count(*)/40 - 0.01) as f from comments
-                                       where comment_post_id=? and comment_id >= ? order by comment_id`, [post.post_id, c], state)
-
-            if (results[0]) page = results[0].f
+            if (results[0]) offset = results[0].offset
         }
-
-        if (!page) page = intval(_GET('page')) // if page is not set from c above, use _GET('page')
-        if (!page) page = 0
-
-        let offset = post.post_comments - 40 * (page + 1) // count back by pages to find first comment number on page
-        if (offset < 0) offset = 0
 
         // if this gets too slow as user_uncivil_comments increases, try a left join, or just start deleting old uncivil comments
         let user_id = state.current_user ? state.current_user.user_id : 0
@@ -1937,7 +1943,7 @@ async function render(state) { /////////////////////////////////////////
         //let results = await query('select * from comments left join users on comment_author=user_id where comment_post_id=? order by comment_date',
         //    [post.post_id], state)
 
-        return [results, offset, page]
+        return [results, offset]
     }
 
     function post_form() { // used both for composing new posts and for editing existing posts; distinction is the presence of p, an existing post_id
