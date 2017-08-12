@@ -522,7 +522,7 @@ async function render(state) { /////////////////////////////////////////
 			let offset  = intval(_GET('offset'))
             let results = null
 
-			if (_GET('a')) { // a is author name
+			if (_GET('a')) {      // a is author name
                 let a         = decodeURIComponent(_GET('a').replace(/[^\w %]/, ''))
 				results       = await get_comment_list_by_author(a, offset, 40)
 				state.message = `<h2>${a}'s comments</h2>`
@@ -2196,6 +2196,8 @@ async function render(state) { /////////////////////////////////////////
         }
         else var edit_or_logout = ''
 
+        let offset = (u.user_comments - 40 > 0) ? u.user_comments - 40 : 0
+
         return `${edit_or_logout}
                 <center>
                 <a href='/user/${u.user_name}' >${ img }</a><h2>${u.user_name}</h2>
@@ -2203,7 +2205,7 @@ async function render(state) { /////////////////////////////////////////
                 ${u.user_country ? u.user_country : ''}
                 ${user_links_link(u)}
                 ${u.user_posts} posts
-                <a href='/comments?a=${encodeURI(u.user_name)}'>${u.user_comments} comments</a> &nbsp;
+                <a href='/comments?a=${encodeURI(u.user_name)}&offset=${offset}'>${u.user_comments} comments</a> &nbsp;
                 ${follow_button(u)}
 				</center>`
 
