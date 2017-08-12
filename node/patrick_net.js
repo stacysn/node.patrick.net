@@ -545,44 +545,20 @@ async function render(state) { /////////////////////////////////////////
                 midpage(
                     h1(),
                     comment_pagination(results.total),
-                    comment_list(offset + 1)
+                    comment_list(offset + 1),
+                    comment_search_box()
                 )
             )
 
             return send_html(200, content)
+
 			/*
-
-			?>
-			<form name="searchform" action="" method="get" > 
-			  <fieldset> 
-			  <input type="text" name="s" value="<? if (s) echo stripslashes(s); ?>" size="17" /> 
-			  <input type="submit" name="submit" value="Search comments &raquo;"  />  
-			  </fieldset> 
-			</form><p>
-			<?
-
-			comments       = array_slice(_comments, 0, 20)
-			extra_comments = array_slice(_comments, 20)
-
-			page_links = paginate_links( array(
-				'base'    => add_query_arg( 'apage', '%#%' ), 
-				'format'  => '',
-				'total'   => ceil(total / 20),
-				'current' => page
-			))
-
-			if ( page_links )
-				echo "<p class='pagenav'>page_links</p>"
-
 			if (comments) {
 				comment_list(offset)
 			} else {
 				?><p><strong>No comments found.</strong></p><?
 			}
 
-			if ( page_links )
-				echo "<p class='pagenav'>page_links</p>"
-			?>
 			*/
         },
 
@@ -1452,6 +1428,16 @@ async function render(state) { /////////////////////////////////////////
         return ret + `<a href='${last_link}' title='Jump to last comment' >Last &raquo;</a></br>`
     }
 
+    function comment_search_box() {
+        return `<form name='searchform' action='/comments' method='get' > 
+          <fieldset> 
+          <input type='text'   name='s'      value='' size='17' /> 
+          <input type='hidden' name='offset' value='0' /> 
+          <input type='submit' name='submit' value='Search comments &raquo;' />  
+          </fieldset> 
+        </form><p>`
+    }
+
     function create_nonce_parms() {
         let ts = Date.now() // current unix time in ms
         let nonce = get_nonce(ts)
@@ -1558,7 +1544,7 @@ async function render(state) { /////////////////////////////////////////
 	async function get_comment_list_by_author(a, start, num) {
 
         let comments = await query(`select sql_calc_found_rows * from comments left join users on comment_author=user_id
-                                    where user_name = ? order by comment_date desc limit ?, ?`, [a, start, num], state)
+                                    where user_name = ? order by comment_date limit ?, ?`, [a, start, num], state)
 
 		let result = await query(`select found_rows() as f`, [], state)
         let total  = result[0].f
@@ -1569,7 +1555,7 @@ async function render(state) { /////////////////////////////////////////
 	async function get_comment_list_by_number(n, start, num) {
 
 		let comments = await query(`select sql_calc_found_rows * from comments, users force index (user_comments_index)
-                                    where comments.comment_author = users.user_id and user_comments = ? order by comment_date desc limit ?, ?`,
+                                where comments.comment_author = users.user_id and user_comments = ? order by comment_date desc limit ?, ?`,
                                     [n, start, num], state)
 
 		let result = await query(`select found_rows() as f`, [], state)
@@ -1580,8 +1566,8 @@ async function render(state) { /////////////////////////////////////////
 
 	async function get_comment_list_by_search(s, start, num) {
 
-		let comments = await query(`select sql_calc_found_rows * from comments where match(comment_content) against ('s')
-                                    order by comment_date desc limit start, num`, [s], state)
+		let comments = await query(`select sql_calc_found_rows * from comments where match(comment_content) against (?)
+                                    limit ?, ?`, [s, start, num], state)
 
 		let result = await query(`select found_rows() as f`, [], state)
         let total  = result[0].f
@@ -2205,7 +2191,7 @@ async function render(state) { /////////////////////////////////////////
                 ${u.user_country ? u.user_country : ''}
                 ${user_links_link(u)}
                 ${u.user_posts} posts
-                <a href='/comments?a=${encodeURI(u.user_name)}&offset=${offset}'>${u.user_comments} comments</a> &nbsp;
+                <a href='/comments?a=${encodeURI(u.user_name)}&offset=${offset}'>${u.user_comments.toLocaleString('en')} comments</a> &nbsp;
                 ${follow_button(u)}
 				</center>`
 
