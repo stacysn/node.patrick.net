@@ -1309,16 +1309,15 @@ async function render(state) { /////////////////////////////////////////
             var dislike = `<a href='#' onclick="midpage.innerHTML = registerform.innerHTML; return false" >&#8593;&nbsp;dislike (${comment_likes})</a>`
         }
 
-/*
-    if ($post_id) {
-        $commenter = get_userrow($comment->comment_author);
-        $s .= "<a href=\"#commentform\" onclick=\"addquote('$comment->comment_post_id', '$comment->comment_id', '$commenter->user_name'); return false;\" title=\"Select some text then click this to quote\" >quote</a> &nbsp; ";
-    }
-*/
-
+        /*
+            if ($post_id) {
+                $commenter = get_userrow($comment->comment_author);
+                $s .= "<a href=\"#commentform\" onclick=\"addquote('$comment->comment_post_id', '$comment->comment_id', '$commenter->user_name'); return false;\" title=\"Select some text then click this to quote\" >quote</a> &nbsp; ";
+            }
+        */
         let share_link = encodeURI(`https://${CONF.domain}/post/${c.comment_post_id}/?c=${c.comment_id}#comment-${c.comment_id}`)
         let mailto = `<a href='mailto:?subject=${CONF.domain} comment&body=${share_link}' title='email this' ><img src='/images/mailicon.jpg' width=15 height=12 ></a>`
-        return `<div class="comment" id="comment-${n}" ><font size=-1>
+        return `<div class="comment" id="comment-${c.comment_id}" ><font size=-1>
         ${n}
         ${icon}
         ${u} &nbsp;
