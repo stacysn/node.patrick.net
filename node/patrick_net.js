@@ -202,6 +202,8 @@ function md5(str) {
     return hash.digest('hex')
 }
 
+function debug(s) { console.log(s) } // so that we can grep and remove 'debug' from the source more easily when done debugging
+
 function intval(s) { // return integer from a string or float
     return parseInt(s) ? parseInt(s) : 0
 }
@@ -326,7 +328,7 @@ function query(sql, sql_parms, state) {
 
         var get_results = function (error, results, fields, timing) { // callback to give to state.db.query()
 
-            console.log(query.sql)
+            //console.log(query.sql)
 
             if (error) {
                 console.log(error)
@@ -494,7 +496,9 @@ async function render(state) { /////////////////////////////////////////
                 results = await query('select * from comments where comment_id = ?', [comment_id], state)
                 state.comment = results[0]
 
-                redirect(`/post/${state.comment.comment_post_id}?c=${comment_id}#comment-${comment_id}`)
+                let offset = await cid2offset(state.comment.comment_post_id, comment_id)
+
+                redirect(`/post/${state.comment.comment_post_id}?offset=${offset}#comment-${comment_id}`)
             }
         },
 
@@ -544,13 +548,12 @@ async function render(state) { /////////////////////////////////////////
             else return send_html(200, `invalid request`)
 
             state.comments = results.comments
-            let greatest_cid = results.comments[results.comments.length - 1].comment_id
 
             let content = html(
                 midpage(
                     h1(),
-                    comment_pagination(results.total, greatest_cid),
-                    comment_list(offset + 1),
+                    comment_pagination(),
+                    comment_list(),
                     comment_search_box()
                 )
             )
@@ -559,7 +562,7 @@ async function render(state) { /////////////////////////////////////////
 
 			/*
 			if (comments) {
-				comment_list(offset)
+				comment_list()
 			} else {
 				?><p><strong>No comments found.</strong></p><?
 			}
@@ -732,8 +735,7 @@ async function render(state) { /////////////////////////////////////////
 
             state.posts = await query(sql, [current_user_id, current_user_id], state)
 
-            let results2   = await query('select found_rows() as f', [], state)
-            let found_rows = results2[0].f
+            let found_rows = sql_calc_found_rows()
 
             let content = html(
                 midpage(
@@ -805,7 +807,8 @@ async function render(state) { /////////////////////////////////////////
 
                 // Now mail the comment author that his comment was liked, iff he has user_summonable set
                 // todo: AND if current user has no record of voting on this comment! (to prevent clicking like over and over to annoy author with email)
-                let comment_url = `https://${CONF.domain}/post/${comment_row.comment_post_id}?c=${comment_row.comment_id}#comment-${comment_row.comment_id}`
+                let offset = await cid2offset(comment_row.comment_post_id, comment_row.comment_id)
+                let comment_url = `https://${CONF.domain}/post/${comment_row.comment_post_id}?offset=${offset}#comment-${comment_row.comment_id}`
 
                 let result2 = await query(`select * from users where user_id=?`, [comment_row.comment_author], state)
                 let u = result2[0]
@@ -924,19 +927,19 @@ async function render(state) { /////////////////////////////////////////
 
             if (0 == results.length) return send_html(404, `No post with id "${post_id}"`)
             else {
-                var [comments, offset] = await post_comment_list(state.post) // pick up the comment list for this post
-                state.comments = comments
-                let greatest_cid = comments[comments.length - 1].comment_id
+                state.comments            = await post_comment_list(state.post) // pick up the comment list for this post
+                state.comments.found_rows = await sql_calc_found_rows()
 
-                results = await query(`select count(*) as c from postviews where postview_post_id=? and postview_want_email=1`, [post_id], state)
+                results = await query(`select count(*) as c from postviews where postview_post_id=? and postview_want_email=1`,
+                                      [post_id], state)
                 state.post.watchers = results[0].c
 
                 let content = html(
                     midpage(
                         post(),
-                        comment_pagination(state.post.post_comments, greatest_cid),
-                        comment_list(offset + 1), // mysql offset is greatest item number to ignore, next item is first returned
-                        comment_pagination(state.post.post_comments, greatest_cid),
+                        comment_pagination(),
+                        comment_list(), // mysql offset is greatest item number to ignore, next item is first returned
+                        comment_pagination(),
                         comment_box()
                     )
                 )
@@ -1057,9 +1060,9 @@ async function render(state) { /////////////////////////////////////////
                                        where comment_post_id = ? and comment_approved > 0 and comment_date > from_UNIXTIME(?)
                                        order by comment_date limit 1`, [p, when], state)
 
-            let c = results[0].comment_id
+            let offset = await cid2offset(p, results[0].comment_id)
 
-            redirect(`/post/${p}?c=${c}#comment-${c}`)
+            redirect(`/post/${p}?offset=${offset}#comment-${c}`)
         },
 
         topic : async function() {
@@ -1257,6 +1260,24 @@ async function render(state) { /////////////////////////////////////////
                 ${ state.header_data.onlines.length } online now: ${ online_list }`
     }
 
+    async function cid2offset(post_id, comment_id) { // given a comment_id, find the offset
+
+        let results = await query(`select count(*) as to_skip from comments where comment_post_id=? and comment_id < ? order by comment_id`,
+                                  [post_id, comment_id], state)
+
+        precise_offset = results[0].to_skip + 1 // the exact row number where our comment appears
+
+        // now what is the offset of the page which has contains precise_offset?
+        // count backwards from post.post_comments by 40's until precise_offset is in the page
+        let page_offset = 0
+        for (page_offset = post.post_comments - 40; page_offset > 0; page_offset = page_offset - 40) {
+            if (precise_offset > page_offset) { // we found it!
+                offset = page_offset
+                break
+            }
+        }
+    }
+
     function clean_upload_path(path, filename) {
 
         // allow only alphanum, dot, dash in image name to mitigate scripting tricks
@@ -1285,11 +1306,11 @@ async function render(state) { /////////////////////////////////////////
         return filename
     }
 
-    function format_comment(c, n=0) {
+    function format_comment(c) {
 
         var comment_dislikes = intval(c.comment_dislikes)
         var comment_likes    = intval(c.comment_likes)
-        var date_link        = get_date_link(c)
+        var date_link        = get_permalink(c)
         var del              = get_del_link(c)
         var edit             = get_edit_link(c)
         var icon             = user_icon(c, 0.4, `'align='left' hspace='5' vspace='2'`) // scale image down
@@ -1315,10 +1336,14 @@ async function render(state) { /////////////////////////////////////////
                 $s .= "<a href=\"#commentform\" onclick=\"addquote('$comment->comment_post_id', '$comment->comment_id', '$commenter->user_name'); return false;\" title=\"Select some text then click this to quote\" >quote</a> &nbsp; ";
             }
         */
-        let share_link = encodeURI(`https://${CONF.domain}/post/${c.comment_post_id}/?c=${c.comment_id}#comment-${c.comment_id}`)
-        let mailto = `<a href='mailto:?subject=${CONF.domain} comment&body=${share_link}' title='email this' ><img src='/images/mailicon.jpg' width=15 height=12 ></a>`
-        return `<div class="comment" id="comment-${c.comment_id}" ><font size=-1>
-        ${n}
+
+        // for the last comment in the whole result set (not just last on this page) add an id="last"
+        if (state.comments) { // state.comments may not be defined, for example when we just added one comment
+            var last = (c.row_number == state.comments.found_rows) ? 'id="last"' : ''
+        }
+
+        return `<div class="comment" id="comment-${c.comment_id}" ${last} ><font size=-1>
+        ${c.row_number}
         ${icon}
         ${u} &nbsp;
         ${date_link} &nbsp;
@@ -1327,7 +1352,6 @@ async function render(state) { /////////////////////////////////////////
         ${uncivil} &nbsp;
         ${edit} &nbsp;
         ${del} &nbsp;
-        ${mailto} &nbsp;
         </font><br>${ c.comment_content }</div>`
     }
 
@@ -1363,27 +1387,21 @@ async function render(state) { /////////////////////////////////////////
         <script type="text/javascript">document.getElementById('ta').focus();</script>`
     }
 
-    function comment_list(n=1) {
-        if (state.comments) {
-
-            let formatted = state.comments.map( (item) => {
-                return format_comment(item, n++)
-            })
-
-            return formatted.join('')
-        }
+    function comment_list() { // format one page of comments
+        return state.comments ? state.comments.map(item => { return format_comment(item) }).join('') : ''
     }
 
-    function comment_pagination(total, greatest_cid) { // get pagination links for a list of comments
+    function comment_pagination() { // get pagination links for a single page of comments
 
-        if (total <= 40) return '' // 40 or fewer comments need no pagination
-    
-        // offset is mysql offset, ie greatest row number to exclude from the result set
+        if (!state.comments)                 return
+        if (state.comments.found_rows <= 40) return // no pagination links needed if one page or less
 
+        let total    = state.comments.found_rows
         let ret      = `<p id='comments'>`
         let pathname = URL.parse(state.req.url).pathname // "pathNAME" is url path without the ? parms, unlike "path"
         let query    = URL.parse(state.req.url).query
 
+        // offset is mysql offset, ie greatest row number to exclude from the result set
 		// offset missing from url -> showing last 40 comments in set (same as total - 40)
 		// offset 0                -> showing first 40 comments in set
 		// offset n                -> showing first 40 comments after n
@@ -1396,7 +1414,7 @@ async function render(state) { /////////////////////////////////////////
             var first_link      = `${pathname}?${q}offset=0#comments`
             var previous_link   = `${pathname}?${q}offset=${previous_offset}#comments`
             // there is no next_link because we are necessarily on the last page of comments
-            var last_link       = `${pathname}${q ? ('?' + q) : ''}#comment-${greatest_cid}` // don't include the question mark unless q
+            var last_link       = `${pathname}${q ? ('?' + q) : ''}#last` // don't include the question mark unless q
         }
         else { // there is a query string, and it includes offset
             var offset          = intval(_GET('offset'))
@@ -1412,7 +1430,7 @@ async function render(state) { /////////////////////////////////////////
                 var next_link = `${pathname}?${query.replace(/offset=\d+/, 'offset=' + next_offset)}#comments`
             }
 
-            var last_link = `${pathname}?${query.replace(/offset=\d+/, 'offset=' + (total - 40))}#comment-${greatest_cid}`
+            var last_link = `${pathname}?${query.replace(/offset=\d+/, 'offset=' + (total - 40))}#last`
         }
 
         if (typeof first_link !== 'undefined') {
@@ -1580,10 +1598,6 @@ async function render(state) { /////////////////////////////////////////
 		return {comments, total}
 	}
 
-    function get_date_link(c) {
-        return `<a href='/post/${c.comment_post_id}/?c=${c.comment_id}#comment-${c.comment_id}' title='permalink' >${format_date(c.comment_date)}</a>`
-    }
-
     function get_del_link(c) {
 
         if (!state.current_user) return ''
@@ -1634,6 +1648,16 @@ async function render(state) { /////////////////////////////////////////
         // create or check a nonce string for input forms. this makes each form usable only once, and only from the ip that got the form.
         // hopefully this slows down spammers and cross-site posting tricks
         return md5(state.ip + CONF.nonce_secret + ts)
+    }
+
+    function get_permalink(c) {
+
+        let parm = '' // default is no offset parm, ie last page of comments
+
+        if (_GET('offset') == 0) parm = `?offset=0`
+        else if (_GET('offset')) parm = `?offset=${_GET('offset')}`
+
+        return `<a href='/post/${c.comment_post_id}/${parm}#comment-${c.comment_id}' title='permalink' >${format_date(c.comment_date)}</a>`
     }
 
     function get_uncivil_link(c) {
@@ -1879,11 +1903,11 @@ async function render(state) { /////////////////////////////////////////
 
         if (state.post.postview_want_email) {
             var watcheye = `<a href='${post2path(state.post)}?want_email=0' title='stop getting comments by email' >
-                  <IMG SRC='/content/openeye.png'> unwatch</A> (${state.post.watchers}) &nbsp;`
+                  <img src='/content/openeye.png'> unwatch</A> (${state.post.watchers}) &nbsp;`
         }
         else {
             var watcheye = `<a href='${post2path(state.post)}?want_email=1' title='Get comments by email for this post' >
-                  <IMG SRC='/content/closedeye.png'> watch</A> (${state.post.watchers}) &nbsp;`
+                  <img src='/content/closedeye.png'> watch</A> (${state.post.watchers}) &nbsp;`
         }
 
         let current_user_name = state.current_user ? state.current_user.user_name : 'anonymous'
@@ -1911,35 +1935,9 @@ async function render(state) { /////////////////////////////////////////
 
     async function post_comment_list(post) {
 
-        // If offset is not set, select the 40 most recent comments.
-        // But if offset is set, use that instead.
-        // But if c is set, calc offset from that instead.
+        let offset = (post.post_comments - 40 > 0) ? post.post_comments - 40 : 0 // If offset is not set, select the 40 most recent comments.
 
-        let offset = (post.post_comments - 40 > 0) ? post.post_comments - 40 : 0
-
-        if (_GET('offset')) offset = intval(_GET('offset'))
-
-        // If we were passed a 'c' parm, then calculate the offset from that, overriding any offset parm. This allows permalinks.
-        // so what we are looking for is the first offset counting back from total by 40's which includes c
-        let c = intval(_GET('c'))
-        if (c) { // What row number in the result set is comment c?
-            let results = await query(`select count(*) as to_skip from comments where comment_post_id=? and comment_id < ?
-                                       order by comment_id`, [post.post_id, c], state)
-
-            if (results[0]) {
-                precise_offset = results[0].to_skip + 1 // the exact row number where our comment appears
-
-                // now what is the offset of the page which has contains precise_offset?
-                // count backwards from post.post_comments by 40's until precise_offset is in the page
-                let page_offset = 0
-                for (page_offset = post.post_comments - 40; page_offset > 0; page_offset = page_offset - 40) {
-                    if (precise_offset > page_offset) { // we found it!
-                        offset = page_offset
-                        break
-                    }
-                }
-            }
-        }
+        if (_GET('offset')) offset = intval(_GET('offset')) // But if offset is set, use that instead.
 
         // if this gets too slow as user_uncivil_comments increases, try a left join, or just start deleting old uncivil comments
         let user_id = state.current_user ? state.current_user.user_id : 0
@@ -1952,10 +1950,13 @@ async function render(state) { /////////////////////////////////////////
 
         let results = await query(sql, [user_id, post.post_id, offset], state)
 
+        // add in the comment row number to the result here for easier pagination info; would be better to do in mysql, but how?
+        results = results.map(comment => { comment.row_number = ++offset; return comment })
+
         //let results = await query('select * from comments left join users on comment_author=user_id where comment_post_id=? order by comment_date',
         //    [post.post_id], state)
 
-        return [results, offset]
+        return results
     }
 
     function post_form() { // used both for composing new posts and for editing existing posts; distinction is the presence of p, an existing post_id
@@ -2114,6 +2115,11 @@ async function render(state) { /////////////////////////////////////////
 
     function slugify(s) { // url-safe pretty chars only; not used for navigation, only for seo and humans
         return s.replace(/\W+/g,'-').toLowerCase().replace(/-+/,'-').replace(/^-+|-+$/,'')
+    }
+
+    async function sql_calc_found_rows() {
+        let results = await query('select found_rows() as f', [], state)
+        return results[0].f
     }
 
     function tabs(order, extra='') {
