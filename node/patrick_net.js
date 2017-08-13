@@ -1287,7 +1287,7 @@ async function render(state) { /////////////////////////////////////////
 
         var comment_dislikes = intval(c.comment_dislikes)
         var comment_likes    = intval(c.comment_likes)
-        var date_link        = get_date_link(c)
+        var date_link        = get_date_link(c, n)
         var del              = get_del_link(c)
         var edit             = get_edit_link(c)
         var icon             = user_icon(c, 0.4, `'align='left' hspace='5' vspace='2'`) // scale image down
@@ -1579,8 +1579,8 @@ async function render(state) { /////////////////////////////////////////
 		return {comments, total}
 	}
 
-    function get_date_link(c) {
-        return `<a href='/post/${c.comment_post_id}/?c=${c.comment_id}#comment-${c.comment_id}' title='permalink' >${format_date(c.comment_date)}</a>`
+    function get_date_link(c, n) {
+        return `<a href='/post/${c.comment_post_id}/?c=${c.comment_id}#comment-${n}' title='permalink' >${format_date(c.comment_date)}</a>`
     }
 
     function get_del_link(c) {
@@ -1911,12 +1911,25 @@ async function render(state) { /////////////////////////////////////////
         if (_GET('offset')) offset = intval(_GET('offset'))
 
         // If we were passed a 'c' parm, then calculate the offset from that, overriding any offset parm. This allows permalinks.
+        // so what we are looking for is the first offset counting back from total by 40's which includes c
         let c = intval(_GET('c'))
         if (c) { // What row number in the result set is comment c?
-            let results = await query(`select count(*) as offset from comments where comment_post_id=? and comment_id < ?
+            let results = await query(`select count(*) as to_skip from comments where comment_post_id=? and comment_id < ?
                                        order by comment_id`, [post.post_id, c], state)
 
-            if (results[0]) offset = results[0].offset
+            if (results[0]) {
+                precise_offset = results[0].to_skip + 1 // the exact row number where our comment appears
+
+                // now what is the offset of the page which has contains precise_offset?
+                // count backwards from post.post_comments by 40's until precise_offset is in the page
+                let page_offset = 0
+                for (page_offset = post.post_comments - 40; page_offset > 0; page_offset = page_offset - 40) {
+                    if (precise_offset > page_offset) { // we found it!
+                        offset = page_offset
+                        break
+                    }
+                }
+            }
         }
 
         // if this gets too slow as user_uncivil_comments increases, try a left join, or just start deleting old uncivil comments
