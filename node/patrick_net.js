@@ -1339,10 +1339,10 @@ async function render(state) { /////////////////////////////////////////
 
         // for the last comment in the whole result set (not just last on this page) add an id="last"
         if (state.comments) { // state.comments may not be defined, for example when we just added one comment
-            var last = (c.row_number == state.comments.found_rows) ? 'id="last"' : ''
+            var last = (c.row_number == state.comments.found_rows) ? `<span id='last'></span>` : ''
         }
 
-        return `<div class="comment" id="comment-${c.comment_id}" ${last} ><font size=-1>
+        return `${last}<div class="comment" id="comment-${c.comment_id}" ><font size=-1 >
         ${c.row_number}
         ${icon}
         ${u} &nbsp;
