@@ -326,7 +326,7 @@ function query(sql, sql_parms, state) {
 
         var get_results = function (error, results, fields, timing) { // callback to give to state.db.query()
 
-            //console.log(query.sql)
+            console.log(query.sql)
 
             if (error) {
                 console.log(error)
@@ -544,11 +544,12 @@ async function render(state) { /////////////////////////////////////////
             else return send_html(200, `invalid request`)
 
             state.comments = results.comments
+            let greatest_cid = results.comments[results.comments.length - 1].comment_id
 
             let content = html(
                 midpage(
                     h1(),
-                    comment_pagination(results.total),
+                    comment_pagination(results.total, greatest_cid),
                     comment_list(offset + 1),
                     comment_search_box()
                 )
@@ -925,6 +926,7 @@ async function render(state) { /////////////////////////////////////////
             else {
                 var [comments, offset] = await post_comment_list(state.post) // pick up the comment list for this post
                 state.comments = comments
+                let greatest_cid = comments[comments.length - 1].comment_id
 
                 results = await query(`select count(*) as c from postviews where postview_post_id=? and postview_want_email=1`, [post_id], state)
                 state.post.watchers = results[0].c
@@ -932,9 +934,9 @@ async function render(state) { /////////////////////////////////////////
                 let content = html(
                     midpage(
                         post(),
-                        comment_pagination(state.post.post_comments),
+                        comment_pagination(state.post.post_comments, greatest_cid),
                         comment_list(offset + 1), // mysql offset is greatest item number to ignore, next item is first returned
-                        comment_pagination(state.post.post_comments),
+                        comment_pagination(state.post.post_comments, greatest_cid),
                         comment_box()
                     )
                 )
@@ -1287,7 +1289,7 @@ async function render(state) { /////////////////////////////////////////
 
         var comment_dislikes = intval(c.comment_dislikes)
         var comment_likes    = intval(c.comment_likes)
-        var date_link        = get_date_link(c, n)
+        var date_link        = get_date_link(c)
         var del              = get_del_link(c)
         var edit             = get_edit_link(c)
         var icon             = user_icon(c, 0.4, `'align='left' hspace='5' vspace='2'`) // scale image down
@@ -1373,7 +1375,7 @@ async function render(state) { /////////////////////////////////////////
         }
     }
 
-    function comment_pagination(total) { // get pagination links for a list of comments
+    function comment_pagination(total, greatest_cid) { // get pagination links for a list of comments
 
         if (total <= 40) return '' // 40 or fewer comments need no pagination
     
@@ -1395,7 +1397,7 @@ async function render(state) { /////////////////////////////////////////
             var first_link      = `${pathname}?${q}offset=0#comments`
             var previous_link   = `${pathname}?${q}offset=${previous_offset}#comments`
             // there is no next_link because we are necessarily on the last page of comments
-            var last_link       = `${pathname}${q ? ('?' + q) : ''}#comment-${total}` // don't include the question mark unless q
+            var last_link       = `${pathname}${q ? ('?' + q) : ''}#comment-${greatest_cid}` // don't include the question mark unless q
         }
         else { // there is a query string, and it includes offset
             var offset          = intval(_GET('offset'))
@@ -1411,7 +1413,7 @@ async function render(state) { /////////////////////////////////////////
                 var next_link = `${pathname}?${query.replace(/offset=\d+/, 'offset=' + next_offset)}#comments`
             }
 
-            var last_link = `${pathname}?${query.replace(/offset=\d+/, 'offset=' + (total - 40))}#comment-${total}`
+            var last_link = `${pathname}?${query.replace(/offset=\d+/, 'offset=' + (total - 40))}#comment-${greatest_cid}`
         }
 
         if (typeof first_link !== 'undefined') {
@@ -1579,8 +1581,8 @@ async function render(state) { /////////////////////////////////////////
 		return {comments, total}
 	}
 
-    function get_date_link(c, n) {
-        return `<a href='/post/${c.comment_post_id}/?c=${c.comment_id}#comment-${n}' title='permalink' >${format_date(c.comment_date)}</a>`
+    function get_date_link(c) {
+        return `<a href='/post/${c.comment_post_id}/?c=${c.comment_id}#comment-${c.comment_id}' title='permalink' >${format_date(c.comment_date)}</a>`
     }
 
     function get_del_link(c) {
@@ -1807,6 +1809,14 @@ async function render(state) { /////////////////////////////////////////
 
     function new_post_button() {
         return '<a href="/new_post" class="btn btn-success btn-sm" title="start a new post" ><b>new post</b></a>'
+    }
+
+    async function ordinal(p, c) { // find the ordinal value of a comment_id within the set of comments for a given post
+
+        let results = await query(`select count(*) as ordinal from comments where comment_post_id=? and comment_id <= ?
+                                   order by comment_id`, [p, c], state)
+
+        let o = results[0].ordinal
     }
 
     function page() { // tell homepage, search, userpage, topic which page we are on
