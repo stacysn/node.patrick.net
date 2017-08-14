@@ -202,7 +202,7 @@ function md5(str) {
     return hash.digest('hex')
 }
 
-function debug(s) { console.log(s) } // so that we can grep and remove 'debug' from the source more easily when done debugging
+function debug(s) { console.log(s) } // so that we can grep and remove debugging lines from the source more easily
 
 function intval(s) { // return integer from a string or float
     return parseInt(s) ? parseInt(s) : 0
@@ -496,9 +496,11 @@ async function render(state) { /////////////////////////////////////////
                 results = await query('select * from comments where comment_id = ?', [comment_id], state)
                 state.comment = results[0]
 
-                let offset = await cid2offset(state.comment.comment_post_id, comment_id)
-
-                redirect(`/post/${state.comment.comment_post_id}?offset=${offset}#comment-${comment_id}`)
+                if (state.comment.comment_adhom_when) redirect(`/comment_jail#comment-${comment_id}`)
+                else {
+                    let offset = await cid2offset(state.comment.comment_post_id, comment_id)
+                    redirect(`/post/${state.comment.comment_post_id}?offset=${offset}#comment-${comment_id}`)
+                }
             }
         },
 
@@ -523,6 +525,30 @@ async function render(state) { /////////////////////////////////////////
             }
 
             redirect(`/post/${p}`)
+        },
+
+        comment_jail : async function() { // no pagination, just most recent 80
+
+            let offset = intval(_GET('offset'))
+
+            state.comments = await query(`select sql_calc_found_rows * from comments
+                                          left join users on user_id=comment_author
+                                          where comment_adhom_when is not null
+                                          order by comment_date desc limit 40 offset ?`, [offset], state)
+
+            state.comments = state.comments.map(comment => { comment.row_number = ++offset; return comment })
+
+            state.message = 'Uncivil Comment Jail'
+
+            let content = html(
+                midpage(
+                    h1(),
+                    '<b>These comments are all accused of being uncivil. You can edit your comment here to get it out of jail after the edits are reviewed.</b>',
+                    comment_list()
+                )
+            )
+
+            return send_html(200, content)
         },
 
         comments : async function() { // show a list of comments by user, or by comment-frequence, or from a search
@@ -559,15 +585,6 @@ async function render(state) { /////////////////////////////////////////
             )
 
             return send_html(200, content)
-
-			/*
-			if (comments) {
-				comment_list()
-			} else {
-				?><p><strong>No comments found.</strong></p><?
-			}
-
-			*/
         },
 
         delete_comment : async function() { // delete a comment
@@ -1262,20 +1279,9 @@ async function render(state) { /////////////////////////////////////////
 
     async function cid2offset(post_id, comment_id) { // given a comment_id, find the offset
 
-        let results = await query(`select count(*) as to_skip from comments where comment_post_id=? and comment_id < ? order by comment_id`,
-                                  [post_id, comment_id], state)
-
-        precise_offset = results[0].to_skip + 1 // the exact row number where our comment appears
-
-        // now what is the offset of the page which has contains precise_offset?
-        // count backwards from post.post_comments by 40's until precise_offset is in the page
-        let page_offset = 0
-        for (page_offset = post.post_comments - 40; page_offset > 0; page_offset = page_offset - 40) {
-            if (precise_offset > page_offset) { // we found it!
-                offset = page_offset
-                break
-            }
-        }
+        let results = await query(`select floor(count(*) / 40) * 40 as o from comments
+                                   where comment_post_id=? and comment_id < ? order by comment_id`, [post_id, comment_id], state)
+        return results[0].o
     }
 
     function clean_upload_path(path, filename) {
@@ -1388,7 +1394,7 @@ async function render(state) { /////////////////////////////////////////
     }
 
     function comment_list() { // format one page of comments
-        return state.comments ? state.comments.map(item => { return format_comment(item) }).join('') : ''
+        return state.comments ? state.comments.map(item => { return format_comment(item) }).join('') : '<b>no comments found</b>'
     }
 
     function comment_pagination() { // get pagination links for a single page of comments
