@@ -1348,6 +1348,9 @@ async function render(state) { /////////////////////////////////////////
             var last = (c.row_number == state.comments.found_rows) ? `<span id='last'></span>` : ''
         }
 
+        c.comment_content = (c.comment_adhom_when && !URL.parse(state.req.url).pathname.match(/jail/)) ?
+                    `<a href='/comment_jail#comment-${c.comment_id}'>this comment has been jailed for incivility</a>` : c.comment_content
+
         return `${last}<div class="comment" id="comment-${c.comment_id}" ><font size=-1 >
         ${c.row_number}
         ${icon}
@@ -1951,7 +1954,6 @@ async function render(state) { /////////////////////////////////////////
                    left join users on comment_author=user_id
                    left join commentvotes on (comment_id = commentvote_comment_id and commentvote_user_id = ?)
                    where comment_post_id = ?
-                   and comment_adhom_when is null
                    order by comment_date limit 40 offset ?`
 
         let results = await query(sql, [user_id, post.post_id, offset], state)
