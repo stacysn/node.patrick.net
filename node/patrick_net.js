@@ -529,13 +529,14 @@ async function render(state) { /////////////////////////////////////////
 
         comment_jail : async function() { // no pagination, just most recent 80
 
-            let offset = intval(_GET('offset'))
+            // comments not freed in 30 days will be deleted
+            await query(`delete from comments where comment_adhom_when < date_sub(now(), interval 30 day)`, [], state)
 
             state.comments = await query(`select sql_calc_found_rows * from comments
                                           left join users on user_id=comment_author
-                                          where comment_adhom_when is not null
-                                          order by comment_date desc limit 40 offset ?`, [offset], state)
+                                          where comment_adhom_when is not null order by comment_date desc`, [], state)
 
+            let offset = 0
             state.comments = state.comments.map(comment => { comment.row_number = ++offset; return comment })
 
             state.message = 'Uncivil Comment Jail'
@@ -543,7 +544,7 @@ async function render(state) { /////////////////////////////////////////
             let content = html(
                 midpage(
                     h1(),
-                    '<b>These comments are all accused of being uncivil. You can edit your comment here to get it out of jail after the edits are reviewed.</b>',
+                    'These comments were marked as uncivil. Patrick will review them and liberate comments which do not deserve to be here. You can edit your comment here to make it more civil and get it out of jail after the edits are reviewed. Comments not freed within 30 days will be deleted.',
                     comment_list()
                 )
             )
