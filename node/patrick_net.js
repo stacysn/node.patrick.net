@@ -277,7 +277,7 @@ function format_mail(email, subject, message) {
     })
 }
 
-Number.prototype.commafy = function() {
+Number.prototype.number_format = function() {
     return this.toLocaleString('en')
 }
 
@@ -1222,12 +1222,80 @@ async function render(state) { /////////////////////////////////////////
 
         users : async function() {
 
-            var sql       = 'select * from users limit 20'
-            var sql_parms = null
-            state.users = await query(sql, sql_parms, state)
+			let d  = _GET('d')  ? _GET('d').replace(/[^adesc]/, '').substring(0,4)  : 'desc' // asc or desc
+			let ob = _GET('ob') ? _GET('ob').replace(/[^a-z_]/, '').substring(0,32) : 'user_comments' // order by
+
+			if ( _GET('unrequited') ) {
+				state.message = `Unrequited Friendship Requests For ${state.current_user.user_name}`
+
+				// 1. Find all those IDs that asked to be friends with user_id.
+				await query('create temporary table unrequited select * from relationships where rel_other_id=? and rel_my_friend > 0',
+					  [state.current_user.user_id], state)
+
+				// 2. Subtract all those for which there is the acceptance line.
+				await query(`delete from unrequited where rel_self_id in
+                      (select rel_other_id from relationships where rel_self_id=? and rel_my_friend > 0)`,
+                      [state.current_user.user_id], state)
+				
+				state.users = await query(`select SQL_CALC_FOUND_ROWS * from unrequited, users
+                                           where unrequited.rel_self_id = users.user_id and user_id = ? limit 40 offset 0`,
+                                          [state.current_user.user_id], state)
+			}
+			else if ( _GET('followers') ) {
+				let followers = intval(_GET('followers'))
+
+				state.message = 'Followers of ' + (await get_userrow(followers)).user_name
+
+				state.users = await query(`select SQL_CALC_FOUND_ROWS * from users
+					where user_id in (select rel_self_id from relationships where rel_other_id=? and rel_i_follow > 0)
+					order by ${ob} ${d} limit 40 offset 0`, [followers, ob, d], state)
+
+                // keep followers-count cache in users table correct
+				await query('update users set user_followers=? where user_id=?', [state.users.length, followers], state);
+			}
+			else if ( _GET('following') ) {
+				let following = intval(_GET('following'))
+
+				state.message = 'Users ' + (await get_userrow(following)).user_name + ' is Following'
+
+				state.users = await query(`select SQL_CALC_FOUND_ROWS * from users where user_id in
+                                          (select rel_other_id from relationships where rel_self_id=? and rel_i_follow > 0)
+                                           order by ${ob} ${d} limit 40 offset 0`, [following], state)
+			}
+			else if ( _GET('friendsof') ) {
+				let friendsof = intval(_GET('friendsof'))
+
+				state.message = 'Friends of ' + (await get_userrow(friendsof)).user_name
+
+				state.users = await query(`select SQL_CALC_FOUND_ROWS * from users where user_id in
+                                          (select r1.rel_other_id from relationships as r1, relationships as r2 where
+                                              r1.rel_self_id=? and
+                                              r1.rel_self_id=r2.rel_other_id and
+                                              r2.rel_self_id=r1.rel_other_id and
+                                              r1.rel_my_friend > 0 and r2.rel_my_friend > 0)
+                                          order by ${ob} ${d} limit 40 offset 0`, [friendsof, ob, d], state)
+
+				await query(`update users set user_friends=? where user_id=?`,
+                            [state.users.length, friendsof], state); // Keep friends-count cache correct.
+			}
+			else if ( _GET('user_name') ) {
+
+				let user_name = _GET('user_name').replace(/[^a-zA-Z0-9._ -]/).substring(0, 40)
+				user_name = user_name.replace('/_/', '\_') // bc _ is single-char wildcard in mysql matching.
+
+				state.message = `Users With Names Like '${user_name}'`
+
+				state.users = await query(`select SQL_CALC_FOUND_ROWS * from users where user_name like '%${user_name}%'
+                                           order by ${ob} ${d} limit 40 offset 0`, [ob, d], state)
+			}
+			else {
+				state.message = 'users'
+				state.users   = await query('select SQL_CALC_FOUND_ROWS * from users order by ? ? limit 40 offset 0', [ob, d], state)
+			}
 
             let content = html(
                 midpage(
+					h1(),
                     user_list()
                 )
             )
@@ -1272,9 +1340,9 @@ async function render(state) { /////////////////////////////////////////
 
         var online_list = state.header_data.onlines.map(u => `<a href='/user/${u.online_username}'>${u.online_username}</a>`).join(', ')
 
-        return `${ state.header_data.comments.commafy() } comments in
-                ${ state.header_data.posts.commafy() } posts by
-                <a href='/users'>${ state.header_data.tot.commafy() } registered users</a>,
+        return `${ state.header_data.comments.number_format() } comments in
+                ${ state.header_data.posts.number_format() } posts by
+                <a href='/users'>${ state.header_data.tot.number_format() } registered users</a>,
                 ${ state.header_data.onlines.length } online now: ${ online_list }`
     }
 
@@ -1339,7 +1407,7 @@ async function render(state) { /////////////////////////////////////////
 
         /*
             if ($post_id) {
-                $commenter = get_userrow($comment->comment_author);
+                $commenter = await get_userrow(comment.comment_author);
                 $s .= "<a href=\"#commentform\" onclick=\"addquote('$comment->comment_post_id', '$comment->comment_id', '$commenter->user_name'); return false;\" title=\"Select some text then click this to quote\" >quote</a> &nbsp; ";
             }
         */
@@ -1682,6 +1750,11 @@ async function render(state) { /////////////////////////////////////////
             return (state.current_user.user_id == c.comment_author || state.current_user.user_id == 1) ?
                 `<a href='#' onclick="if (confirm('Really mark as uncivil?')) { $.get('/uncivil?c=${ c.comment_id }&${create_nonce_parms()}', function() { $('#comment-${ c.comment_id }').remove() }); return false}" title='attacks person, not point' >uncivil</a>` : ''
         }
+    }
+
+    async function get_userrow(user_id) {
+        let results = await query('select * from users where user_id = ?', [user_id], state)
+        return results[0]
     }
 
     function h1() {
@@ -2208,7 +2281,7 @@ async function render(state) { /////////////////////////////////////////
         if (u.user_referers) {
             let s = u.user_referers == 1 ? '' : 's'
             let uusername = encodeURI(u.user_name)
-            return `<a href='/links?user_name=${uusername}'>${u.user_referers.commafy()} links<img src='/images/goldstar.gif' width='18' height='17' ></a>`
+            return `<a href='/links?user_name=${uusername}'>${u.user_referers.number_format()} links<img src='/images/goldstar.gif' width='18' height='17' ></a>`
         }
     }
 
@@ -2231,8 +2304,8 @@ async function render(state) { /////////////////////////////////////////
                 <p>joined ${ format_date(u.user_registered) }
                 ${u.user_country ? u.user_country : ''}
                 ${user_links_link(u)}
-                ${u.user_posts.commafy()} posts
-                <a href='/comments?a=${encodeURI(u.user_name)}&offset=${offset}'>${ u.user_comments.commafy() } comments</a> &nbsp;
+                ${u.user_posts.number_format()} posts
+                <a href='/comments?a=${encodeURI(u.user_name)}&offset=${offset}'>${ u.user_comments.number_format() } comments</a> &nbsp;
                 ${follow_button(u)}
 				</center>`
 
@@ -2244,12 +2317,126 @@ async function render(state) { /////////////////////////////////////////
 
     function user_list() {
 
-        var formatted = state.users.map( (item) => {
+		// user list header
+
+		let d = intval(_GET('d'))
+
+        let header = `<table width='100%' cellpadding='10' style="overflow-x:auto;" ><tr>
+        <th ></th>
+        <th                    ><A HREF='/users?ob=user_name&d=${ d }'       title='order by user name' >Username</A></th>
+        <th                    ><A HREF='/users?ob=user_registered&d=${ d }' title='order by registration date' >Registered</A></th>
+        <th class='text-right' ><A HREF='/users?ob=user_referers&d=${ d }'   title='order by number of inbound links' >Links</A></th>
+        <th class='text-right' ><A HREF='/users?ob=user_posts&d=${ d }'      title='order by number of posts started' >Posts</A></th>
+        <th class='text-right' ><A HREF='/users?ob=user_comments&d=${ d }'   title='order by number of comments' >Comments</A></th>
+        <th class='text-right' ><A HREF='/users?ob=user_likes&d=${ d }'      title='number of likes user got' >Likes</A></th>
+        <th class='text-right' ><A HREF='/users?ob=user_dislikes&d=${ d }'   title='number of dislikes user got' >Dislikes</A></th>
+        <th class='text-right' ><A HREF='/users?ob=user_friends&d=${ d }'    title='order by number of friends' >Friends</A></th>
+        <th class='text-right' ><A HREF='/users?ob=user_followers&d=${ d }'  title='order by number of followers' >Followers</A></th>
+        <th class='text-right' ><A HREF='/users?ob=user_bannedby&d=${ d }'   title='how many people are banning user' >Banned By</A></th>
+        <th class='text-right' ><A HREF='/users?ob=user_banning&d=${ d }'    title='how many people user is banning' >Banning</A></th>
+        </tr>`
+
+        formatted = state.users.map( (item) => {
             let l = user_link(item)
             return `<div class='user' >${l}</div>`
         })
 
-        return formatted.join('')
+        return header + formatted.join('') + '</table>'
+/*
+
+<h2>${ title }</h2>
+<p>
+<form name="input" action="/users" method="get" >
+<input type${"text" size=40 maxlength=80 name="user_name" value="${ user_name }" autofocus />
+<input type="submit" value="User Search" />
+</form> 
+<p>
+if (sql) {
+
+    if ( 41 == count(users)) {
+        array_pop(users); // Remove the last one so we have exactly 40.
+        more = true
+    }
+
+    if (users && total > 0) {
+
+        unset(_GET('page')); // So we don't get the old page number in url.
+
+        // Construct the previous and next page urls from the _GET parms.
+        foreach ( _GET as key ${} value ) { parms += "key=value&"; }
+
+        navstring = ''
+
+        if (page > 0) {
+            previous = page - 1
+            navstring += "<a href='/users?{parms}page=previous'>&laquo; Previous</a> &nbsp; "
+        }
+
+        totalpages = ceil(total / 40)
+        from1 = page + 1
+        navstring += "Page from1 of totalpages "
+
+        if ( true == more ) {
+            next = page + 1
+            navstring += " &nbsp; <a href='/users?{parms}page=next'>Next &raquo;</a> "
+        }
+
+        print "navstring"
+
+        tmp = _GET; // Don't modify original _GET. We want it intact elsewhere.
+        unset(parms, tmp('ob'), tmp('d'))
+        foreach ( tmp  as key ${} value ) parms += "key=value&"
+        d = _GET('d') == 'asc' ? 'desc' : 'asc'
+
+        foreach (users as u) {
+
+            user_name      =  u.user_name
+            email          =  u.user_email
+            friends        =  u.user_friends
+            followers      =  u.user_followers
+            user_bannedby  =  u.user_bannedby
+            banning        =  u.user_banning
+            this_user      =  u.user_id
+            links          =  number_format(u.user_referers)
+            user_posts     =  number_format(u.user_posts)
+            user_comments  =  number_format(u.user_comments)
+            likes          =  number_format(u.user_likes)
+            dislikes       =  number_format(u.user_dislikes)
+            name_link      =  "<a href='/users/user_name' >user_name</a>"
+
+            icon = icon_from_userrow(u)
+
+            print "<tr id='this_user' >"
+
+            if (u.user_last_comment_ip) country = ip2country(u.user_last_comment_ip)
+            else                     country = ''
+
+            print  "<td >icon</td>
+                    <td align=left >name_link"
+                    print "</td>
+                    <td align=left >" . date('M j, Y', strtotime(u.user_registered)) . " country </td>
+                    <td align=right ><a href='/links?user_name=user_name' >links</a></td>
+                    <td align=right ><a href='/users/user_name' >user_posts</a></td>
+                    <td align=right ><a href='/comments?a=this_user'>user_comments</a></td>
+                    <td align=right >likes</td>
+                    <td align=right >dislikes</td>
+                    <td align=right ><a href='/users?friendsof=this_user' >friends</a></td>
+                    <td align=right ><a href='/users?followers=this_user' >followers</a></td>
+                    <td align=right >user_bannedby</td>
+                    <td align=right >banning</td>
+                   </tr>"
+        }
+
+        print "navstring"
+    }
+    else print "<p><h2>No results. Please try a different search.</h2>"
+    //print sql
+}
+else {
+    if ( strlen(_GET('user_name')) > 0 ) print "<h3>Darn, no results for user_name. Please try again with a different name.</h3>"
+}
+*/
+
     }
 
     function valid_nonce() {
