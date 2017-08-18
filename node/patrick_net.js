@@ -2317,15 +2317,17 @@ async function render(state) { /////////////////////////////////////////
 
     function user_list() {
 
-		// user list header
+        let d = _GET('d') ? _GET('d').replace(/[^adesc]/, '').substring(0,4)  : 'desc' // asc or desc
 
-		let d = intval(_GET('d'))
-
-        let header = `<table width='100%' cellpadding='10' style="overflow-x:auto;" ><tr>
+        let header = `
+        <form name='input' action='/users' method='get' >
+        <input type='text' size=40 maxlength=80 name='user_name' autofocus />
+        <input type='submit' value='User Search' />
+        </form><p>
+        <table width='100%' cellpadding='10' style="overflow-x:auto;" ><tr>
         <th ></th>
         <th                    ><A HREF='/users?ob=user_name&d=${ d }'       title='order by user name' >Username</A></th>
         <th                    ><A HREF='/users?ob=user_registered&d=${ d }' title='order by registration date' >Registered</A></th>
-        <th class='text-right' ><A HREF='/users?ob=user_referers&d=${ d }'   title='order by number of inbound links' >Links</A></th>
         <th class='text-right' ><A HREF='/users?ob=user_posts&d=${ d }'      title='order by number of posts started' >Posts</A></th>
         <th class='text-right' ><A HREF='/users?ob=user_comments&d=${ d }'   title='order by number of comments' >Comments</A></th>
         <th class='text-right' ><A HREF='/users?ob=user_likes&d=${ d }'      title='number of likes user got' >Likes</A></th>
@@ -2336,107 +2338,28 @@ async function render(state) { /////////////////////////////////////////
         <th class='text-right' ><A HREF='/users?ob=user_banning&d=${ d }'    title='how many people user is banning' >Banning</A></th>
         </tr>`
 
-        formatted = state.users.map( (item) => {
-            let l = user_link(item)
-            return `<div class='user' >${l}</div>`
-        })
+        if (state.users.length) {
+            formatted = state.users.map( (u) => {
+                return `<tr id='this_user' >
+                    <td >${user_icon(u)}</td>
+                    <td align=left >${user_link(u)}</td>
+                    <td align=left >${format_date(u.user_registered)}</td>
+                    <td align=right ><a href='/users/${u.user_name}' >${u.user_posts}</a></td>
+                    <td align=right ><a href='/comments?a=${u.user_id}'>${u.user_comments}</a></td>
+                    <td align=right >${u.user_likes}</td>
+                    <td align=right >${u.user_dislikes}</td>
+                    <td align=right ><a href='/users?friendsof=${u.user_id}' >${u.user_friends}</a></td>
+                    <td align=right ><a href='/users?followers=${u.user_id}' >${u.user_followers}</a></td>
+                    <td align=right >${u.user_bannedby}</td>
+                    <td align=right >${u.user_banning}</td>
+                   </tr>`
+            })
 
-        return header + formatted.join('') + '</table>'
-/*
-
-<h2>${ title }</h2>
-<p>
-<form name="input" action="/users" method="get" >
-<input type${"text" size=40 maxlength=80 name="user_name" value="${ user_name }" autofocus />
-<input type="submit" value="User Search" />
-</form> 
-<p>
-if (sql) {
-
-    if ( 41 == count(users)) {
-        array_pop(users); // Remove the last one so we have exactly 40.
-        more = true
-    }
-
-    if (users && total > 0) {
-
-        unset(_GET('page')); // So we don't get the old page number in url.
-
-        // Construct the previous and next page urls from the _GET parms.
-        foreach ( _GET as key ${} value ) { parms += "key=value&"; }
-
-        navstring = ''
-
-        if (page > 0) {
-            previous = page - 1
-            navstring += "<a href='/users?{parms}page=previous'>&laquo; Previous</a> &nbsp; "
+            var result = formatted.join('')
         }
+        else var result = 'no such user'
 
-        totalpages = ceil(total / 40)
-        from1 = page + 1
-        navstring += "Page from1 of totalpages "
-
-        if ( true == more ) {
-            next = page + 1
-            navstring += " &nbsp; <a href='/users?{parms}page=next'>Next &raquo;</a> "
-        }
-
-        print "navstring"
-
-        tmp = _GET; // Don't modify original _GET. We want it intact elsewhere.
-        unset(parms, tmp('ob'), tmp('d'))
-        foreach ( tmp  as key ${} value ) parms += "key=value&"
-        d = _GET('d') == 'asc' ? 'desc' : 'asc'
-
-        foreach (users as u) {
-
-            user_name      =  u.user_name
-            email          =  u.user_email
-            friends        =  u.user_friends
-            followers      =  u.user_followers
-            user_bannedby  =  u.user_bannedby
-            banning        =  u.user_banning
-            this_user      =  u.user_id
-            links          =  number_format(u.user_referers)
-            user_posts     =  number_format(u.user_posts)
-            user_comments  =  number_format(u.user_comments)
-            likes          =  number_format(u.user_likes)
-            dislikes       =  number_format(u.user_dislikes)
-            name_link      =  "<a href='/users/user_name' >user_name</a>"
-
-            icon = icon_from_userrow(u)
-
-            print "<tr id='this_user' >"
-
-            if (u.user_last_comment_ip) country = ip2country(u.user_last_comment_ip)
-            else                     country = ''
-
-            print  "<td >icon</td>
-                    <td align=left >name_link"
-                    print "</td>
-                    <td align=left >" . date('M j, Y', strtotime(u.user_registered)) . " country </td>
-                    <td align=right ><a href='/links?user_name=user_name' >links</a></td>
-                    <td align=right ><a href='/users/user_name' >user_posts</a></td>
-                    <td align=right ><a href='/comments?a=this_user'>user_comments</a></td>
-                    <td align=right >likes</td>
-                    <td align=right >dislikes</td>
-                    <td align=right ><a href='/users?friendsof=this_user' >friends</a></td>
-                    <td align=right ><a href='/users?followers=this_user' >followers</a></td>
-                    <td align=right >user_bannedby</td>
-                    <td align=right >banning</td>
-                   </tr>"
-        }
-
-        print "navstring"
-    }
-    else print "<p><h2>No results. Please try a different search.</h2>"
-    //print sql
-}
-else {
-    if ( strlen(_GET('user_name')) > 0 ) print "<h3>Darn, no results for user_name. Please try again with a different name.</h3>"
-}
-*/
-
+        return header + result + '</table>'
     }
 
     function valid_nonce() {
