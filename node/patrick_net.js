@@ -932,39 +932,32 @@ async function render(state) { /////////////////////////////////////////
 
         nuke : async function() { // given a user ID, nuke all his posts, comments, and his ID
 
-            nuke_ID = intval(_GET('nuke_ID'))
+            let nuke_id = intval(_GET('nuke_id'))
+            let u = await get_userrow(nuke_id)
 
             if (!valid_nonce())                  return die('invalid nonce')
             if (1 != state.current_user.user_id) return die('permission denied')
-            if (1 == nuke_ID)                    return die('admin cannot nuke himself')
-            if (!user_is_old(nuke_ID))           return die('cannot nuke old user')
+            if (1 == nuke_id)                    return die('admin cannot nuke himself')
+            if (!u.user_comments > 3)            return die('cannot nuke user with more than 3 comments')
 
-            let u = await get_userrow(nuke_id)
-
-            let country = ip2country(u.user_last_comment_ip)
+            let country = await ip2country(u.user_last_comment_ip)
 
             await query(`insert into nukes (nuke_date, nuke_email, nuke_username, nuke_ip,  nuke_country) values
                                            (    now(),          ?,             ?,       ?,             ?)`,
-                        [u.user_mail, u.user_name, u.user_last_comment_ip, country], state)
+                        [u.user_email, u.user_name, u.user_last_comment_ip, country], state)
 
-            let user_posts = await get_results('select comment_post_id from comments where comment_author=?', [nuke_id], state)
-/*
-            foreach ((array) await get_results('select comment_post_id from comments where comment_author=nuke_ID') as row) {
-                comment_post_id = intval(row->comment_post_id)
-                await query('delete from comments where comment_post_id=comment_post_id and comment_author=nuke_ID')
-                reset_latest_comment(comment_post_id)
-                update_post_comments(comment_post_id)
+            let rows = await query('select distinct comment_post_id from comments where comment_author=?', [nuke_id], state)
+
+            for (row in rows) {
+                let post_id = row.comment_post_id
+                await query('delete from comments where comment_post_id=? and comment_author=?', [post_id, nuke_id], state)
+                await reset_latest_comment(post_id)
             }
+            await query('delete from posts     where post_author=?',      [nuke_id], state)
+            await query('delete from postviews where postview_user_id=?', [nuke_id], state)
+            await query('delete from users     where user_id=?',          [nuke_id], state)
 
-            await query('delete from posts   where post_author=nuke_ID')
-            await query('delete from postviews where postview_user_id=nuke_ID' )
-            await query('delete from users     where user_id=nuke_ID')
-
-            if (isset($_SERVER['HTTP_REFERER']))
-                redirect($_SERVER['HTTP_REFERER'])
-            else
-                redirect('/moderation')
-*/
+            state.req.headers.referer ? redirect(state.req.headers.referer) : redirect('/moderation')
         },
 
         post : async function() { // show a single post and its comments
@@ -1227,11 +1220,13 @@ async function render(state) { /////////////////////////////////////////
 
         user : async function() {
 
+            let current_user_id = state.current_user ? state.current_user.user_id : 0
+            let [curpage, slimit, order, order_by] = page()
             let user_name = decodeURIComponent(segments(state.req.url)[2]).replace(/[^\w._ -]/g, '') // like /user/Patrick
             let results = await query(`select * from users where user_name=?`, [user_name], state)
             let u = results[0]
-            let current_user_id = state.current_user ? state.current_user.user_id : 0
-            let [curpage, slimit, order, order_by] = page()
+
+			if (!u) return die(`no such user: ${user_name}`)
 
             // left joins to also get each post's viewing and voting data for the current user if there is one
             let sql = `select sql_calc_found_rows * from posts
@@ -1251,7 +1246,8 @@ async function render(state) { /////////////////////////////////////////
                     user_info(u),
                     tabs(order),
                     post_list(),
-                    post_pagination(found_rows, curpage, `&order=${order}`)
+                    post_pagination(found_rows, curpage, `&order=${order}`),
+                    admin_user(u)
                 )
             )
 
@@ -1349,8 +1345,16 @@ async function render(state) { /////////////////////////////////////////
         return `<h1>About ${ CONF.domain }</h1>${ CONF.domain } is the bomb!`
     }
 
-    function popup() {
-        return `<script type='text/javascript'> alert('${ state.message }'); </script>`
+    function admin_user(u) { // links to administer a user
+
+        if (state.current_user.user_id != 1) return
+
+        return `<hr>
+			<a href='mailto:${u.user_email}'>email ${u.user_email}</a> &nbsp;
+			<a href='https://whatismyipaddress.com/ip/${u.user_last_comment_ip}'>${u.user_last_comment_ip}</a> &nbsp;
+			<a href='/user/${u.user_name}&${create_nonce_parms()}&become=1' >become ${u.user_name}</a> &nbsp;
+			<a href='/nuke?nuke_id=${u.user_id}&${create_nonce_parms()}' onClick='javascript:return confirm("Really?")' >nuke</a> &nbsp;
+			<hr>`
     }
 
     function arrowbox(post) { // output html for vote up/down arrows; takes a post left joined on user's votes for that post
@@ -1846,15 +1850,15 @@ async function render(state) { /////////////////////////////////////////
             </div>`
     }
 
-	async function ip2country(ip) { // probably a bit slow, so don't overuse this
+    async function ip2country(ip) { // probably a bit slow, so don't overuse this
 
-		ip = ip.replace(/[^0-9\.]/, '')
+        ip = ip.replace(/[^0-9\.]/, '')
 
-		let result =  await query(`select country_name from countries where inet_aton(?) >= country_start and inet_aton(?) <= country_end`,
-                                  [ip], state)
+        let result =  await query(`select country_name from countries where inet_aton(?) >= country_start and inet_aton(?) <= country_end`,
+                                  [ip, ip], state)
 
-		return result[0].country_name
-	}
+        return result.length ? result[0].country_name : ''
+    }
 
     async function login(state, email, password) {
 
@@ -1989,6 +1993,10 @@ async function render(state) { /////////////////////////////////////////
         let order_by = 'order by ' + orders[order] + ' desc'
 
         return [curpage, slimit, order, order_by]
+    }
+
+    function popup() {
+        return `<script type='text/javascript'> alert('${ state.message }'); </script>`
     }
 
     function post_pagination(post_count, curpage, extra) {
@@ -2201,6 +2209,44 @@ async function render(state) { /////////////////////////////////////////
             </form>
             <script type="text/javascript">document.getElementById('user_name').focus();</script>
         </div>`
+    }
+
+    async function reset_latest_comment(post_id) { // reset post table data about latest comment, esp post_modified time
+
+        if (!post_id) return
+
+        let comment_row = await query(`select * from comments where comment_post_id=? and comment_approved > 0
+                                       order by comment_date desc limit 1`, [post_id], state) 
+
+        if (comment_row.length) { // this is at least one comment on this post
+            let post_comments = (await query(`select count(*) as c from comments where comment_post_id=? and comment_approved=1`,
+                                [post_id], state))[0].c
+
+            let firstwords = first_words(comment_row.comment_content, 40)
+
+            await query(`update posts set
+                         post_modified=?,
+                         post_comments=?,
+                         post_latest_comment_id=?,
+                         post_latest_commenter_id=?,
+                         post_latest_comment_excerpt=?
+                         where post_id=?`,
+                         [comment_row.comment_date,
+                          post_comments,
+                          comment_row.comment_id,
+                          comment_row.comment_author,
+                          firstwords,
+                          post_id], state) // post_modified is necessary for sorting posts by latest comment
+        }
+        else { // there are no comments
+            await query(`update posts set
+                         post_modified=post_date,
+                         post_comments=0,
+                         post_latest_comment_id=0,
+                         post_latest_commenter_id=0,
+                         post_latest_comment_excerpt=''
+                         where post_id=?`, [post_id], state)
+        }
     }
 
     function send_html(code, html) {
