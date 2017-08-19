@@ -328,7 +328,7 @@ function query(sql, sql_parms, state) {
 
         var get_results = function (error, results, fields, timing) { // callback to give to state.db.query()
 
-            //console.log(query.sql)
+            //debug(query.sql)
 
             if (error) {
                 console.log(error)
@@ -554,24 +554,24 @@ async function render(state) { /////////////////////////////////////////
 
         comments : async function() { // show a list of comments by user, or by comment-frequence, or from a search
 
-			let offset  = intval(_GET('offset'))
+            let offset  = intval(_GET('offset'))
             let results = null
 
-			if (_GET('a')) {      // a is author name
+            if (_GET('a')) {      // a is author name
                 let a         = decodeURIComponent(_GET('a').replace(/[^\w %]/, ''))
-				results       = await get_comment_list_by_author(a, offset, 40)
-				state.message = `<h2>${a}'s comments</h2>`
-			}
-			else if (_GET('n')) { // n is number of comments per author, so we can see all comments by one-comment authors, for example
+                results       = await get_comment_list_by_author(a, offset, 40)
+                state.message = `<h2>${a}'s comments</h2>`
+            }
+            else if (_GET('n')) { // n is number of comments per author, so we can see all comments by one-comment authors, for example
                 let n         = intval(_GET('n'))
-				results       = await get_comment_list_by_number(n, offset, 40)
-				state.message = `<h2>comments by users with ${n} comments</h2>`
-			}
-			else if (_GET('s')) { // comment search
+                results       = await get_comment_list_by_number(n, offset, 40)
+                state.message = `<h2>comments by users with ${n} comments</h2>`
+            }
+            else if (_GET('s')) { // comment search
                 let s         = _GET('s').replace(/[^\w %]/, '')
                 results       = await get_comment_list_by_search(s, offset, 40)
-				state.message = `<h2>comments that contain "${s}"</h2>`
-			}
+                state.message = `<h2>comments that contain "${s}"</h2>`
+            }
             else return send_html(200, `invalid request`)
 
             state.comments = results.comments
@@ -930,6 +930,43 @@ async function render(state) { /////////////////////////////////////////
             send_html(200, content)
         },
 
+        nuke : async function() { // given a user ID, nuke all his posts, comments, and his ID
+
+            nuke_ID = intval(_GET('nuke_ID'))
+
+            if (!valid_nonce())                  return die('invalid nonce')
+            if (1 != state.current_user.user_id) return die('permission denied')
+            if (1 == nuke_ID)                    return die('admin cannot nuke himself')
+            if (!user_is_old(nuke_ID))           return die('cannot nuke old user')
+
+            let u = await get_userrow(nuke_id)
+
+            let country = ip2country(u.user_last_comment_ip)
+
+            await query(`insert into nukes (nuke_date, nuke_email, nuke_username, nuke_ip,  nuke_country) values
+                                           (    now(),          ?,             ?,       ?,             ?)`,
+                        [u.user_mail, u.user_name, u.user_last_comment_ip, country], state)
+
+            let user_posts = await get_results('select comment_post_id from comments where comment_author=?', [nuke_id], state)
+/*
+            foreach ((array) await get_results('select comment_post_id from comments where comment_author=nuke_ID') as row) {
+                comment_post_id = intval(row->comment_post_id)
+                await query('delete from comments where comment_post_id=comment_post_id and comment_author=nuke_ID')
+                reset_latest_comment(comment_post_id)
+                update_post_comments(comment_post_id)
+            }
+
+            await query('delete from posts   where post_author=nuke_ID')
+            await query('delete from postviews where postview_user_id=nuke_ID' )
+            await query('delete from users     where user_id=nuke_ID')
+
+            if (isset($_SERVER['HTTP_REFERER']))
+                redirect($_SERVER['HTTP_REFERER'])
+            else
+                redirect('/moderation')
+*/
+        },
+
         post : async function() { // show a single post and its comments
 
             let current_user_id = state.current_user ? state.current_user.user_id : 0
@@ -1075,10 +1112,11 @@ async function render(state) { /////////////////////////////////////////
             let when = intval(_GET('when'))
 
             let results = await query(`select comment_id from comments
-                                       where comment_post_id = ? and comment_approved > 0 and comment_date > from_UNIXTIME(?)
+                                       where comment_post_id = ? and comment_approved > 0 and comment_date > from_unixtime(?)
                                        order by comment_date limit 1`, [p, when], state)
 
-            let offset = await cid2offset(p, results[0].comment_id)
+            let c = results[0].comment_id
+            let offset = await cid2offset(p, c)
 
             redirect(`/post/${p}?offset=${offset}#comment-${c}`)
         },
@@ -1222,52 +1260,52 @@ async function render(state) { /////////////////////////////////////////
 
         users : async function() {
 
-			let d  = _GET('d')  ? _GET('d').replace(/[^adesc]/, '').substring(0,4)  : 'desc' // asc or desc
-			let ob = _GET('ob') ? _GET('ob').replace(/[^a-z_]/, '').substring(0,32) : 'user_comments' // order by
+            let d  = _GET('d')  ? _GET('d').replace(/[^adesc]/, '').substring(0,4)  : 'desc' // asc or desc
+            let ob = _GET('ob') ? _GET('ob').replace(/[^a-z_]/, '').substring(0,32) : 'user_comments' // order by
 
-			if ( _GET('unrequited') ) {
-				state.message = `Unrequited Friendship Requests For ${state.current_user.user_name}`
+            if ( _GET('unrequited') ) {
+                state.message = `Unrequited Friendship Requests For ${state.current_user.user_name}`
 
-				// 1. Find all those IDs that asked to be friends with user_id.
-				await query('create temporary table unrequited select * from relationships where rel_other_id=? and rel_my_friend > 0',
-					  [state.current_user.user_id], state)
+                // 1. Find all those IDs that asked to be friends with user_id.
+                await query('create temporary table unrequited select * from relationships where rel_other_id=? and rel_my_friend > 0',
+                      [state.current_user.user_id], state)
 
-				// 2. Subtract all those for which there is the acceptance line.
-				await query(`delete from unrequited where rel_self_id in
+                // 2. Subtract all those for which there is the acceptance line.
+                await query(`delete from unrequited where rel_self_id in
                       (select rel_other_id from relationships where rel_self_id=? and rel_my_friend > 0)`,
                       [state.current_user.user_id], state)
-				
-				state.users = await query(`select sql_calc_found_rows * from unrequited, users
+                
+                state.users = await query(`select sql_calc_found_rows * from unrequited, users
                                            where unrequited.rel_self_id = users.user_id and user_id = ? limit 40 offset 0`,
                                           [state.current_user.user_id], state)
-			}
-			else if ( _GET('followers') ) {
-				let followers = intval(_GET('followers'))
+            }
+            else if ( _GET('followers') ) {
+                let followers = intval(_GET('followers'))
 
-				state.message = 'Followers of ' + (await get_userrow(followers)).user_name
+                state.message = 'Followers of ' + (await get_userrow(followers)).user_name
 
-				state.users = await query(`select sql_calc_found_rows * from users
-					where user_id in (select rel_self_id from relationships where rel_other_id=? and rel_i_follow > 0)
-					order by ${ob} ${d} limit 40 offset 0`, [followers, ob, d], state)
+                state.users = await query(`select sql_calc_found_rows * from users
+                    where user_id in (select rel_self_id from relationships where rel_other_id=? and rel_i_follow > 0)
+                    order by ${ob} ${d} limit 40 offset 0`, [followers, ob, d], state)
 
                 // keep followers-count cache in users table correct
-				await query('update users set user_followers=? where user_id=?', [state.users.length, followers], state);
-			}
-			else if ( _GET('following') ) {
-				let following = intval(_GET('following'))
+                await query('update users set user_followers=? where user_id=?', [state.users.length, followers], state);
+            }
+            else if ( _GET('following') ) {
+                let following = intval(_GET('following'))
 
-				state.message = 'Users ' + (await get_userrow(following)).user_name + ' is Following'
+                state.message = 'Users ' + (await get_userrow(following)).user_name + ' is Following'
 
-				state.users = await query(`select sql_calc_found_rows * from users where user_id in
+                state.users = await query(`select sql_calc_found_rows * from users where user_id in
                                           (select rel_other_id from relationships where rel_self_id=? and rel_i_follow > 0)
                                            order by ${ob} ${d} limit 40 offset 0`, [following], state)
-			}
-			else if ( _GET('friendsof') ) {
-				let friendsof = intval(_GET('friendsof'))
+            }
+            else if ( _GET('friendsof') ) {
+                let friendsof = intval(_GET('friendsof'))
 
-				state.message = 'Friends of ' + (await get_userrow(friendsof)).user_name
+                state.message = 'Friends of ' + (await get_userrow(friendsof)).user_name
 
-				state.users = await query(`select sql_calc_found_rows * from users where user_id in
+                state.users = await query(`select sql_calc_found_rows * from users where user_id in
                                           (select r1.rel_other_id from relationships as r1, relationships as r2 where
                                               r1.rel_self_id=? and
                                               r1.rel_self_id=r2.rel_other_id and
@@ -1275,27 +1313,27 @@ async function render(state) { /////////////////////////////////////////
                                               r1.rel_my_friend > 0 and r2.rel_my_friend > 0)
                                           order by ${ob} ${d} limit 40 offset 0`, [friendsof, ob, d], state)
 
-				await query(`update users set user_friends=? where user_id=?`,
+                await query(`update users set user_friends=? where user_id=?`,
                             [state.users.length, friendsof], state); // Keep friends-count cache correct.
-			}
-			else if ( _GET('user_name') ) {
+            }
+            else if ( _GET('user_name') ) {
 
-				let user_name = _GET('user_name').replace(/[^a-zA-Z0-9._ -]/).substring(0, 40)
-				user_name = user_name.replace('/_/', '\_') // bc _ is single-char wildcard in mysql matching.
+                let user_name = _GET('user_name').replace(/[^a-zA-Z0-9._ -]/).substring(0, 40)
+                user_name = user_name.replace('/_/', '\_') // bc _ is single-char wildcard in mysql matching.
 
-				state.message = `Users With Names Like '${user_name}'`
+                state.message = `Users With Names Like '${user_name}'`
 
-				state.users = await query(`select sql_calc_found_rows * from users where user_name like '%${user_name}%'
+                state.users = await query(`select sql_calc_found_rows * from users where user_name like '%${user_name}%'
                                            order by ${ob} ${d} limit 40 offset 0`, [ob, d], state)
-			}
-			else {
-				state.message = 'users'
-				state.users   = await query(`select sql_calc_found_rows * from users order by ${ob} ${d} limit 40 offset 0`, [], state)
-			}
+            }
+            else {
+                state.message = 'users'
+                state.users   = await query(`select sql_calc_found_rows * from users order by ${ob} ${d} limit 40 offset 0`, [], state)
+            }
 
             let content = html(
                 midpage(
-					h1(),
+                    h1(),
                     user_list()
                 )
             )
@@ -1480,9 +1518,9 @@ async function render(state) { /////////////////////////////////////////
         let query    = URL.parse(state.req.url).query
 
         // offset is mysql offset, ie greatest row number to exclude from the result set
-		// offset missing from url -> showing last 40 comments in set (same as total - 40)
-		// offset 0                -> showing first 40 comments in set
-		// offset n                -> showing first 40 comments after n
+        // offset missing from url -> showing last 40 comments in set (same as total - 40)
+        // offset 0                -> showing first 40 comments in set
+        // offset n                -> showing first 40 comments after n
 
         if (!query || !query.match(/offset=\d+/)) { // we are on the last page of comments, ie offset = total - 40
             var offset          = total - 40
@@ -1642,39 +1680,39 @@ async function render(state) { /////////////////////////////////////////
         return URL.parse(state.req.url, true).query[parm]
     }
 
-	async function get_comment_list_by_author(a, start, num) {
+    async function get_comment_list_by_author(a, start, num) {
 
         let comments = await query(`select sql_calc_found_rows * from comments left join users on comment_author=user_id
                                     where user_name = ? order by comment_date limit ?, ?`, [a, start, num], state)
 
-		let result = await query(`select found_rows() as f`, [], state)
+        let result = await query(`select found_rows() as f`, [], state)
         let total  = result[0].f
 
-		return {comments : comments, total : total}
-	}
+        return {comments : comments, total : total}
+    }
 
-	async function get_comment_list_by_number(n, start, num) {
+    async function get_comment_list_by_number(n, start, num) {
 
-		let comments = await query(`select sql_calc_found_rows * from comments, users force index (user_comments_index)
+        let comments = await query(`select sql_calc_found_rows * from comments, users force index (user_comments_index)
                                 where comments.comment_author = users.user_id and user_comments = ? order by comment_date desc limit ?, ?`,
                                     [n, start, num], state)
 
-		let result = await query(`select found_rows() as f`, [], state)
+        let result = await query(`select found_rows() as f`, [], state)
         let total  = result[0].f
 
-		return {comments, total}
-	}
+        return {comments, total}
+    }
 
-	async function get_comment_list_by_search(s, start, num) {
+    async function get_comment_list_by_search(s, start, num) {
 
-		let comments = await query(`select sql_calc_found_rows * from comments where match(comment_content) against (?)
+        let comments = await query(`select sql_calc_found_rows * from comments where match(comment_content) against (?)
                                     limit ?, ?`, [s, start, num], state)
 
-		let result = await query(`select found_rows() as f`, [], state)
+        let result = await query(`select found_rows() as f`, [], state)
         let total  = result[0].f
 
-		return {comments, total}
-	}
+        return {comments, total}
+    }
 
     function get_del_link(c) {
 
@@ -1807,6 +1845,16 @@ async function render(state) { /////////////////////////////////////////
                 ${img}<a href='/user/${state.current_user.user_name}' >${state.current_user.user_name}</a>
             </div>`
     }
+
+	async function ip2country(ip) { // probably a bit slow, so don't overuse this
+
+		ip = ip.replace(/[^0-9\.]/, '')
+
+		let result =  await query(`select country_name from countries where inet_aton(?) >= country_start and inet_aton(?) <= country_end`,
+                                  [ip], state)
+
+		return result[0].country_name
+	}
 
     async function login(state, email, password) {
 
@@ -2307,7 +2355,7 @@ async function render(state) { /////////////////////////////////////////
                 ${u.user_posts.number_format()} posts
                 <a href='/comments?a=${encodeURI(u.user_name)}&offset=${offset}'>${ u.user_comments.number_format() } comments</a> &nbsp;
                 ${follow_button(u)}
-				</center>`
+                </center>`
 
     }
 
