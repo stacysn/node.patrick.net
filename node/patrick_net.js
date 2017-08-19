@@ -1237,7 +1237,7 @@ async function render(state) { /////////////////////////////////////////
                       (select rel_other_id from relationships where rel_self_id=? and rel_my_friend > 0)`,
                       [state.current_user.user_id], state)
 				
-				state.users = await query(`select SQL_CALC_FOUND_ROWS * from unrequited, users
+				state.users = await query(`select sql_calc_found_rows * from unrequited, users
                                            where unrequited.rel_self_id = users.user_id and user_id = ? limit 40 offset 0`,
                                           [state.current_user.user_id], state)
 			}
@@ -1246,7 +1246,7 @@ async function render(state) { /////////////////////////////////////////
 
 				state.message = 'Followers of ' + (await get_userrow(followers)).user_name
 
-				state.users = await query(`select SQL_CALC_FOUND_ROWS * from users
+				state.users = await query(`select sql_calc_found_rows * from users
 					where user_id in (select rel_self_id from relationships where rel_other_id=? and rel_i_follow > 0)
 					order by ${ob} ${d} limit 40 offset 0`, [followers, ob, d], state)
 
@@ -1258,7 +1258,7 @@ async function render(state) { /////////////////////////////////////////
 
 				state.message = 'Users ' + (await get_userrow(following)).user_name + ' is Following'
 
-				state.users = await query(`select SQL_CALC_FOUND_ROWS * from users where user_id in
+				state.users = await query(`select sql_calc_found_rows * from users where user_id in
                                           (select rel_other_id from relationships where rel_self_id=? and rel_i_follow > 0)
                                            order by ${ob} ${d} limit 40 offset 0`, [following], state)
 			}
@@ -1267,7 +1267,7 @@ async function render(state) { /////////////////////////////////////////
 
 				state.message = 'Friends of ' + (await get_userrow(friendsof)).user_name
 
-				state.users = await query(`select SQL_CALC_FOUND_ROWS * from users where user_id in
+				state.users = await query(`select sql_calc_found_rows * from users where user_id in
                                           (select r1.rel_other_id from relationships as r1, relationships as r2 where
                                               r1.rel_self_id=? and
                                               r1.rel_self_id=r2.rel_other_id and
@@ -1285,12 +1285,12 @@ async function render(state) { /////////////////////////////////////////
 
 				state.message = `Users With Names Like '${user_name}'`
 
-				state.users = await query(`select SQL_CALC_FOUND_ROWS * from users where user_name like '%${user_name}%'
+				state.users = await query(`select sql_calc_found_rows * from users where user_name like '%${user_name}%'
                                            order by ${ob} ${d} limit 40 offset 0`, [ob, d], state)
 			}
 			else {
 				state.message = 'users'
-				state.users   = await query('select SQL_CALC_FOUND_ROWS * from users order by ? ? limit 40 offset 0', [ob, d], state)
+				state.users   = await query(`select sql_calc_found_rows * from users order by ${ob} ${d} limit 40 offset 0`, [], state)
 			}
 
             let content = html(
@@ -2318,6 +2318,7 @@ async function render(state) { /////////////////////////////////////////
     function user_list() {
 
         let d = _GET('d') ? _GET('d').replace(/[^adesc]/, '').substring(0,4)  : 'desc' // asc or desc
+        let i = (d == 'desc') ? 'asc' : 'desc'                                         // invert asc or desc
 
         let header = `
         <form name='input' action='/users' method='get' >
@@ -2326,16 +2327,16 @@ async function render(state) { /////////////////////////////////////////
         </form><p>
         <table width='100%' cellpadding='10' style="overflow-x:auto;" ><tr>
         <th ></th>
-        <th                    ><A HREF='/users?ob=user_name&d=${ d }'       title='order by user name' >Username</A></th>
-        <th                    ><A HREF='/users?ob=user_registered&d=${ d }' title='order by registration date' >Registered</A></th>
-        <th class='text-right' ><A HREF='/users?ob=user_posts&d=${ d }'      title='order by number of posts started' >Posts</A></th>
-        <th class='text-right' ><A HREF='/users?ob=user_comments&d=${ d }'   title='order by number of comments' >Comments</A></th>
-        <th class='text-right' ><A HREF='/users?ob=user_likes&d=${ d }'      title='number of likes user got' >Likes</A></th>
-        <th class='text-right' ><A HREF='/users?ob=user_dislikes&d=${ d }'   title='number of dislikes user got' >Dislikes</A></th>
-        <th class='text-right' ><A HREF='/users?ob=user_friends&d=${ d }'    title='order by number of friends' >Friends</A></th>
-        <th class='text-right' ><A HREF='/users?ob=user_followers&d=${ d }'  title='order by number of followers' >Followers</A></th>
-        <th class='text-right' ><A HREF='/users?ob=user_bannedby&d=${ d }'   title='how many people are banning user' >Banned By</A></th>
-        <th class='text-right' ><A HREF='/users?ob=user_banning&d=${ d }'    title='how many people user is banning' >Banning</A></th>
+        <th                    ><A HREF='/users?ob=user_name&d=${ i }'       title='order by user name' >Username</A></th>
+        <th                    ><A HREF='/users?ob=user_registered&d=${ i }' title='order by registration date' >Registered</A></th>
+        <th class='text-right' ><A HREF='/users?ob=user_posts&d=${ i }'      title='order by number of posts started' >Posts</A></th>
+        <th class='text-right' ><A HREF='/users?ob=user_comments&d=${ i }'   title='order by number of comments' >Comments</A></th>
+        <th class='text-right' ><A HREF='/users?ob=user_likes&d=${ i }'      title='number of likes user got' >Likes</A></th>
+        <th class='text-right' ><A HREF='/users?ob=user_dislikes&d=${ i }'   title='number of dislikes user got' >Dislikes</A></th>
+        <th class='text-right' ><A HREF='/users?ob=user_friends&d=${ i }'    title='order by number of friends' >Friends</A></th>
+        <th class='text-right' ><A HREF='/users?ob=user_followers&d=${ i }'  title='order by number of followers' >Followers</A></th>
+        <th class='text-right' ><A HREF='/users?ob=user_bannedby&d=${ i }'   title='how many people are banning user' >Banned By</A></th>
+        <th class='text-right' ><A HREF='/users?ob=user_banning&d=${ i }'    title='how many people user is banning' >Banning</A></th>
         </tr>`
 
         if (state.users.length) {
@@ -2344,14 +2345,14 @@ async function render(state) { /////////////////////////////////////////
                     <td >${user_icon(u)}</td>
                     <td align=left >${user_link(u)}</td>
                     <td align=left >${format_date(u.user_registered)}</td>
-                    <td align=right ><a href='/users/${u.user_name}' >${u.user_posts}</a></td>
-                    <td align=right ><a href='/comments?a=${u.user_id}'>${u.user_comments}</a></td>
-                    <td align=right >${u.user_likes}</td>
-                    <td align=right >${u.user_dislikes}</td>
-                    <td align=right ><a href='/users?friendsof=${u.user_id}' >${u.user_friends}</a></td>
-                    <td align=right ><a href='/users?followers=${u.user_id}' >${u.user_followers}</a></td>
-                    <td align=right >${u.user_bannedby}</td>
-                    <td align=right >${u.user_banning}</td>
+                    <td align=right ><a href='/users/${u.user_name}' >${u.user_posts.number_format()}</a></td>
+                    <td align=right ><a href='/comments?a=${u.user_id}'>${u.user_comments.number_format()}</a></td>
+                    <td align=right >${u.user_likes.number_format()}</td>
+                    <td align=right >${u.user_dislikes.number_format()}</td>
+                    <td align=right ><a href='/users?friendsof=${u.user_id}' >${u.user_friends.number_format()}</a></td>
+                    <td align=right ><a href='/users?followers=${u.user_id}' >${u.user_followers.number_format()}</a></td>
+                    <td align=right >${u.user_bannedby.number_format()}</td>
+                    <td align=right >${u.user_banning.number_format()}</td>
                    </tr>`
             })
 
