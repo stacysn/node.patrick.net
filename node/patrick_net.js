@@ -957,7 +957,7 @@ async function render(state) { /////////////////////////////////////////
             await query('delete from postviews where postview_user_id=?', [nuke_id], state)
             await query('delete from users     where user_id=?',          [nuke_id], state)
 
-            state.req.headers.referer ? redirect(state.req.headers.referer) : redirect('/moderation')
+            state.req.headers.referer.match(/moderation/) ? redirect('/moderation') : redirect(state.req.headers.referer) 
         },
 
         post : async function() { // show a single post and its comments
@@ -1851,6 +1851,8 @@ async function render(state) { /////////////////////////////////////////
     }
 
     async function ip2country(ip) { // probably a bit slow, so don't overuse this
+
+        if (!ip) return
 
         ip = ip.replace(/[^0-9\.]/, '')
 
