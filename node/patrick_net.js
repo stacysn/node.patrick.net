@@ -362,8 +362,8 @@ function getimagesize(file) {
     return new Promise(function(fulfill, reject) {
         if (FS.existsSync(file)) {
 
-            const { spawn } = require('child_process')
-            const identify  = spawn('identify', ['-format', '%w %h', file]) // identify -format '%w %h' file
+            let { spawn } = require('child_process')
+            let identify  = spawn('identify', ['-format', '%w %h', file]) // identify -format '%w %h' file
 
             identify.stdout.on('data', data => {
                 let dims = data.toString('utf8').replace(/\n/,'').split(' ') // data is returned as string like '600 328\n'
@@ -391,8 +391,8 @@ function getimagesize(file) {
 function resize_image(file, max_dim = 600) { // max_dim is maximum dimension in either direction
     return new Promise(function(fulfill, reject) {
         if (FS.existsSync(file)) {
-            const { spawn } = require('child_process')
-            const mogrify   = spawn('mogrify', ['-resize', max_dim, file]) // /usr/bin/mogrify -resize $max_dim $file
+            let { spawn } = require('child_process')
+            let mogrify   = spawn('mogrify', ['-resize', max_dim, file]) // /usr/bin/mogrify -resize $max_dim $file
 
             mogrify.on('close', code => {
                 if (code > 0) reject([null,null]) // todo: if code is non-zero, remove the file because something is wrong with it
@@ -449,8 +449,8 @@ async function render(state) { /////////////////////////////////////////
                 post_data.comment_approved = 1
                 post_data.comment_date     = new Date().toISOString().slice(0, 19).replace('T', ' ') // mysql datetime format
  
-                const insert_result = await query('insert into comments set ?', post_data, state)
-                const comment_id = insert_result.insertId
+                let insert_result = await query('insert into comments set ?', post_data, state)
+                let comment_id = insert_result.insertId
 
                 // now select the inserted row so that we pick up the comment_date time and user data for displaying the comment
                 results = await query('select * from comments left join users on comment_author=user_id where comment_id = ?', [comment_id], state)
@@ -471,7 +471,7 @@ async function render(state) { /////////////////////////////////////////
             if (!valid_nonce()) return die('invalid nonce')
 
             await collect_post_data(state)
-            const post_data = state.post_data
+            let post_data = state.post_data
 
             if (!post_data.comment_content) return die('please go back and enter some content')
 
@@ -488,7 +488,7 @@ async function render(state) { /////////////////////////////////////////
                 post_data.comment_likes    = 0
                 post_data.comment_approved = 1
  
-                const comment_id = post_data.comment_id
+                let comment_id = post_data.comment_id
                 await query('update comments set ? where comment_id = ? and (comment_author = ? or 1 = ?)',
                             [post_data, comment_id, state.current_user.user_id, state.current_user.user_id], state)
 
@@ -527,6 +527,19 @@ async function render(state) { /////////////////////////////////////////
             redirect(`/post/${p}`)
         },
 
+        approve_comment : async function() {
+
+            let comment_id = intval(_GET('comment_id'))
+
+            if (!comment_id)         return send_html(200, '')
+            if (!state.current_user) return send_html(200, '')
+            if (!valid_nonce())      return send_html(200, '')
+
+            await query('update comments set comment_approved=1 where comment_id=?', [comment_id], state)
+
+            send_html(200, '') // make it disappear from comment_moderation page
+        },
+
         comment_jail : async function() { // no pagination, just most recent 80
 
             // comments not freed in 30 days will be deleted
@@ -545,6 +558,26 @@ async function render(state) { /////////////////////////////////////////
                 midpage(
                     h1(),
                     'These comments were marked as uncivil. Patrick will review them and liberate comments which do not deserve to be here. You can edit your comment here to make it more civil and get it out of jail after the edits are reviewed. Comments not freed within 30 days will be deleted.',
+                    comment_list()
+                )
+            )
+
+            return send_html(200, content)
+        },
+
+        comment_moderation : async function() {
+
+            state.comments = await query(`select sql_calc_found_rows * from comments left join users on user_id=comment_author
+                                          where comment_approved = 0`, [], state)
+
+            let offset = 0
+            state.comments = state.comments.map(comment => { comment.row_number = ++offset; return comment })
+
+            state.message = 'comment moderation'
+
+            let content = html(
+                midpage(
+                    h1(),
                     comment_list()
                 )
             )
@@ -590,8 +623,8 @@ async function render(state) { /////////////////////////////////////////
 
         delete_comment : async function() { // delete a comment
 
-            const comment_id = intval(_GET('comment_id'))
-            const post_id    = intval(_GET('post_id'))
+            let comment_id = intval(_GET('comment_id'))
+            let post_id    = intval(_GET('post_id'))
 
             if (!state.current_user)      return send_html(200, '')
             if (!valid_nonce())           return send_html(200, '')
@@ -1159,7 +1192,7 @@ async function render(state) { /////////////////////////////////////////
 
         uncivil : async function() { // move a comment to comment jail, or a post to post moderation
 
-            const comment_id = intval(_GET('c'))
+            let comment_id = intval(_GET('c'))
 
             if (state.current_user && valid_nonce() && comment_id) {
                 await query('update comments set comment_adhom_reporter=?, comment_adhom_when=now() where comment_id = ? and (comment_author = ? or 1 = ?)',
@@ -1432,7 +1465,7 @@ async function render(state) { /////////////////////////////////////////
         var edit             = get_edit_link(c)
         var icon             = user_icon(c, 0.4, `'align='left' hspace='5' vspace='2'`) // scale image down
         var u                = c.user_name ? `<a href='/user/${c.user_name}'>${c.user_name}</a>` : 'anonymous'
-        var uncivil          = get_uncivil_link(c)
+        var clink            = contextual_link(c)
 
         if (state.current_user) {
             var liketext    = c.commentvote_up   ? 'you like this'    : '&#8593;&nbsp;like';
@@ -1469,7 +1502,7 @@ async function render(state) { /////////////////////////////////////////
         ${date_link} &nbsp;
         ${like} &nbsp;
         ${dislike} &nbsp;
-        ${uncivil} &nbsp;
+        ${clink} &nbsp;
         ${edit} &nbsp;
         ${del} &nbsp;
         </font><br>${ c.comment_content }</div>`
@@ -1494,7 +1527,7 @@ async function render(state) { /////////////////////////////////////////
 
     function comment_edit_box() { // edit existing comment, redirect back to whole post page
 
-        const comment_id = intval(_GET('c'))
+        let comment_id = intval(_GET('c'))
 
         return `
         <h1>edit comment</h1>
@@ -1508,7 +1541,7 @@ async function render(state) { /////////////////////////////////////////
     }
 
     function comment_list() { // format one page of comments
-        return state.comments ? state.comments.map(item => { return format_comment(item) }).join('') : '<b>no comments found</b>'
+        return state.comments.length ? state.comments.map(item => { return format_comment(item) }).join('') : '<b>no comments found</b>'
     }
 
     function comment_pagination() { // get pagination links for a single page of comments
@@ -1579,6 +1612,24 @@ async function render(state) { /////////////////////////////////////////
           <input type='submit' name='submit' value='Search comments &raquo;' />  
           </fieldset> 
         </form><p>`
+    }
+
+    function contextual_link(c) { // a link in the comment header that varies by comment context, jail, moderation, etc
+
+        if (!state.current_user) return ''
+
+        if (URL.parse(state.req.url).pathname.match(/jail/) && (state.current_user.user_level == 4)) {
+             return `<a href='/liberate?comment_id=${c.comment_id}' >liberate</a>`
+        }
+        
+        if (URL.parse(state.req.url).pathname.match(/comment_moderation/) && (state.current_user.user_level == 4)) {
+            return `<a href='#' onclick="$.get('/approve_comment?comment_id=${ c.comment_id }&${create_nonce_parms()}', function() { $('#comment-${ c.comment_id }').remove() }); return false">approve</a>`
+        }
+
+        if (state.current_user.user_pbias >= 3) {
+            return (state.current_user.user_id == c.comment_author || state.current_user.user_id == 1) ?
+                `<a href='#' onclick="if (confirm('Really mark as uncivil?')) { $.get('/uncivil?c=${ c.comment_id }&${create_nonce_parms()}', function() { $('#comment-${ c.comment_id }').remove() }); return false}" title='attacks person, not point' >uncivil</a>` : ''
+        }
     }
 
     function create_nonce_parms() {
@@ -1739,7 +1790,7 @@ async function render(state) { /////////////////////////////////////////
 
     function get_external_link(post) {
 
-        const c = CHEERIO.load(post.post_content)
+        let c = CHEERIO.load(post.post_content)
 
         if (!c('a').length) return ''
 
@@ -1754,7 +1805,7 @@ async function render(state) { /////////////////////////////////////////
 
     function get_first_image(post) {
 
-        const c = CHEERIO.load(post.post_content)
+        let c = CHEERIO.load(post.post_content)
 
         if (!c('img').length) return ''
 
@@ -1778,20 +1829,6 @@ async function render(state) { /////////////////////////////////////////
         else if (_GET('offset')) parm = `?offset=${_GET('offset')}`
 
         return `<a href='/post/${c.comment_post_id}/${parm}#comment-${c.comment_id}' title='permalink' >${format_date(c.comment_date)}</a>`
-    }
-
-    function get_uncivil_link(c) {
-
-        if (!state.current_user) return ''
-
-        if (URL.parse(state.req.url).pathname.match(/jail/) && (state.current_user.user_level == 4)) {
-             return `<a href='/liberate?${c.comment_id}=${c.comment_id}' >liberate</a>`
-        }
-        
-        if (state.current_user.user_pbias >= 3) {
-            return (state.current_user.user_id == c.comment_author || state.current_user.user_id == 1) ?
-                `<a href='#' onclick="if (confirm('Really mark as uncivil?')) { $.get('/uncivil?c=${ c.comment_id }&${create_nonce_parms()}', function() { $('#comment-${ c.comment_id }').remove() }); return false}" title='attacks person, not point' >uncivil</a>` : ''
-        }
     }
 
     async function get_userrow(user_id) {
