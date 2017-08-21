@@ -422,7 +422,7 @@ async function render(state) { /////////////////////////////////////////
 
         accept_comment : async function() { // insert new comment
 
-            if (!valid_nonce()) { // do not die, because that will return a whole html page to be appended into the #newcomment slot
+            if (!valid_nonce()) { // do not die, because that will return a whole html page to be appended into the #comment_list slot
                 state.message = 'invalid nonce'
                 return send_html(200, popup())
             }
@@ -1525,12 +1525,13 @@ async function render(state) { /////////////////////////////////////////
         if (state.comments) { // state.comments may not be defined, for example when we just added one comment
             var last = (c.row_number == state.comments.found_rows) ? `<span id='last'></span>` : ''
         }
+        else var last = ''
 
         c.comment_content = (c.comment_adhom_when && !URL.parse(state.req.url).pathname.match(/jail/)) ?
                     `<a href='/comment_jail#comment-${c.comment_id}'>this comment has been jailed for incivility</a>` : c.comment_content
 
         return `${last}<div class="comment" id="comment-${c.comment_id}" ><font size=-1 >
-        ${c.row_number}
+        ${c.row_number || ''}
         ${icon}
         ${u} &nbsp;
         ${date_link} &nbsp;
@@ -1543,16 +1544,14 @@ async function render(state) { /////////////////////////////////////////
     }
 
     function comment_box() { // add new comment, just updates page without reload
-
         return `
-        <div  id='newcomment' ></div>
         ${state.current_user ? upload_form() : ''}
         <form id='commentform' >
             <textarea id='ta' name='comment_content' class='form-control' rows='10' placeholder='write a comment...' ></textarea><p>
             <input type='hidden' name='comment_post_id' value='${state.post.post_id}' />
             <button class='btn btn-success btn-sm'
                 onclick="$.post('/accept_comment?${create_nonce_parms()}', $('#commentform').serialize()).done(function(data) {
-                    if (data) $('#newcomment').append(data)
+                    $('#comment_list').append(data)
                     document.getElementById('commentform').reset() // clear the textbox
                 })
                 return false" >submit</button>
@@ -1575,7 +1574,11 @@ async function render(state) { /////////////////////////////////////////
     }
 
     function comment_list() { // format one page of comments
-        return state.comments.length ? state.comments.map(item => { return format_comment(item) }).join('') : '<b>no comments found</b>'
+        let ret = `<div id='comment_list' >`
+        ret = ret +
+            (state.comments.length ? state.comments.map(item => { return format_comment(item) }).join('') : '<b>no comments found</b>')
+        ret = ret + `</div>`
+        return ret
     }
 
     function comment_pagination() { // get pagination links for a single page of comments
