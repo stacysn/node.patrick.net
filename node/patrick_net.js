@@ -531,13 +531,30 @@ async function render(state) { /////////////////////////////////////////
 
             let comment_id = intval(_GET('comment_id'))
 
-            if (!comment_id)         return send_html(200, '')
-            if (!state.current_user) return send_html(200, '')
-            if (!valid_nonce())      return send_html(200, '')
+            if (!comment_id)                        return send_html(200, '')
+            if (!state.current_user)                return send_html(200, '')
+            if (state.current_user.user_level != 4) return send_html(200, '')
+            if (!valid_nonce())                     return send_html(200, '')
 
-            await query('update comments set comment_approved=1 where comment_id=?', [comment_id], state)
+            await query('update comments set comment_approved=1, comment_date=now() where comment_id=?', [comment_id], state)
+            await query('update posts set post_modified=now() where post_id=(select comment_post_id from comments where comment_id=?)',
+                        [comment_id], state)
 
             send_html(200, '') // make it disappear from comment_moderation page
+        },
+
+        approve_post : async function() {
+
+            let post_id = intval(_GET('post_id'))
+
+            if (!post_id)                           return send_html(200, '')
+            if (!state.current_user)                return send_html(200, '')
+            if (state.current_user.user_level != 4) return send_html(200, '')
+            if (!valid_nonce())                     return send_html(200, '')
+
+            await query('update posts set post_approved=1, post_modified=now() where post_id=?', [post_id], state)
+
+            send_html(200, '') // make it disappear from post_moderation page
         },
 
         comment_jail : async function() { // no pagination, just most recent 80
@@ -1041,6 +1058,23 @@ async function render(state) { /////////////////////////////////////////
             password = state.post_data.password
 
             login(state, email, password)
+        },
+
+        post_moderation : async function () {
+
+            let current_user_id = state.current_user ? state.current_user.user_id : 0
+
+            state.posts = await query(`select * from posts left join users on user_id=post_author where post_approved=0`, [], state)
+
+            let found_rows = sql_calc_found_rows()
+
+            let content = html(
+                midpage(
+                    post_list()
+                )
+            )
+
+            send_html(200, content)
         },
 
         recoveryemail : async function() {
@@ -2198,6 +2232,11 @@ async function render(state) { /////////////////////////////////////////
                 let sharelink     = share_post(post)
                 let firstwords    = `<font size='-1'>${first_words(post.post_content, 30)}</font>`
 
+                if (URL.parse(state.req.url).pathname.match(/post_moderation/) && (state.current_user.user_level == 4)) {
+                    var approval_link = `<a href='#' onclick="$.get('/approve_post?post_id=${ post.post_id }&${create_nonce_parms()}', function() { $('#post-${ post.post_id }').remove() }); return false">approve</a>`
+                }
+                else var approval_link = ''
+
                 if (post.post_comments) {
                     let s = (post.post_comments == 1) ? '' : 's';
                     let path = post2path(post)
@@ -2206,8 +2245,9 @@ async function render(state) { /////////////////////////////////////////
                 }
                 else var latest = `Posted ${ago}`
 
-                return `<div class='post' >${arrowbox_html}${imgdiv}<b><font size='+1'>${link}</font></b> ${extlink} ${sharelink}<br>by 
-                        <a href='/user/${ post.user_name }'>${ post.user_name }</a> ${hashlink} &nbsp; ${latest} ${unread}<br>${firstwords}</div>`
+                return `<div class='post' id='post-${post.post_id}' >${arrowbox_html}${imgdiv}<b><font size='+1'>${link}</font></b> ${extlink} ${sharelink}<br>by 
+                        <a href='/user/${ post.user_name }'>${ post.user_name }</a> ${hashlink} &nbsp; ${latest} ${unread} ${approval_link}
+                        <br>${firstwords}</div>`
             })
         }
         else formatted = []
