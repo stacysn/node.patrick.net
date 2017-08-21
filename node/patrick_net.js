@@ -1514,12 +1514,11 @@ async function render(state) { /////////////////////////////////////////
             var dislike = `<a href='#' onclick="midpage.innerHTML = registerform.innerHTML; return false" >&#8593;&nbsp;dislike (${comment_likes})</a>`
         }
 
-        /*
-            if ($post_id) {
-                $commenter = await get_userrow(comment.comment_author);
-                $s .= "<a href=\"#commentform\" onclick=\"addquote('$comment->comment_post_id', '$comment->comment_id', '$commenter->user_name'); return false;\" title=\"Select some text then click this to quote\" >quote</a> &nbsp; ";
-            }
-        */
+		var offset = intval(_GET('offset'))
+
+		var quote = `<a href="#commentform"
+					  onclick="addquote('${c.comment_post_id}', '${offset}', '${c.comment_id}', '${c.user_name}'); return false;"
+					  title="select some text then click this to quote" >quote</a>`
 
         // for the last comment in the whole result set (not just last on this page) add an id="last"
         if (state.comments) { // state.comments may not be defined, for example when we just added one comment
@@ -1538,9 +1537,10 @@ async function render(state) { /////////////////////////////////////////
         ${like} &nbsp;
         ${dislike} &nbsp;
         ${clink} &nbsp;
+        ${quote} &nbsp;
         ${edit} &nbsp;
         ${del} &nbsp;
-        </font><br>${ c.comment_content }</div>`
+        </font><br><span id='comment-${c.comment_id}-text'>${ c.comment_content }</span></div>`
     }
 
     function comment_box() { // add new comment, just updates page without reload
@@ -1897,6 +1897,84 @@ async function render(state) { /////////////////////////////////////////
             <meta name='description' content='${ CONF.description }' />
             <meta name='viewport' content='width=device-width, initial-scale=1, shrink-to-fit=no' />
             <title>${ CONF.domain }</title>
+			<script type="text/javascript">
+		function addquote(post_id, offset, comment_id, author) {
+
+			var comment_link;
+			var textarea = document.forms['commentform'].elements['ta']
+			var theSelection = ''
+
+			if (comment_id > 0)
+				comment_link = '<a href="/post/' + post_id + '&offset=' + offset + '#comment-' + comment_id + '">' + author + ' says</a>'
+			else
+				comment_link = '<a href="/post/' + post_id                                                  + '">' + author + ' says</a>'
+
+			if (theSelection = getHTMLOfSelection()) { // user manually selected something
+				if (s = sessionStorage.getItem('tripleclickselect')) { // override tripleclick selection to avoid getting extra html elements
+					theSelection = s.trim() // trim bc tripleclick appends useless whitespace
+					sessionStorage.removeItem('tripleclickselect') // so we don't keep using it by mistake
+				}
+			}
+			else { // either we are on mobile (no selection possible) or the user did not select any text
+				theSelection = document.getElementById('comment-' + comment_id + '-text').innerHTML // whole comment, or post when comment_id == 0
+			}
+
+			if (theSelection.length > 1024) var theSelection = theSelection.substring(0, 1000) + '...'  // might mangle tags
+
+			textarea.value = textarea.value + comment_link + '<br><blockquote>' + theSelection + '</blockquote>'
+			textarea.focus()
+			return
+		}
+
+		window.addEventListener('click', function (evt) {
+			if (evt.detail === 3) {
+				sessionStorage.setItem('tripleclickselect', window.getSelection());
+
+				// if they don't use it by clicking "quote" within 10 seconds, delete it so it dn confuse them later
+				setTimeout(function(){ 
+					sessionStorage.removeItem('tripleclickselect');
+				}, 10000);
+			}
+		});
+
+		function getHTMLOfSelection () {
+		  var range
+		  if (window.getSelection) {
+			var selection = window.getSelection()
+			if (selection.rangeCount > 0) {
+			  range = selection.getRangeAt(0)
+			  var clonedSelection = range.cloneContents()
+			  var div = document.createElement('div')
+			  div.appendChild(clonedSelection)
+			  return div.innerHTML
+			}
+			else {
+			  return ''
+			}
+		  }
+		  else {
+			return ''
+		  }
+		}
+
+		function on_mobile() { 
+			if (navigator.userAgent.match(/Android/i)
+			 || navigator.userAgent.match(/webOS/i)
+			 || navigator.userAgent.match(/iPhone/i)
+			 || navigator.userAgent.match(/iPad/i)
+			 || navigator.userAgent.match(/iPod/i)
+			 || navigator.userAgent.match(/BlackBerry/i)
+			 || navigator.userAgent.match(/Windows Phone/i)
+			) {
+				return true
+			}
+			else {
+				return false
+			}
+		}
+		-->
+
+			</script>
             </head>
             <body>
                 <div class="container" >
@@ -2142,10 +2220,10 @@ async function render(state) { /////////////////////////////////////////
                 <p>By ${user_link(state.post)} ${follow_button(state.post)} &nbsp; ${format_date(state.post.post_date)} ${uncivil} ${incoming}
                 ${state.post.post_views} views &nbsp; ${state.post.post_comments} comments &nbsp;
                 ${watcheye}
-                <a href="#commentform" onclick="addquote( '${state.post.post_id}', '0', '${current_user_name}' ); return false;"
+                <a href="#commentform" onclick="addquote( '${state.post.post_id}', '0', '0', '${current_user_name}' ); return false;"
                    title="Select some text then click this to quote" >quote</a> &nbsp;
                 &nbsp; ${share_post(state.post)} &nbsp; ${edit_link} ${delete_link}
-                <p><div class="entry" class="alt" id="comment-0-text" >${ state.post.post_content }</div></div>`
+                <p><div class="entry" class="alt" id="comment-0" >${ state.post.post_content }</div></div>`
     }
 
     async function post_comment_list(post) {
