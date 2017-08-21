@@ -283,16 +283,22 @@ Number.prototype.number_format = function() {
 
 String.prototype.linkify = function(ref) {
 
-    var urlPattern = /\b(?:https?|ftp):\/\/[a-z0-9-+&@#\/%?=~_|!:,.;]*[a-z0-9-+&@#\/%=~_|]/gim; // http://, https://, ftp://
-    var pseudoUrlPattern = /(^|[^\/])(www\.[\S]+(\b|$))/gim;                                    // www. sans http:// or https://
+    var urlPattern = /\b(?:https?|ftp):\/\/[a-z0-9-+&@#\/%?=~_|!:,.;]*[a-z0-9-+&@#\/%=~_|]/gim // http://, https://, ftp://
+    var pseudoUrlPattern = /(^|[^\/])(www\.[\S]+(\b|$))/gim                                    // www. sans http:// or https://
     var imagePattern = />((?:https?):\/\/[a-z0-9-+&@#\/%?=~_|!:,.;]*[a-z0-9-+&@#\/%=~_|]\.(jpg|jpeg|gif|gifv|png|bmp))</gim
     var emailpostPattern = /[\w.]+@[a-zA-Z_-]+?(?:\.[a-zA-Z]{2,6})+/gim
+    var linebreakPattern = /\n/gim
 
-    return this
+    let result = this
+        .replace(/\r/gim,          '')
         .replace(urlPattern,       '<a href="$&">$&</a>')
         .replace(pseudoUrlPattern, '$1<a href="http://$2">$2</a>')
         .replace(imagePattern,     '><img src="$1"><') // it's already a link because of urlPattern above
         .replace(emailpostPattern, '<a href="mailto:$&">$&</a>')
+        .replace(linebreakPattern, '<br>')
+
+    debug(JSON.stringify(result))
+    return result
 }
 
 function brandit(url) { // add ref=[domain name] to a url
@@ -443,7 +449,7 @@ async function render(state) { /////////////////////////////////////////
             }
             else {
                 post_data.comment_author   = state.current_user ? state.current_user.user_id : 0
-                post_data.comment_content  = strip_tags(post_data.comment_content.linkify()) // linkify, imagify, etc, stripping non-approved tags
+                post_data.comment_content  = strip_tags(post_data.comment_content.linkify())
                 post_data.comment_dislikes = 0
                 post_data.comment_likes    = 0
                 post_data.comment_approved = 1
@@ -483,7 +489,7 @@ async function render(state) { /////////////////////////////////////////
                 return die('You are posting comments too quickly! Please slow down')
             }
             else {
-                post_data.comment_content  = strip_tags(post_data.comment_content.linkify()) // linkify, imagify, etc, stripping non-approved tags
+                post_data.comment_content  = strip_tags(post_data.comment_content.linkify())
                 post_data.comment_dislikes = 0
                 post_data.comment_likes    = 0
                 post_data.comment_approved = 1
