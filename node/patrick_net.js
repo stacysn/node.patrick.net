@@ -1,4 +1,4 @@
-// Copyright 2017 by Patrick Killelea under the GPLv2 license
+// copyright 2017 by Patrick Killelea under the GPLv2 license
 // globals are capitalized
 
 try { CONF = require('./conf.json') } catch(e) { console.log(e.message); process.exit(1) } // conf.json is required
@@ -803,13 +803,11 @@ async function render(state) { /////////////////////////////////////////
 
             state.posts = await query(sql, [current_user_id, current_user_id], state)
 
-            let found_rows = sql_calc_found_rows()
-
             let content = html(
                 midpage(
                     tabs(order),
                     post_list(),
-                    post_pagination(found_rows, curpage, `&order=${order}`)
+                    post_pagination(await sql_calc_found_rows(), curpage, `&order=${order}`)
                 )
             )
 
@@ -1066,8 +1064,6 @@ async function render(state) { /////////////////////////////////////////
 
             state.posts = await query(`select * from posts left join users on user_id=post_author where post_approved=0`, [], state)
 
-            let found_rows = sql_calc_found_rows()
-
             let content = html(
                 midpage(
                     post_list()
@@ -1135,7 +1131,7 @@ async function render(state) { /////////////////////////////////////////
             let s = _GET('s').trim().replace(/[^0-9a-z ]/gi, '') // allow only alphanum and spaces for now
             let us = encodeURI(s)
 
-            // if (!$s) format_die("You searched for nothing. It was found.")
+            if (!s) return die('You searched for nothing. It was found.')
 
             let [curpage, slimit, order, order_by] = page()
 
@@ -1406,7 +1402,9 @@ async function render(state) { /////////////////////////////////////////
 
     } // end of pages
 
+    /////////////////////////////////////////////////////////
     // functions within render(), arranged alphabetically:
+    /////////////////////////////////////////////////////////
 
     function about_this_site() {
         return `<h1>About ${ CONF.domain }</h1>${ CONF.domain } is the bomb!`
@@ -1465,7 +1463,7 @@ async function render(state) { /////////////////////////////////////////
     function clean_upload_path(path, filename) {
 
         // allow only alphanum, dot, dash in image name to mitigate scripting tricks
-        // always lowercase upload names so we don't get collisions on stupid case-insensitive Mac fs between "This.jpg" and "this.jpg", for example
+        // lowercase upload names so we don't get collisions on stupid case-insensitive Mac fs between eg "This.jpg" and "this.jpg"
         filename = filename.replace(/[^\w\.-]/gi, '').toLowerCase()
 
         let ext     = null
@@ -1890,14 +1888,15 @@ async function render(state) { /////////////////////////////////////////
         var queries = state.queries.sortByProp('ms').map( (item) => { return `${ item.ms }ms ${ item.sql }` }).join('\n')
 
         return `<!DOCTYPE html><html lang="en">
-            <head>
-            <link href='/${ CONF.stylesheet }' rel='stylesheet' type='text/css' />
-            <link rel='icon' href='/favicon.ico' />
-            <meta charset='utf-8' />
-            <meta name='description' content='${ CONF.description }' />
-            <meta name='viewport' content='width=device-width, initial-scale=1, shrink-to-fit=no' />
-            <title>${ CONF.domain }</title>
-			<script type="text/javascript">
+        <head>
+        <link href='/${ CONF.stylesheet }' rel='stylesheet' type='text/css' />
+        <link rel='icon' href='/favicon.ico' />
+        <meta charset='utf-8' />
+        <meta name='description' content='${ CONF.description }' />
+        <meta name='viewport' content='width=device-width, initial-scale=1, shrink-to-fit=no' />
+        <title>${ CONF.domain }</title>
+        <script type="text/javascript">
+
 		function addquote(post_id, offset, comment_id, author) {
 
 			var comment_link;
@@ -1973,18 +1972,17 @@ async function render(state) { /////////////////////////////////////////
 			}
 		}
 		-->
-
-			</script>
-            </head>
-            <body>
-                <div class="container" >
-                ${ header() }
-                ${ args.join('') }
-                ${ footer() }
-                </div>
-            </body>
-            <script async src="/jquery.min.js"></script><!-- ${'\n' + queries + '\n'} -->
-            </html>`
+        </script>
+        </head>
+        <body>
+            <div class="container" >
+            ${ header() }
+            ${ args.join('') }
+            ${ footer() }
+            </div>
+        </body>
+        <script async src="/jquery.min.js"></script><!-- ${'\n' + queries + '\n'} -->
+        </html>`
     }
 
     function icon_or_loginprompt() {
@@ -2245,9 +2243,6 @@ async function render(state) { /////////////////////////////////////////
         // add in the comment row number to the result here for easier pagination info; would be better to do in mysql, but how?
         results = results.map(comment => { comment.row_number = ++offset; return comment })
 
-        //let results = await query('select * from comments left join users on comment_author=user_id where comment_post_id=? order by comment_date',
-        //    [post.post_id], state)
-
         return results
     }
 
@@ -2285,15 +2280,15 @@ async function render(state) { /////////////////////////////////////////
         return `<a href='${path}'>${post.post_title}</a>`
     }
 
-    function post_list() { // format and display a list of posts from whatever source; pass in only a limited number, because all of them will display
+    function post_list() { // format a list of posts from whatever source; pass in only a limited number, because all will display
 
         if (state.posts) {
             var formatted = state.posts.map(post => {
 
                 var link = post_link(post)
 
-                if (!state.current_user && post.post_title.match(/thunderdome/gi)) return '' // don't show thunderdome posts to non-logged-in users
-                if (!state.current_user && post.post_nsfw)                         return '' // don't show porn posts to non-logged-in users
+                if (!state.current_user && post.post_title.match(/thunderdome/gi)) return '' // hide thunderdome posts if not logged in
+                if (!state.current_user && post.post_nsfw)                         return '' // hide porn posts if not logged in
 
                 net = post.post_likes - post.post_dislikes
 
