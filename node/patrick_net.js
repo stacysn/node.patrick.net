@@ -1740,14 +1740,13 @@ async function render(state) { /////////////////////////////////////////
         <a href="/users">users</a> &nbsp;
         <a href="/about">about</a> &nbsp;
         <a href='/post/1302130/2017-01-28-patnet-improvement-suggestions'>suggestions</a> &nbsp;
+        <a href='https://github.com/killelea/node.patrick.net'>source code</a> &nbsp;
         <a href='mailto:${ CONF.admin_email }' >contact</a> &nbsp;
         <br>
         <a href='/topics'>topics</a> &nbsp;
         <a href='/random'>random post</a> &nbsp;
         <a href="/best">best comments</a> &nbsp;
         <a href="/comment_jail">comment jail</a> &nbsp;
-        <br>
-        <a href='/post/1303173/2017-02-19-patricks-s-40-proposals'>patrick's 40 proposals</a> &nbsp;
         <br>
         <a href='/post/1282720/2015-07-11-ten-reasons-it-s-a-terrible-time-to-buy-an-expensive-house'>10 reasons it's a terrible time to buy</a> &nbsp;
         <br>
