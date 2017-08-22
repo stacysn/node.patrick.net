@@ -1406,6 +1406,28 @@ async function render(state) { /////////////////////////////////////////
             send_html(200, content)
         },
 
+        watch : async function() { // add or remove a watch from a post
+
+            let post_id    = intval(_GET('post_id'))
+
+            if (!state.current_user) return send_html(200, '')
+            if (!valid_nonce())      return send_html(200, '')
+            if (!post_id)            return send_html(200, '')
+
+            let result = await query(`select postview_want_email from postviews where postview_user_id=? and postview_post_id=?`,
+                                           [state.current_user.user_id, post_id], state)
+
+            if (result.length && result[0].postview_want_email) var want_email = 0
+            else                                                var want_email = 1
+
+            await query(`insert into postviews (postview_user_id, postview_post_id, postview_want_email) values (?, ?, ?)
+                         on duplicate key update postview_want_email=?`,
+                        [state.current_user.user_id, post_id, want_email, want_email], state)
+
+            if (want_email) send_html(200, `<img src='/content/openeye.png'> unwatch`)
+            else            send_html(200, `<img src='/content/closedeye.png'> watch`)
+        },
+
     } // end of pages
 
     /////////////////////////////////////////////////////////
@@ -2198,14 +2220,11 @@ async function render(state) { /////////////////////////////////////////
             width='18' height='17'></a> &nbsp; `
         }
 
-        if (state.post.postview_want_email) {
-            var watcheye = `<a href='${post2path(state.post)}?want_email=0' title='stop getting comments by email' >
-                  <img src='/content/openeye.png'> unwatch</A> (${state.post.watchers}) &nbsp;`
-        }
-        else {
-            var watcheye = `<a href='${post2path(state.post)}?want_email=1' title='Get comments by email for this post' >
-                  <img src='/content/closedeye.png'> watch</A> (${state.post.watchers}) &nbsp;`
-        }
+        let un = state.post.postview_want_email ? 'un' : ''
+
+        // watch toggle
+        var watcheye = `<a href='#' id='watch' onclick="$.get('/watch?post_id=${state.post.post_id}&${nonce_parms}', function(data) {
+        document.getElementById('watch').innerHTML = data; }); return false" title='comments by email'>${un}watch</a>`
 
         let current_user_name = state.current_user ? state.current_user.user_name : 'anonymous'
 
@@ -2223,7 +2242,7 @@ async function render(state) { /////////////////////////////////////////
         return `<div class='comment' >${arrowbox_html} ${icon} <h2 style='display:inline' >${ link }</h2>
                 <p>By ${user_link(state.post)} ${follow_button(state.post)} &nbsp; ${format_date(state.post.post_date)} ${uncivil} ${incoming}
                 ${state.post.post_views} views &nbsp; ${state.post.post_comments} comments &nbsp;
-                ${watcheye}
+                ${watcheye} &nbsp;
                 <a href="#commentform" onclick="addquote( '${state.post.post_id}', '0', '0', '${current_user_name}' ); return false;"
                    title="Select some text then click this to quote" >quote</a> &nbsp;
                 &nbsp; ${share_post(state.post)} &nbsp; ${edit_link} ${delete_link}
