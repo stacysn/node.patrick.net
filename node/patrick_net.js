@@ -516,7 +516,7 @@ async function render(state) { /////////////////////////////////////////
             await collect_post_data(state)
 
             post_data               = state.post_data
-            post_data.post_content  = strip_tags(post_data.post_content) // remove all but a small set of allowed html tags
+            post_data.post_content  = strip_tags(post_data.post_content.linkify()) // remove all but a small set of allowed html tags
             post_data.post_approved = 1 // todo: create a function to check content before approving!
 
             if (intval(post_data.post_id)) { // editing old post
