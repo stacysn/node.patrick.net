@@ -297,7 +297,6 @@ String.prototype.linkify = function(ref) {
         .replace(emailpostPattern, '<a href="mailto:$&">$&</a>')
         .replace(linebreakPattern, '<br>')
 
-    debug(JSON.stringify(result))
     return result
 }
 
@@ -334,7 +333,7 @@ function query(sql, sql_parms, state) {
 
         var get_results = function (error, results, fields, timing) { // callback to give to state.db.query()
 
-            //debug(query.sql)
+            debug(query.sql)
 
             if (error) {
                 console.log(error)
@@ -1406,9 +1405,9 @@ async function render(state) { /////////////////////////////////////////
             send_html(200, content)
         },
 
-        watch : async function() { // add or remove a watch from a post
+        watch : async function() { // toggle a watch from a post
 
-            let post_id    = intval(_GET('post_id'))
+            let post_id = intval(_GET('post_id'))
 
             if (!state.current_user) return send_html(200, '')
             if (!valid_nonce())      return send_html(200, '')
@@ -1424,8 +1423,7 @@ async function render(state) { /////////////////////////////////////////
                          on duplicate key update postview_want_email=?`,
                         [state.current_user.user_id, post_id, want_email, want_email], state)
 
-            if (want_email) send_html(200, `<img src='/content/openeye.png'> unwatch`)
-            else            send_html(200, `<img src='/content/closedeye.png'> watch`)
+            send_html(200, watch_indicator(want_email))
         },
 
     } // end of pages
@@ -2220,11 +2218,10 @@ async function render(state) { /////////////////////////////////////////
             width='18' height='17'></a> &nbsp; `
         }
 
-        let un = state.post.postview_want_email ? 'un' : ''
-
         // watch toggle
         var watcheye = `<a href='#' id='watch' onclick="$.get('/watch?post_id=${state.post.post_id}&${nonce_parms}', function(data) {
-        document.getElementById('watch').innerHTML = data; }); return false" title='comments by email'>${un}watch</a>`
+        document.getElementById('watch').innerHTML = data; });
+        return false" title='comments by email'>${watch_indicator(state.post.postview_want_email)}</a>`
 
         let current_user_name = state.current_user ? state.current_user.user_name : 'anonymous'
 
@@ -2643,6 +2640,10 @@ async function render(state) { /////////////////////////////////////////
 
         if (get_nonce(_GET('ts')) == _GET('nonce')) return true
         else                                        return false
+    }
+
+    function watch_indicator(want_email) {
+        return want_email ? `<img src='/content/openeye.png'> unwatch` : `<img src='/content/closedeye.png'> watch`
     }
 
     // end of render() functions
