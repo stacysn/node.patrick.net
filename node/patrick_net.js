@@ -283,18 +283,18 @@ Number.prototype.number_format = function() {
 
 String.prototype.linkify = function(ref) {
 
-    var urlPattern = /\b(?:https?|ftp):\/\/[a-z0-9-+&@#\/%?=~_|!:,.;]*[a-z0-9-+&@#\/%=~_|]/gim // http://, https://, ftp://
-    var pseudoUrlPattern = /(^|[^\/])(www\.[\S]+(\b|$))/gim                                    // www. sans http:// or https://
-    var imagePattern = />((?:https?):\/\/[a-z0-9-+&@#\/%?=~_|!:,.;]*[a-z0-9-+&@#\/%=~_|]\.(jpg|jpeg|gif|gifv|png|bmp))</gim
-    var emailpostPattern = /[\w.]+@[a-zA-Z_-]+?(?:\.[a-zA-Z]{2,6})+/gim
+    var imagePattern     = /((https?:\/\/[\w$%&~\/.\-;:=,?@\[\]+]*?)\.(jpg|jpeg|gif|gifv|png|bmp))(\s|$)/gim
+    var urlPattern       = /\b(https?:\/\/[a-z0-9-+&@#\/%?=~_|!:,.;]*[a-z0-9-+&@#\/%=~_|])(\s|$)/gim // http://, https://
+    var pseudoUrlPattern = /(^|[^\/])(www\.[\S]+(\b|$))(\s|$)/gim                                    // www. sans http:// or https://
+    var emailpostPattern = /([\w.]+@[a-zA-Z_-]+?(?:\.[a-zA-Z]{2,6})+)\b(?!["<])/gim
     var linebreakPattern = /\n/gim
 
     let result = this
         .replace(/\r/gim,          '')
-        .replace(urlPattern,       '<a href="$&">$&</a>')
-        .replace(pseudoUrlPattern, '$1<a href="http://$2">$2</a>')
-        .replace(imagePattern,     '><img src="$1"><') // it's already a link because of urlPattern above
-        .replace(emailpostPattern, '<a href="mailto:$&">$&</a>')
+        .replace(imagePattern,     '<img src="$1"> ')
+        .replace(urlPattern,       '<a href="$1">$1</a> ')
+        .replace(pseudoUrlPattern, '$1<a href="http://$2">$2</a> ')
+        .replace(emailpostPattern, '<a href="mailto:$1">$1</a> ')
         .replace(linebreakPattern, '<br>')
 
     return result
@@ -333,7 +333,7 @@ function query(sql, sql_parms, state) {
 
         var get_results = function (error, results, fields, timing) { // callback to give to state.db.query()
 
-            debug(query.sql)
+            //debug(query.sql)
 
             if (error) {
                 console.log(error)
