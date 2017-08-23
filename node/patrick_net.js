@@ -333,7 +333,7 @@ function query(sql, sql_parms, state) {
 
         var get_results = function (error, results, fields, timing) { // callback to give to state.db.query()
 
-            //debug(query.sql)
+            debug(query.sql)
 
             if (error) {
                 console.log(error)
@@ -1254,6 +1254,39 @@ async function render(state) { /////////////////////////////////////////
             send_html(200, '') // blank response in all cases
         },
 
+        update_profile : async function() { // accept data from profile_form
+
+            if (!valid_nonce())      return die('invalid nonce')
+            if (!state.current_user) return die('must be logged in to update profile')
+
+            await collect_post_data(state)
+
+            if (/\W/.test(state.post_data.user_name))              return die('Please go back and enter username consisting only of letters')
+            if (!/^\w.*@.+\.\w+$/.test(state.post_data.user_email)) return die('Please go back and enter a valid email')
+
+            state.post_data.user_summonable            = intval(state.post_data.user_summonable)
+            state.post_data.user_hide_post_list_photos = intval(state.post_data.user_hide_post_list_photos)
+
+            state.post_data.user_aboutyou = strip_tags(state.post_data.user_aboutyou.linkify()) 
+
+            await query(`update users set user_email                 = ?,
+                                          user_name                  = ?,
+                                          user_summonable            = ?,
+                                          user_hide_post_list_photos = ?,
+                                          user_aboutyou              = ?  where user_id = ?`,
+                [state.post_data.user_email,
+                 state.post_data.user_name,
+                 state.post_data.user_summonable,
+                 state.post_data.user_hide_post_list_photos,
+                 state.post_data.user_aboutyou,
+                 state.current_user.user_id], state).catch(error => {
+                    if (error.code.match(/ER_DUP_ENTRY/)) return die(`Sorry, looks like someone already took that email or user name`)
+                    else                                  return die(`Something went wrong with save`)
+                 })
+
+            redirect('/edit_profile?updated=true')
+        },
+
         upload : async function() {
 
             if (!state.current_user) return die('you must be logged in to upload images')
@@ -1289,29 +1322,29 @@ async function render(state) { /////////////////////////////////////////
                         dims = await getimagesize(`${abs_path}/${clean_name}`)        // get the new reduced image dimensions
 
                         let id = state.current_user.user_id
-						await query(`update users set user_icon        = ? where user_id = ?`, [`${url_path}/${clean_name}`, id], state)
-						await query(`update users set user_icon_width  = ? where user_id = ?`, [dims[0],                     id], state)
-						await query(`update users set user_icon_height = ? where user_id = ?`, [dims[1],                     id], state)
+                        await query(`update users set user_icon        = ? where user_id = ?`, [`${url_path}/${clean_name}`, id], state)
+                        await query(`update users set user_icon_width  = ? where user_id = ?`, [dims[0],                     id], state)
+                        await query(`update users set user_icon_height = ? where user_id = ?`, [dims[1],                     id], state)
 
-						return redirect('/edit_profile')
+                        return redirect('/edit_profile')
                     }
-					else { // uploading image link to post or comment text area
-						if (dims[0] > 600) {
-							await resize_image(`${abs_path}/${clean_name}`, max_dim = 600) // limit max width to 600 px
-							dims = await getimagesize(`${abs_path}/${clean_name}`)         // get the new reduced image dimensions
-						}
-						addendum = `"<img src='${url_path}/${clean_name}' width='${dims[0]}' height='${dims[1]}' >"`
+                    else { // uploading image link to post or comment text area
+                        if (dims[0] > 600) {
+                            await resize_image(`${abs_path}/${clean_name}`, max_dim = 600) // limit max width to 600 px
+                            dims = await getimagesize(`${abs_path}/${clean_name}`)         // get the new reduced image dimensions
+                        }
+                        addendum = `"<img src='${url_path}/${clean_name}' width='${dims[0]}' height='${dims[1]}' >"`
 
-						let content = `
-							<html>
-								<script language="javascript" type="text/javascript">
-									var textarea = parent.document.getElementById('ta')
-									textarea.value = textarea.value + ${addendum}
-								</script>
-							</html>`
+                        let content = `
+                            <html>
+                                <script language="javascript" type="text/javascript">
+                                    var textarea = parent.document.getElementById('ta')
+                                    textarea.value = textarea.value + ${addendum}
+                                </script>
+                            </html>`
 
-						send_html(200, content)
-					}
+                        send_html(200, content)
+                    }
                 })
             })
         },
@@ -1324,7 +1357,7 @@ async function render(state) { /////////////////////////////////////////
             let results = await query(`select * from users where user_name=?`, [user_name], state)
             let u = results[0]
 
-			if (!u) return die(`no such user: ${user_name}`)
+            if (!u) return die(`no such user: ${user_name}`)
 
             // left joins to also get each post's viewing and voting data for the current user if there is one
             let sql = `select sql_calc_found_rows * from posts
@@ -1471,11 +1504,11 @@ async function render(state) { /////////////////////////////////////////
         if (state.current_user.user_id != 1) return
 
         return `<hr>
-			<a href='mailto:${u.user_email}'>email ${u.user_email}</a> &nbsp;
-			<a href='https://whatismyipaddress.com/ip/${u.user_last_comment_ip}'>${u.user_last_comment_ip}</a> &nbsp;
-			<a href='/user/${u.user_name}&${create_nonce_parms()}&become=1' >become ${u.user_name}</a> &nbsp;
-			<a href='/nuke?nuke_id=${u.user_id}&${create_nonce_parms()}' onClick='javascript:return confirm("Really?")' >nuke</a> &nbsp;
-			<hr>`
+            <a href='mailto:${u.user_email}'>email ${u.user_email}</a> &nbsp;
+            <a href='https://whatismyipaddress.com/ip/${u.user_last_comment_ip}'>${u.user_last_comment_ip}</a> &nbsp;
+            <a href='/user/${u.user_name}&${create_nonce_parms()}&become=1' >become ${u.user_name}</a> &nbsp;
+            <a href='/nuke?nuke_id=${u.user_id}&${create_nonce_parms()}' onClick='javascript:return confirm("Really?")' >nuke</a> &nbsp;
+            <hr>`
     }
 
     function arrowbox(post) { // output html for vote up/down arrows; takes a post left joined on user's votes for that post
@@ -1572,11 +1605,11 @@ async function render(state) { /////////////////////////////////////////
             var dislike = `<a href='#' onclick="midpage.innerHTML = registerform.innerHTML; return false" >&#8593;&nbsp;dislike (${comment_likes})</a>`
         }
 
-		var offset = intval(_GET('offset'))
+        var offset = intval(_GET('offset'))
 
-		var quote = `<a href="#commentform"
-					  onclick="addquote('${c.comment_post_id}', '${offset}', '${c.comment_id}', '${c.user_name}'); return false;"
-					  title="select some text then click this to quote" >quote</a>`
+        var quote = `<a href="#commentform"
+                      onclick="addquote('${c.comment_post_id}', '${offset}', '${c.comment_id}', '${c.user_name}'); return false;"
+                      title="select some text then click this to quote" >quote</a>`
 
         // for the last comment in the whole result set (not just last on this page) add an id="last"
         if (state.comments) { // state.comments may not be defined, for example when we just added one comment
@@ -1957,81 +1990,81 @@ async function render(state) { /////////////////////////////////////////
         <title>${ CONF.domain }</title>
         <script type="text/javascript">
 
-		function addquote(post_id, offset, comment_id, author) {
+        function addquote(post_id, offset, comment_id, author) {
 
-			var comment_link;
-			var textarea = document.forms['commentform'].elements['ta']
-			var theSelection = ''
+            var comment_link;
+            var textarea = document.forms['commentform'].elements['ta']
+            var theSelection = ''
 
-			if (comment_id > 0)
-				comment_link = '<a href="/post/' + post_id + '&offset=' + offset + '#comment-' + comment_id + '">' + author + ' says</a>'
-			else
-				comment_link = '<a href="/post/' + post_id                                                  + '">' + author + ' says</a>'
+            if (comment_id > 0)
+                comment_link = '<a href="/post/' + post_id + '&offset=' + offset + '#comment-' + comment_id + '">' + author + ' says</a>'
+            else
+                comment_link = '<a href="/post/' + post_id                                                  + '">' + author + ' says</a>'
 
-			if (theSelection = getHTMLOfSelection()) { // user manually selected something
-				if (s = sessionStorage.getItem('tripleclickselect')) { // override tripleclick selection to avoid getting extra html elements
-					theSelection = s.trim() // trim bc tripleclick appends useless whitespace
-					sessionStorage.removeItem('tripleclickselect') // so we don't keep using it by mistake
-				}
-			}
-			else { // either we are on mobile (no selection possible) or the user did not select any text
-				theSelection = document.getElementById('comment-' + comment_id + '-text').innerHTML // whole comment, or post when comment_id == 0
-			}
+            if (theSelection = getHTMLOfSelection()) { // user manually selected something
+                if (s = sessionStorage.getItem('tripleclickselect')) { // override tripleclick selection to avoid getting extra html elements
+                    theSelection = s.trim() // trim bc tripleclick appends useless whitespace
+                    sessionStorage.removeItem('tripleclickselect') // so we don't keep using it by mistake
+                }
+            }
+            else { // either we are on mobile (no selection possible) or the user did not select any text
+                theSelection = document.getElementById('comment-' + comment_id + '-text').innerHTML // whole comment, or post when comment_id == 0
+            }
 
-			if (theSelection.length > 1024) var theSelection = theSelection.substring(0, 1000) + '...'  // might mangle tags
+            if (theSelection.length > 1024) var theSelection = theSelection.substring(0, 1000) + '...'  // might mangle tags
 
-			textarea.value = textarea.value + comment_link + '<br><blockquote>' + theSelection + '</blockquote>'
-			textarea.focus()
-			return
-		}
+            textarea.value = textarea.value + comment_link + '<br><blockquote>' + theSelection + '</blockquote>'
+            textarea.focus()
+            return
+        }
 
-		window.addEventListener('click', function (evt) {
-			if (evt.detail === 3) {
-				sessionStorage.setItem('tripleclickselect', window.getSelection());
+        window.addEventListener('click', function (evt) {
+            if (evt.detail === 3) {
+                sessionStorage.setItem('tripleclickselect', window.getSelection());
 
-				// if they don't use it by clicking "quote" within 10 seconds, delete it so it dn confuse them later
-				setTimeout(function(){ 
-					sessionStorage.removeItem('tripleclickselect');
-				}, 10000);
-			}
-		});
+                // if they don't use it by clicking "quote" within 10 seconds, delete it so it dn confuse them later
+                setTimeout(function(){ 
+                    sessionStorage.removeItem('tripleclickselect');
+                }, 10000);
+            }
+        });
 
-		function getHTMLOfSelection () {
-		  var range
-		  if (window.getSelection) {
-			var selection = window.getSelection()
-			if (selection.rangeCount > 0) {
-			  range = selection.getRangeAt(0)
-			  var clonedSelection = range.cloneContents()
-			  var div = document.createElement('div')
-			  div.appendChild(clonedSelection)
-			  return div.innerHTML
-			}
-			else {
-			  return ''
-			}
-		  }
-		  else {
-			return ''
-		  }
-		}
+        function getHTMLOfSelection () {
+          var range
+          if (window.getSelection) {
+            var selection = window.getSelection()
+            if (selection.rangeCount > 0) {
+              range = selection.getRangeAt(0)
+              var clonedSelection = range.cloneContents()
+              var div = document.createElement('div')
+              div.appendChild(clonedSelection)
+              return div.innerHTML
+            }
+            else {
+              return ''
+            }
+          }
+          else {
+            return ''
+          }
+        }
 
-		function on_mobile() { 
-			if (navigator.userAgent.match(/Android/i)
-			 || navigator.userAgent.match(/webOS/i)
-			 || navigator.userAgent.match(/iPhone/i)
-			 || navigator.userAgent.match(/iPad/i)
-			 || navigator.userAgent.match(/iPod/i)
-			 || navigator.userAgent.match(/BlackBerry/i)
-			 || navigator.userAgent.match(/Windows Phone/i)
-			) {
-				return true
-			}
-			else {
-				return false
-			}
-		}
-		-->
+        function on_mobile() { 
+            if (navigator.userAgent.match(/Android/i)
+             || navigator.userAgent.match(/webOS/i)
+             || navigator.userAgent.match(/iPhone/i)
+             || navigator.userAgent.match(/iPad/i)
+             || navigator.userAgent.match(/iPod/i)
+             || navigator.userAgent.match(/BlackBerry/i)
+             || navigator.userAgent.match(/Windows Phone/i)
+            ) {
+                return true
+            }
+            else {
+                return false
+            }
+        }
+        -->
         </script>
         </head>
         <body>
@@ -2390,43 +2423,41 @@ async function render(state) { /////////////////////////////////////////
 
         let u = state.current_user
 
-		let ret = '<h1>edit profile</h1>'
+        let ret = '<h1>edit profile</h1>'
 
         if (_GET('updated')) ret += `<h3><font color='green'>your profile has been updated</font></h3>`
 
         ret += `
-			<table>
-			<tr>
-			<td>${user_icon(u)} &nbsp; </td>
-			<td>
-				<div style="margin: 0px; padding: 5px; border: 1px solid #ddd; background-color: #f5f5f5; display: inline-block;" >
-					<form enctype="multipart/form-data" id="upload-file" method="post" action="upload">
-						Upload any size image to represent you (gif, jpg, png, bmp)<br>
-						Image will automatically be resized after upload<p>
-						<input type="file"   id="upload" name="image" class="form" />
-						<input type="submit" value="Upload &raquo;" class="form" />
-					</form>
-				</div>
-			</td>
-			</tr>
-			</table>
-			<p>
-			<form name="profile" action="profile-update" method="post">
-			<input type="text" name="user_name" placeholder="user_name"     size="25" value="${ u.user_name }" maxlength="30"  /> Public user_name<p>
-			<input type="text" name="user_realname" placeholder="real name" size="25" value="${ u.user_realname }" maxlength="30"  /> Real name<p>
-			<input type="text" name="email"    placeholder="email"          size="25" value="${ u.user_email }"    maxlength="100" /> Email<p>
-			<input type="password" name="pass1"    placeholder="new password if desired" size="25" value=""                    maxlength="100" /> Password<p>
-			<br>
-			<input type="checkbox" name="user_summonable" value="1" ${ u.user_summonable ? 'checked' : '' } >
-				Get emails of comments which have "@${ u.user_name }" and get emails of "likes" of your comments
-			<br>
-			<input type="checkbox" name="user_hide_post_list_photos" value="1" ${ u.user_hide_post_list_photos ? 'checked' : '' } >
-				Hide images on post lists
-			<h2>about you</h2>
-			<textarea class='form-control' rows='3' name='user_aboutyou' >${u.user_aboutyou}</textarea><br>
+        <table>
+        <tr>
+        <td>${user_icon(u)} &nbsp; </td>
+        <td>
+            <div style='margin: 0px; padding: 5px; border: 1px solid #ddd; background-color: #f5f5f5; display: inline-block;' >
+                <form enctype='multipart/form-data' id='upload-file' method='post' action='upload'>
+                    Upload any size image to represent you (gif, jpg, png, bmp)<br>
+                    Image will automatically be resized after upload<p>
+                    <input type='file'   id='upload' name='image' class='form' />
+                    <input type='submit' value='Upload &raquo;' class='form' />
+                </form>
+            </div>
+        </td>
+        </tr>
+        </table>
+        <p>
+        <form name='profile' action='update_profile?${create_nonce_parms()}' method='post'>
+        <input type='text' name='user_name'  placeholder='user_name' size='25' value='${ u.user_name }'  maxlength='30'  /> user name<p>
+        <input type='text' name='user_email' placeholder='email'     size='25' value='${ u.user_email }' maxlength='100' /> email<p>
+        <br>
+        <input type='checkbox' name='user_summonable' value='1' ${ u.user_summonable ? 'checked' : '' } >
+            Get emails of comments which have '@${ u.user_name }' and get emails of 'likes' of your comments
+        <br>
+        <input type='checkbox' name='user_hide_post_list_photos' value='1' ${ u.user_hide_post_list_photos ? 'checked' : '' } >
+            Hide images on post lists
+        <h2>about you</h2>
+        <textarea class='form-control' rows='3' name='user_aboutyou' >${u.user_aboutyou}</textarea><br>
 
-			<input type="submit" class="btn btn-success btn-sm" value="Save" name="submit" />
-			</form>`
+        <input type='submit' class='btn btn-success btn-sm' value='Save' name='submit' />
+        </form>`
 
         return ret
     }
