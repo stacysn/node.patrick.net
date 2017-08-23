@@ -2673,8 +2673,8 @@ async function render(state) { /////////////////////////////////////////
                     <td align=right >${u.user_dislikes.number_format()}</td>
                     <td align=right ><a href='/users?friendsof=${u.user_id}' >${u.user_friends.number_format()}</a></td>
                     <td align=right ><a href='/users?followers=${u.user_id}' >${u.user_followers.number_format()}</a></td>
-                    <td align=right >${u.user_ignoredby.number_format()}</td>
-                    <td align=right >${u.user_ignoring.number_format()}</td>
+                    <td align=right >${u.user_bannedby.number_format()}</td>
+                    <td align=right >${u.user_banning.number_format()}</td>
                    </tr>`
             })
 
