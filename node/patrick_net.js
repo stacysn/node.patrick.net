@@ -2220,7 +2220,6 @@ async function render(state) { /////////////////////////////////////////
         let uncivil         = ''
         let arrowbox_html = arrowbox(state.post)
         let icon          = user_icon(state.post, 1, `align='left' hspace='5' vspace='2'`)
-        let incoming      = ''
         let link          = post_link(state.post)
         let nonce_parms   = create_nonce_parms()
 
@@ -2230,13 +2229,6 @@ async function render(state) { /////////////////////////////////////////
                 let confirm_uncivil = `onClick="javascript:return confirm('Really mark as uncivil?')"`
                 uncivil = ` &nbsp; <a href='/uncivil?p=${state.post.post_id}&${nonce_parms}' ${confirm_uncivil} title='attacks person, not point' >uncivil</a> &nbsp;` 
             }
-        }
-
-        if (state.post.post_referers) {
-            let s = state.post.post_referers == 1 ? '' : 's'
-            let n = state.post.post_referers
-            incoming = `<a href='/links?post_id=${state.post.post_id}' title='Incoming links to this post' >${n} link${s}<img src='/images/goldstar.gif'
-            width='18' height='17'></a> &nbsp; `
         }
 
         // watch toggle
@@ -2258,7 +2250,7 @@ async function render(state) { /////////////////////////////////////////
         }
 
         return `<div class='comment' >${arrowbox_html} ${icon} <h2 style='display:inline' >${ link }</h2>
-                <p>By ${user_link(state.post)} ${follow_button(state.post)} &nbsp; ${format_date(state.post.post_date)} ${uncivil} ${incoming}
+                <p>By ${user_link(state.post)} ${follow_button(state.post)} &nbsp; ${format_date(state.post.post_date)} ${uncivil}
                 ${state.post.post_views} views &nbsp; ${state.post.post_comments} comments &nbsp;
                 ${watcheye} &nbsp;
                 <a href="#commentform" onclick="addquote( '${state.post.post_id}', '0', '0', '${current_user_name}' ); return false;"
