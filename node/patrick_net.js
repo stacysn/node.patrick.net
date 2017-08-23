@@ -44,6 +44,8 @@ if (CLUSTER.isMaster) {
 
 function run(req, res) { // handle a single http request
 
+    if (segments(req.url)[1].match(/^\d+$/)) req.url = '/post' + req.url // allow legacy urls that have just a number
+
     var state = { // start accumulation of state for this request
         page    : segments(req.url)[1] || 'home',
         queries : [],
