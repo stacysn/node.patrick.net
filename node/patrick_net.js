@@ -1276,29 +1276,42 @@ async function render(state) { /////////////////////////////////////////
 
                 let clean_name = clean_upload_path(abs_path, files.image.name)
 
-                FS.rename(files.image.path, `${abs_path}/${clean_name}`, async function (err) { // note that files.image.path includes filename at end
+                // note that files.image.path includes filename at end
+                FS.rename(files.image.path, `${abs_path}/${clean_name}`, async function (err) {
                     if (err) throw err
 
                     let addendum = ''
-                    let dims     = await getimagesize(`${abs_path}/${clean_name}`).catch(error => { addendum = `"${error}"` }) // catch if not a valid image
+                    let dims     = await getimagesize(`${abs_path}/${clean_name}`).catch(error => { addendum = `"${error}"` })
 
-                    if (dims) {
-                        if (dims[0] > 600) {
-                            await resize_image(`${abs_path}/${clean_name}`, max_dim = 600) // limit max width to 600 px
-                            dims = await getimagesize(`${abs_path}/${clean_name}`)         // get the new reduced image dimensions
-                        }
-                        addendum = `"<img src='${url_path}/${clean_name}' width='${dims[0]}' height='${dims[1]}' >"`
+                    if (state.req.headers.referer.match(/edit_profile/)) { // uploading user icon
+
+                        await resize_image(`${abs_path}/${clean_name}`, max_dim = 80) // limit max width to 80 px
+                        dims = await getimagesize(`${abs_path}/${clean_name}`)        // get the new reduced image dimensions
+
+                        let id = state.current_user.user_id
+						await query(`update users set user_icon        = ? where user_id = ?`, [`${url_path}/${clean_name}`, id], state)
+						await query(`update users set user_icon_width  = ? where user_id = ?`, [dims[0],                     id], state)
+						await query(`update users set user_icon_height = ? where user_id = ?`, [dims[1],                     id], state)
+
+						return redirect('/edit_profile')
                     }
+					else { // uploading image link to post or comment text area
+						if (dims[0] > 600) {
+							await resize_image(`${abs_path}/${clean_name}`, max_dim = 600) // limit max width to 600 px
+							dims = await getimagesize(`${abs_path}/${clean_name}`)         // get the new reduced image dimensions
+						}
+						addendum = `"<img src='${url_path}/${clean_name}' width='${dims[0]}' height='${dims[1]}' >"`
 
-                    let content = `
-                        <html>
-                            <script language="javascript" type="text/javascript">
-                                var textarea = parent.document.getElementById('ta')
-                                textarea.value = textarea.value + ${addendum}
-                            </script>
-                        </html>`
+						let content = `
+							<html>
+								<script language="javascript" type="text/javascript">
+									var textarea = parent.document.getElementById('ta')
+									textarea.value = textarea.value + ${addendum}
+								</script>
+							</html>`
 
-                    send_html(200, content)
+						send_html(200, content)
+					}
                 })
             })
         },
