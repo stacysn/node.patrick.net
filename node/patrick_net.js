@@ -898,7 +898,7 @@ async function render(state) { /////////////////////////////////////////
                     <a href='https://${CONF.domain}/users/${state.current_user.user_name}' >${state.current_user.user_name}</a>
                         liked the comment you made here:<p>\r\n\r\n
                     <a href='${comment_url}' >${comment_url}</a><p>${comment_row.comment_content}<p>\r\n\r\n
-                    <font size='-1'>Stop getting <A HREF='https://${CONF.domain}/profile#user_summonable'>notified of likes</A>
+                    <font size='-1'>Stop getting <A HREF='https://${CONF.domain}/edit_profile#user_summonable'>notified of likes</A>
                     </font></body></html>`
 
                     format_mail(u.user_email, subject, message)
@@ -949,7 +949,7 @@ async function render(state) { /////////////////////////////////////////
                     <a href='https://${CONF.domain}/users/${state.current_user.user_name}' >${state.current_user.user_name}</a>
                         liked the post you made here:<p>\r\n\r\n
                     <a href='${post_url}' >${post_url}</a><p>${post_row.post_content}<p>\r\n\r\n
-                    <font size='-1'>Stop getting <A HREF='https://${CONF.domain}/profile#user_summonable'>notified of likes</A>
+                    <font size='-1'>Stop getting <A HREF='https://${CONF.domain}/edit_profile#user_summonable'>notified of likes</A>
                     </font></body></html>`
 
                     format_mail(u.user_email, subject, message)
@@ -2621,7 +2621,7 @@ async function render(state) { /////////////////////////////////////////
 
         if (u.user_id == state.current_user.user_id) {
             var edit_or_logout = `<div style='float:right'>
-            <b><a href='/profile'>edit profile</a> &nbsp; 
+            <b><a href='/edit_profile'>edit profile</a> &nbsp; 
                <a href='#' onclick="$.get('/logout', function(data) { $('#status').html(data) });return false">logout</a></b><p>
             </div><div style='clear: both;'></div>`
         }
