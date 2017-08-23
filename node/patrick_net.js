@@ -2667,8 +2667,8 @@ async function render(state) { /////////////////////////////////////////
                     <td >${user_icon(u)}</td>
                     <td align=left >${user_link(u)}</td>
                     <td align=left >${format_date(u.user_registered)}</td>
-                    <td align=right ><a href='/users/${u.user_name}' >${u.user_posts.number_format()}</a></td>
-                    <td align=right ><a href='/comments?a=${u.user_id}'>${u.user_comments.number_format()}</a></td>
+                    <td align=right ><a href='/user/${u.user_name}' >${u.user_posts.number_format()}</a></td>
+                    <td align=right ><a href='/comments?a=${u.user_name}'>${u.user_comments.number_format()}</a></td>
                     <td align=right >${u.user_likes.number_format()}</td>
                     <td align=right >${u.user_dislikes.number_format()}</td>
                     <td align=right ><a href='/users?friendsof=${u.user_id}' >${u.user_friends.number_format()}</a></td>
