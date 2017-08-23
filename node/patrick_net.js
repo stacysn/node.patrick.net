@@ -170,6 +170,7 @@ async function set_relations(state) { // update state object with their relation
 
         let non_trivial = `rel_my_friend > 0 or rel_i_ban > 0 or rel_i_follow > 0`
         let my_pov      = `select * from relationships where rel_self_id = ? and (${non_trivial})`
+        /*
         let other_pov   = `select rel_self_id   as t2_self_id,
                                   rel_other_id  as t2_other_id,
                                   rel_i_follow  as follows_me,
@@ -183,16 +184,13 @@ async function set_relations(state) { // update state object with their relation
                    select * from (${my_pov}) as t1 right join (${other_pov}) as t2 on t1.rel_other_id = t2.t2_self_id`
 
         var results2 = await query(sql, Array(4).fill(state.current_user.user_id), state)
+        */
 
-        // now renumber array as object using user_ids to make later access easy
-        state.current_user.relationships = {}
+        var results = await query(my_pov, [state.current_user.user_id], state)
 
-        for (var i = 0; i < results2.length; ++i) {
-            if (results2[i].rel_other_id)
-                state.current_user.relationships[results2[i].rel_other_id] = results2[i]
-            else
-                state.current_user.relationships[results2[i].t2_self_id]   = results2[i] // for cases where other has rel with me, but not i with him
-        }
+        state.current_user.relationships = [] // now renumber results array using user_ids to make later access easy
+
+        for (var i = 0; i < results.length; ++i) state.current_user.relationships[results[i].rel_other_id] = results[i]
     }
 }
 
@@ -629,7 +627,8 @@ async function render(state) { /////////////////////////////////////////
             }
             else return send_html(200, `invalid request`)
 
-            state.comments = results.comments
+            state.comments            = results.comments
+            state.comments.found_rows = results.total
 
             let content = html(
                 midpage(
@@ -1072,6 +1071,17 @@ async function render(state) { /////////////////////////////////////////
             let content = html(
                 midpage(
                     post_list()
+                )
+            )
+
+            send_html(200, content)
+        },
+
+        edit_profile : async function() {
+
+            let content = html(
+                midpage(
+                    profile_form()
                 )
             )
 
@@ -1532,6 +1542,10 @@ async function render(state) { /////////////////////////////////////////
             var like    = `<a href='#' id='like_${c.comment_id}' onclick="like('like_${c.comment_id}');return false">${liketext} (${c.comment_likes})</a>`
             var dislike = `<a href='#' id='dislike_${c.comment_id}' onclick="dislike('dislike_${c.comment_id}');return false">${disliketext} (${c.comment_dislikes})</a>`
 
+            if (state.current_user.relationships[c.user_id] &&
+                state.current_user.relationships[c.user_id].rel_i_ban) var hide = `style='display: none'`
+            else var hide = ''
+
         }
         else { // not logged in. assume not registered, put link to reg page
             var like    = `<a href='#' onclick="midpage.innerHTML = registerform.innerHTML; return false" >&#8593;&nbsp;like (${comment_likes})</a>`
@@ -1553,17 +1567,18 @@ async function render(state) { /////////////////////////////////////////
         c.comment_content = (c.comment_adhom_when && !URL.parse(state.req.url).pathname.match(/jail/)) ?
                     `<a href='/comment_jail#comment-${c.comment_id}'>this comment has been jailed for incivility</a>` : c.comment_content
 
-        return `${last}<div class="comment" id="comment-${c.comment_id}" ><font size=-1 >
-        ${c.row_number || ''}
-        ${icon}
-        ${u} &nbsp;
-        ${date_link} &nbsp;
-        ${like} &nbsp;
-        ${dislike} &nbsp;
-        ${clink} &nbsp;
-        ${quote} &nbsp;
-        ${edit} &nbsp;
-        ${del} &nbsp;
+        return `${last}<div class="comment" id="comment-${c.comment_id}" ${hide} >
+        <font size=-1 >
+            ${c.row_number || ''}
+            ${icon}
+            ${u} &nbsp;
+            ${date_link} &nbsp;
+            ${like} &nbsp;
+            ${dislike} &nbsp;
+            ${clink} &nbsp;
+            ${quote} &nbsp;
+            ${edit} &nbsp;
+            ${del} &nbsp;
         </font><br><span id='comment-${c.comment_id}-text'>${ c.comment_content }</span></div>`
     }
 
@@ -1616,7 +1631,7 @@ async function render(state) { /////////////////////////////////////////
         let query    = URL.parse(state.req.url).query
 
         // offset is mysql offset, ie greatest row number to exclude from the result set
-        // offset missing from url -> showing last 40 comments in set (same as total - 40)
+        // offset missing from url -> showing last  40 comments in set (same as total - 40)
         // offset 0                -> showing first 40 comments in set
         // offset n                -> showing first 40 comments after n
 
@@ -1656,7 +1671,7 @@ async function render(state) { /////////////////////////////////////////
         }
 
         let max_on_this_page = (total > offset + 40) ? offset + 40 : total
-        ret = ret + `Comments ${offset + 1} - ${max_on_this_page} of ${total} &nbsp; &nbsp; `
+        ret = ret + `Comments ${offset + 1} - ${max_on_this_page} of ${total.number_format()} &nbsp; &nbsp; `
 
         if (typeof next_link !== 'undefined') {
              ret = ret + `<a href='${next_link}' title='Next page of comments' >Next &raquo;</a> &nbsp; &nbsp; `
@@ -2357,6 +2372,53 @@ async function render(state) { /////////////////////////////////////////
         return `/post/${post.post_id}/${slug}`
     }
 
+    function profile_form() {
+
+        if (!state.current_user) return die('please log in to edit your profile')
+
+        let u = state.current_user
+
+		let ret = '<h1>edit profile</h1>'
+
+        if (_GET('updated')) ret += `<h3><font color='green'>your profile has been updated</font></h3>`
+
+        ret += `
+			<table>
+			<tr>
+			<td>${user_icon(u)} &nbsp; </td>
+			<td>
+				<div style="margin: 0px; padding: 5px; border: 1px solid #ddd; background-color: #f5f5f5; display: inline-block;" >
+					<form enctype="multipart/form-data" id="upload-file" method="post" action="upload">
+						Upload any size image to represent you (gif, jpg, png, bmp)<br>
+						Image will automatically be resized after upload<p>
+						<input type="file"   id="upload" name="image" class="form" />
+						<input type="submit" value="Upload &raquo;" class="form" />
+					</form>
+				</div>
+			</td>
+			</tr>
+			</table>
+			<p>
+			<form name="profile" action="profile-update" method="post">
+			<input type="text" name="user_name" placeholder="user_name"     size="25" value="${ u.user_name }" maxlength="30"  /> Public user_name<p>
+			<input type="text" name="user_realname" placeholder="real name" size="25" value="${ u.user_realname }" maxlength="30"  /> Real name<p>
+			<input type="text" name="email"    placeholder="email"          size="25" value="${ u.user_email }"    maxlength="100" /> Email<p>
+			<input type="password" name="pass1"    placeholder="new password if desired" size="25" value=""                    maxlength="100" /> Password<p>
+			<br>
+			<input type="checkbox" name="user_summonable" value="1" ${ u.user_summonable ? 'checked' : '' } >
+				Get emails of comments which have "@${ u.user_name }" and get emails of "likes" of your comments
+			<br>
+			<input type="checkbox" name="user_hide_post_list_photos" value="1" ${ u.user_hide_post_list_photos ? 'checked' : '' } >
+				Hide images on post lists
+			<h2>about you</h2>
+			<textarea class='form-control' rows='3' name='user_aboutyou' >${u.user_aboutyou}</textarea><br>
+
+			<input type="submit" class="btn btn-success btn-sm" value="Save" name="submit" />
+			</form>`
+
+        return ret
+    }
+
     function redirect(redirect_to) {
 
         var message = `Redirecting to ${ redirect_to }`
@@ -2547,14 +2609,6 @@ async function render(state) { /////////////////////////////////////////
                 : ''
     }
 
-    function user_links_link(u) {
-        if (u.user_referers) {
-            let s = u.user_referers == 1 ? '' : 's'
-            let uusername = encodeURI(u.user_name)
-            return `<a href='/links?user_name=${uusername}'>${u.user_referers.number_format()} links<img src='/images/goldstar.gif' width='18' height='17' ></a>`
-        }
-    }
-
     function user_info(u) {
         let img = user_icon(u)
 
@@ -2573,7 +2627,6 @@ async function render(state) { /////////////////////////////////////////
                 <a href='/user/${u.user_name}' >${ img }</a><h2>${u.user_name}</h2>
                 <p>joined ${ format_date(u.user_registered) }
                 ${u.user_country ? u.user_country : ''}
-                ${user_links_link(u)}
                 ${u.user_posts.number_format()} posts
                 <a href='/comments?a=${encodeURI(u.user_name)}&offset=${offset}'>${ u.user_comments.number_format() } comments</a> &nbsp;
                 ${follow_button(u)}
@@ -2605,8 +2658,8 @@ async function render(state) { /////////////////////////////////////////
         <th class='text-right' ><A HREF='/users?ob=user_dislikes&d=${ i }'   title='number of dislikes user got' >Dislikes</A></th>
         <th class='text-right' ><A HREF='/users?ob=user_friends&d=${ i }'    title='order by number of friends' >Friends</A></th>
         <th class='text-right' ><A HREF='/users?ob=user_followers&d=${ i }'  title='order by number of followers' >Followers</A></th>
-        <th class='text-right' ><A HREF='/users?ob=user_bannedby&d=${ i }'   title='how many people are banning user' >Banned By</A></th>
-        <th class='text-right' ><A HREF='/users?ob=user_banning&d=${ i }'    title='how many people user is banning' >Banning</A></th>
+        <th class='text-right' ><A HREF='/users?ob=user_ignoredby&d=${ i }'  title='how many people are ignoring user' >Ignored By</A></th>
+        <th class='text-right' ><A HREF='/users?ob=user_ignoring&d=${ i }'   title='how many people user is ignoring' >Ignoring</A></th>
         </tr>`
 
         if (state.users.length) {
@@ -2621,8 +2674,8 @@ async function render(state) { /////////////////////////////////////////
                     <td align=right >${u.user_dislikes.number_format()}</td>
                     <td align=right ><a href='/users?friendsof=${u.user_id}' >${u.user_friends.number_format()}</a></td>
                     <td align=right ><a href='/users?followers=${u.user_id}' >${u.user_followers.number_format()}</a></td>
-                    <td align=right >${u.user_bannedby.number_format()}</td>
-                    <td align=right >${u.user_banning.number_format()}</td>
+                    <td align=right >${u.user_ignoredby.number_format()}</td>
+                    <td align=right >${u.user_ignoring.number_format()}</td>
                    </tr>`
             })
 
