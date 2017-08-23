@@ -468,6 +468,11 @@ async function render(state) { /////////////////////////////////////////
                 await query('update posts set post_modified = ?, post_comments=(select count(*) from comments where comment_post_id=?) where post_id = ?',
                             [post_data.comment_date, post_data.comment_post_id, post_data.comment_post_id], state)
                             // we select the count(*) from comments to make the comment counts self-correcting in case they get off somehow
+
+                // update postviews so that user does not see his own comment as unread
+                await query(`insert into postviews (postview_user_id, postview_post_id, postview_last_view)
+                             values (?, ?, now()) on duplicate key update postview_last_view=now()`,
+                             [state.current_user.user_id, post_data.comment_post_id], state)
             }
         },
 
