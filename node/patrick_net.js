@@ -171,7 +171,8 @@ async function set_relations(state) { // update state object with their relation
     if (state.current_user) {
 
         let non_trivial = `rel_my_friend > 0 or rel_i_ban > 0 or rel_i_follow > 0`
-        let my_pov      = `select * from relationships where rel_self_id = ? and (${non_trivial})`
+        let my_pov      = `select * from relationships
+                           left join users on users.user_id=relationships.rel_other_id where rel_self_id = ? and (${non_trivial})`
         /*
         let other_pov   = `select rel_self_id   as t2_self_id,
                                   rel_other_id  as t2_other_id,
@@ -202,7 +203,7 @@ function md5(str) {
     return hash.digest('hex')
 }
 
-function debug(s) { console.log(s) } // so that we can grep and remove debugging lines from the source more easily
+function debug(s) { console.log(s) } // so that we can grep and remove lines from the source more easily
 
 function intval(s) { // return integer from a string or float
     return parseInt(s) ? parseInt(s) : 0
@@ -823,6 +824,32 @@ async function render(state) { /////////////////////////////////////////
             )
 
             send_html(200, content)
+        },
+
+        ignore : async function() { // stop ignoring a user
+
+            let other_id = intval(_GET('other_id'))
+
+            if (!other_id)           return send_html(200, '')
+            if (!state.current_user) return send_html(200, '')
+            if (!valid_nonce())      return send_html(200, '')
+
+			if (intval(_GET('undo'))) {
+                await query(`replace into relationships set rel_i_ban=0, rel_self_id=?, rel_other_id=?`,
+                            [state.current_user.user_id, other_id], state)
+
+                send_html(200, '') // make the user disappear from edit_profile page
+            }
+            else {
+                await query(`replace into relationships set rel_i_ban=unix_timestamp(now()), rel_self_ID=?, rel_other_ID=?`,
+                            [state.current_user.user_id, other_id], state)
+
+                send_html(200, '')
+            }
+
+            // either way, update this user's ignore count
+            await query(`update users set user_bannedby=(select count(*) from relationships where rel_i_ban > 0 and rel_other_id=?)
+                         where user_id=?`, [other_id, other_id], state)
         },
 
         key_login : async function() {
@@ -2457,7 +2484,15 @@ async function render(state) { /////////////////////////////////////////
         <textarea class='form-control' rows='3' name='user_aboutyou' >${u.user_aboutyou}</textarea><br>
 
         <input type='submit' class='btn btn-success btn-sm' value='Save' name='submit' />
-        </form>`
+        </form><p><h3>ignored users</h3>(click to unignore that user)<br>`
+
+        let ignored_users = state.current_user.relationships.filter(rel => rel.rel_i_ban)
+        
+        if (ignored_users.length)
+            ret += ignored_users.map(u => `<a href='#' onclick="$.get('/ignore?other_id=${u.user_id}&undo=1&${create_nonce_parms()}',
+             function() { $('#user-${ u.user_id }').remove() }); return false" id='user-${u.user_id}' >${u.user_name}</a><br>`).join('')
+        else
+            ret += 'none'
 
         return ret
     }
