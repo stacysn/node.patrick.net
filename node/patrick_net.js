@@ -2700,6 +2700,25 @@ async function render(state) { /////////////////////////////////////////
 
         let offset = (u.user_comments - 40 > 0) ? u.user_comments - 40 : 0
 
+        var unignore_link = `<span id='unignore_link' >ignoring ${u.user_name}<sup>
+                             <a href='#' onclick="$.get('/ignore?other_id=${u.user_id}&undo=1&${create_nonce_parms()}',
+                             function() { document.getElementById('ignore').innerHTML = document.getElementById('ignore_link').innerHTML }); return false" >x</a></sup></span>`
+
+        var ignore_link = `<span id='ignore_link' >
+                           <a href='#' title='hide all posts and comments by ${u.user_name}'
+                           onclick="$.get('/ignore?other_id=${u.user_id}&${create_nonce_parms()}',
+                           function() { document.getElementById('ignore').innerHTML = document.getElementById('unignore_link').innerHTML }); return false" >ignore</a></span>`
+
+        if (state.current_user
+         && state.current_user.relationships
+         && state.current_user.relationships[u.user_id]
+         && state.current_user.relationships[u.user_id].rel_i_ban) {
+            var ignore = `<span id='ignore' >${unignore_link}</span>`
+        }
+        else {
+            var ignore = `<span id='ignore' >${ignore_link}</span>`
+        }
+
         return `${edit_or_logout}
                 <center>
                 <a href='/user/${u.user_name}' >${ img }</a><h2>${u.user_name}</h2>
@@ -2707,9 +2726,13 @@ async function render(state) { /////////////////////////////////////////
                 ${u.user_country ? u.user_country : ''}
                 ${u.user_posts.number_format()} posts
                 <a href='/comments?a=${encodeURI(u.user_name)}&offset=${offset}'>${ u.user_comments.number_format() } comments</a> &nbsp;
-                ${follow_button(u)}
+                ${follow_button(u)} &nbsp;
+                <div style='display: none;' >
+                    ${ignore_link}
+                    ${unignore_link}
+                </div>
+                ${ignore}
                 </center>`
-
     }
 
     function user_link(u) {
