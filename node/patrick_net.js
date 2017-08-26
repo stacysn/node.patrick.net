@@ -1552,7 +1552,7 @@ async function render(state) { /////////////////////////////////////////
 
     function admin_user(u) { // links to administer a user
 
-        if (state.current_user.user_id != 1) return
+        if (maybe('state.current_user.user_id') != 1) return
 
         return `<hr>
             <a href='mailto:${u.user_email}'>email ${u.user_email}</a> &nbsp;
@@ -2262,6 +2262,16 @@ async function render(state) { /////////////////////////////////////////
         </div>`
     }
 
+    // we pass in a string, evaluate as an object path, then return the value or null
+    // if some object path does not exit, don't just bomb with "TypeError: Cannot read property 'whatever' of null"
+    function maybe(path) {
+        console.log(state.current_user.user_id)
+        console.log('xylophone', path)
+
+        try      { return path.split('.').slice(1).reduce((curr, key)=>curr[key], state) }
+        catch(e) { console.log(e); return null }
+    }
+
     function midpage(...args) { // just an id so we can easily swap out the middle of the page
         return `<div id="midpage" >
             ${ args.join('') }
@@ -2721,7 +2731,8 @@ async function render(state) { /////////////////////////////////////////
     function user_info(u) {
         let img = user_icon(u)
 
-        if (u.user_id == state.current_user.user_id) {
+console.log(maybe('state.current_user.user_id'))
+        if (u.user_id == maybe('state.current_user.user_id')) {
             var edit_or_logout = `<div style='float:right'>
             <b><a href='/edit_profile'>edit profile</a> &nbsp; 
                <a href='#' onclick="$.get('/logout', function(data) { $('#status').html(data) });return false">logout</a></b><p>
