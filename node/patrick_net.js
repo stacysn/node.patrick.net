@@ -212,7 +212,7 @@ function intval(s) { // return integer from a string or float
 function strip_tags(s) { // use like this: str = strip_tags('<p>There is some <u>text</u> here</p>', '<b><i><u><p><ol><ul>')
 
     // these are the only allowed tags that users can enter in posts or comments; they will not be stripped
-    let allowed = '<a><b><blockquote><br><code><font><hr><i><img><li><ol><p><source><strike><sub><sup><u><ul><video><vsmall>'
+    let allowed = '<a><b><blockquote><br><code><font><hr><i><iframe><img><li><ol><p><source><strike><sub><sup><u><ul><video><vsmall>'
 
     allowed = (((allowed || '') + '')
         .toLowerCase()
@@ -289,9 +289,12 @@ String.prototype.linkify = function(ref) {
     var pseudoUrlPattern = /(^|[^\/])(www\.[\S]+(\b|$))(\s|$)/gim                                    // www. sans http:// or https://
     var emailpostPattern = /([\w.]+@[a-zA-Z_-]+?(?:\.[a-zA-Z]{2,6})+)\b(?!["<])/gim
     var linebreakPattern = /\n/gim
-
+	var youtubePattern   = /(?:^|\s)[a-zA-Z\/\/:\.]*youtu(be.com\/watch\?v=|.be\/|be.com\/v\/|be.com\/embed\/)([a-zA-Z0-9\-_]+)([a-zA-Z0-9\/\*\-\_\?\&\;\%\=\.]*)/i
+	var vimeoPattern     = /(?:^|\s)[a-zA-Z\/\/:\.]*(player.)?vimeo.com\/(video\/)?([a-zA-Z0-9]+)/i
     let result = this
         .replace(/\r/gim,          '')
+        .replace(vimeoPattern,     '<iframe src="//player.vimeo.com/video/$3" width="500" height="375" frameborder="0" webkitallowfullscreen mozallowfullscreen allowfullscreen></iframe>')
+        .replace(youtubePattern,   '<iframe width="500" height="375" src="//www.youtube.com/embed/$2$3" allowfullscreen></iframe>')
         .replace(imagePattern,     '<img src="$1"> ')
         .replace(urlPattern,       '<a href="$1">$1</a> ')
         .replace(pseudoUrlPattern, '$1<a href="http://$2">$2</a> ')
