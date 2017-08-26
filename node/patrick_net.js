@@ -2472,7 +2472,11 @@ async function render(state) { /////////////////////////////////////////
                 }
                 else var latest = `Posted ${ago}`
 
-                return `<div class='post' id='post-${post.post_id}' >${arrowbox_html}${imgdiv}<b><font size='+1'>${link}</font></b> ${extlink} ${sharelink}<br>by 
+                if (state.current_user.relationships[post.post_author] &&
+                    state.current_user.relationships[post.post_author].rel_i_ban) var hide = `style='display: none'`
+                else var hide = ''
+
+                return `<div class='post' id='post-${post.post_id}' ${hide} >${arrowbox_html}${imgdiv}<b><font size='+1'>${link}</font></b> ${extlink} ${sharelink}<br>by 
                         <a href='/user/${ post.user_name }'>${ post.user_name }</a> ${hashlink} &nbsp; ${latest} ${unread} ${approval_link}
                         <br>${firstwords}</div>`
             })
