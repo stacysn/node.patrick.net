@@ -799,6 +799,30 @@ async function render(state) { /////////////////////////////////////////
             }
         },
 
+        follow : async function() { // get emails of a user's new posts
+
+            let other_id = intval(_GET('other_id'))
+
+            if (!other_id)            return send_html(200, '')
+            if (!state.current_user) return send_html(200, '')
+            if (!valid_nonce())      return send_html(200, '')
+
+			if (intval(_GET('undo'))) {
+                await query(`replace into relationships set rel_i_follow=0, rel_self_id=?, rel_other_id=?`,
+                            [state.current_user.user_id, other_id], state)
+            }
+            else {
+                await query(`replace into relationships set rel_i_follow=unix_timestamp(now()), rel_self_ID=?, rel_other_id=?`,
+                            [state.current_user.user_id, other_id], state)
+            }
+
+            // either way, output follow button with right state and update this user's follow count
+            send_html(200, follow_button(await get_userrow(other_id)))
+
+            await query(`update users set user_followers=(select count(*) from relationships where rel_i_follow > 0 and rel_other_id=?)
+                         where user_id=?`, [other_id, other_id], state)
+        },
+
         home : async function () {
 
             let current_user_id = state.current_user ? state.current_user.user_id : 0
@@ -1809,23 +1833,30 @@ async function render(state) { /////////////////////////////////////////
         send_html(200, content)
     }
 
-    function follow_button(f) { // f is the user to follow, a row from users table
+    function follow_button(u) { // u is the user to follow, a row from users table
 
         let b = '<button type="button" class="btn btn-default btn-xs">follow</button>';
 
-        if (state.current_user) {
-            if (state.current_user.relationships[f.user_id] &&
-                    state.current_user.relationships[f.user_id].rel_i_follow) {
-                return `following (<a href='/users?followers=${f.user_id}'>${f.user_followers}</a>)
-                        <a href='/unfollow?unfollow=${f.user_id}' title='Stop getting new posts by ${f.user_name}' >x</a>`
-            }
-            else {
-                let s = f.user_followers ? ` (<a href='/users?followers_of=${f.user_name}'>${f.user_followers}</a>)` : ''
-                return `<a href='/follow?follow=${f.user_id}' title='Get new posts from ${f.user_name} by email' >${b}</a> ${s}`
-            }
+        var unfollow_link = `<span id='unfollow_link' >following ${u.user_name}<sup>
+                             <a href='#' onclick="$.get('/follow?other_id=${u.user_id}&undo=1&${create_nonce_parms()}',
+                             function() { document.getElementById('follow').innerHTML = document.getElementById('follow_link').innerHTML }); return false" >x</a></sup></span>`
+
+        var follow_link = `<span id='follow_link' >
+                           <a href='#' title='hide all posts and comments by ${u.user_name}'
+                           onclick="$.get('/follow?other_id=${u.user_id}&${create_nonce_parms()}',
+                           function() { document.getElementById('follow').innerHTML = document.getElementById('unfollow_link').innerHTML }); return false" >${b}</a></span>`
+
+        if (state.current_user
+         && state.current_user.relationships
+         && state.current_user.relationships[u.user_id]
+         && state.current_user.relationships[u.user_id].rel_i_follow) {
+            var follow = `<span id='follow' >${unfollow_link}</span>`
         }
-        else return `<a href='/login?action=registerform' title='Register to get emails of new posts by ${f.user_name}' >${b}</a>`
-        // todo: fix this! won't work as is
+        else {
+            var follow = `<span id='follow' >${follow_link}</span>`
+        }
+
+        return `<div style='display: none;' > ${follow_link} ${unfollow_link} </div> ${follow}`
     }
 
     function footer() {
