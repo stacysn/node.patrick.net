@@ -334,7 +334,7 @@ function query(sql, sql_parms, state) {
 
         var get_results = function (error, results, fields, timing) { // callback to give to state.db.query()
 
-            debug(query.sql)
+            //debug(query.sql)
 
             if (error) {
                 console.log(error)
@@ -1457,17 +1457,17 @@ async function render(state) { /////////////////////////////////////////
                                            where unrequited.rel_self_id = users.user_id and user_id = ? limit 40 offset 0`,
                                           [state.current_user.user_id], state)
             }
-            else if ( _GET('followers') ) {
-                let followers = intval(_GET('followers'))
+            else if ( _GET('followersof') ) {
+                let followersof = intval(_GET('followersof'))
 
-                state.message = 'Followers of ' + (await get_userrow(followers)).user_name
+                state.message = 'Followers of ' + (await get_userrow(followersof)).user_name
 
                 state.users = await query(`select sql_calc_found_rows * from users
                     where user_id in (select rel_self_id from relationships where rel_other_id=? and rel_i_follow > 0)
-                    order by ${ob} ${d} limit 40 offset 0`, [followers, ob, d], state)
+                    order by ${ob} ${d} limit 40 offset 0`, [followersof, ob, d], state)
 
                 // keep followers-count cache in users table correct
-                await query('update users set user_followers=? where user_id=?', [state.users.length, followers], state);
+                await query('update users set user_followers=? where user_id=?', [state.users.length, followersof], state);
             }
             else if ( _GET('following') ) {
                 let following = intval(_GET('following'))
@@ -1601,6 +1601,8 @@ async function render(state) { /////////////////////////////////////////
     }
 
     function clean_upload_path(path, filename) {
+
+        if (!state.current_user) return ''
 
         // allow only alphanum, dot, dash in image name to mitigate scripting tricks
         // lowercase upload names so we don't get collisions on stupid case-insensitive Mac fs between eg "This.jpg" and "this.jpg"
@@ -2262,14 +2264,14 @@ async function render(state) { /////////////////////////////////////////
         </div>`
     }
 
-    // we pass in a string, evaluate as an object path, then return the value or null
-    // if some object path does not exit, don't just bomb with "TypeError: Cannot read property 'whatever' of null"
-    function maybe(path) {
-        console.log(state.current_user.user_id)
-        console.log('xylophone', path)
+    function maybe(path) { // maybe the object path exists, maybe not
+        // we pass in a string, evaluate as an object path, then return the value or null
+        // if some object path does not exit, don't just bomb with "TypeError: Cannot read property 'whatever' of null"
 
-        try      { return path.split('.').slice(1).reduce((curr, key)=>curr[key], state) }
-        catch(e) { console.log(e); return null }
+        let start = path.split('.')[0]
+
+        try      { return path.split('.').slice(1).reduce((curr, key)=>curr[key], start) }
+        catch(e) { return null }
     }
 
     function midpage(...args) { // just an id so we can easily swap out the middle of the page
@@ -2731,7 +2733,6 @@ async function render(state) { /////////////////////////////////////////
     function user_info(u) {
         let img = user_icon(u)
 
-console.log(maybe('state.current_user.user_id'))
         if (u.user_id == maybe('state.current_user.user_id')) {
             var edit_or_logout = `<div style='float:right'>
             <b><a href='/edit_profile'>edit profile</a> &nbsp; 
@@ -2816,7 +2817,7 @@ console.log(maybe('state.current_user.user_id'))
                     <td align=right >${u.user_likes.number_format()}</td>
                     <td align=right >${u.user_dislikes.number_format()}</td>
                     <td align=right ><a href='/users?friendsof=${u.user_id}' >${u.user_friends.number_format()}</a></td>
-                    <td align=right ><a href='/users?followers=${u.user_id}' >${u.user_followers.number_format()}</a></td>
+                    <td align=right ><a href='/users?followersof=${u.user_id}' >${u.user_followers.number_format()}</a></td>
                     <td align=right >${u.user_bannedby.number_format()}</td>
                     <td align=right >${u.user_banning.number_format()}</td>
                    </tr>`
