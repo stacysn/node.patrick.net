@@ -10,7 +10,7 @@ FORMIDABLE  = require('formidable')      // via npm for image uploading
 FS          = require('fs')
 HTTP        = require('http')
 MOMENT      = require('moment-timezone') // via npm for time parsing
-MYSQL       = require('mysql')           // via npm to interfact to mysql
+MYSQL       = require('mysql')           // via npm to interface to mysql
 NODEMAILER  = require('nodemailer')      // via npm to send emails
 OS          = require('os')
 QUERYSTRING = require('querystring')
@@ -44,7 +44,7 @@ if (CLUSTER.isMaster) {
 
 function run(req, res) { // handle a single http request
 
-    if (segments(req.url)[1].match(/^\d+$/)) req.url = '/post' + req.url // allow legacy urls that have just a number
+    if (segments(req.url)[1].match(/^\d+$/)) req.url = '/post' + req.url // allow legacy post-number based urls
 
     var state = { // start accumulation of state for this request
         page    : segments(req.url)[1] || 'home',
@@ -826,6 +826,17 @@ async function render(state) { /////////////////////////////////////////
             }
         },
 
+        edit_profile : async function() {
+
+            let content = html(
+                midpage(
+                    profile_form()
+                )
+            )
+
+            send_html(200, content)
+        },
+
         follow : async function() { // get emails of a user's new posts
 
             let other_id = intval(_GET('other_id'))
@@ -1162,15 +1173,12 @@ async function render(state) { /////////////////////////////////////////
             send_html(200, content)
         },
 
-        edit_profile : async function() {
+        random : async function() {
 
-            let content = html(
-                midpage(
-                    profile_form()
-                )
-            )
+            let rand = (await query(`select round(rand() * (select count(*) from posts)) as r`, [], state))[0].r
+            let p    = (await query(`select post_id from posts limit 1 offset ?`, [rand], state))[0].post_id
 
-            send_html(200, content)
+            redirect(`/post/${p}`)
         },
 
         recoveryemail : async function() {
@@ -1898,7 +1906,6 @@ async function render(state) { /////////////////////////////////////////
         <a href='mailto:${ CONF.admin_email }' >contact</a> &nbsp;
         <br>
         <a href='/topics'>topics</a> &nbsp;
-        <a href='/random'>random post</a> &nbsp;
         <a href='/best'>best comments</a> &nbsp;
         <a href='/comment_jail'>comment jail</a> &nbsp;
         <br>
@@ -2700,7 +2707,7 @@ async function render(state) { /////////////////////////////////////////
 
     function top_topics() {
         var formatted = state.header_data.top3.map(item => `<a href='/topic/${ item.post_topic }'>#${ item.post_topic }</a>`)
-        return formatted.join(' ') + ` <a href='/topics/'>more&raquo;</a>`
+        return formatted.join(' ') + ` <a href='/random'>random</a> <a href='/topics/'>more&raquo;</a>`
     }
 
     function topic_list() {
