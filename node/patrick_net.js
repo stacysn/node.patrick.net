@@ -542,23 +542,24 @@ async function render(state) { /////////////////////////////////////////
 
 		accept_post : async function() { // insert new post or update old post
 
-			if (!state.current_user) return send_html(200, '') // do nothing if not logged in
-
 			await collect_post_data(state)
 
 			post_data				= state.post_data
 			post_data.post_content	= strip_tags(post_data.post_content.linkify()) // remove all but a small set of allowed html tags
-			post_data.post_approved = 1 // todo: create a function to check content before approving!
+			post_data.post_approved = state.current_user ? 1 : 0 // not logged in posts go into moderation
+            // todo: create a function to check content before approving!
 
 			if (intval(post_data.post_id)) { // editing old post
 				await query('update posts set ?, post_modified=now() where post_id=?', [post_data, intval(post_data.post_id)], state)
 				var p = intval(post_data.post_id)
 			}
 			else { // new post
-				post_data.post_author = state.current_user.user_id
+				post_data.post_author = state.current_user ? state.current_user.user_id : 0
 				var results = await query('insert into posts set ?, post_modified=now()', post_data, state)
 				var p = results.insertId
 			}
+
+			if (!state.current_user) return die(`The moderator will approve your post soon`) // do nothing if not logged in
 
 			redirect(`/post/${p}`)
 		},
@@ -619,6 +620,8 @@ async function render(state) { /////////////////////////////////////////
 		},
 
 		comment_moderation : async function() {
+
+            if (!state.current_user) return die('you must be logged in to moderate comments')
 
 			state.comments = await query(`select sql_calc_found_rows * from comments left join users on user_id=comment_author
 										  where comment_approved = 0`, [], state)
@@ -1147,7 +1150,7 @@ async function render(state) { /////////////////////////////////////////
 
 		post_moderation : async function () {
 
-			let current_user_id = state.current_user ? state.current_user.user_id : 0
+            if (!state.current_user) return die('you must be logged in to moderate posts')
 
 			state.posts = await query(`select * from posts left join users on user_id=post_author where post_approved=0`, [], state)
 
@@ -2497,7 +2500,8 @@ async function render(state) { /////////////////////////////////////////
 				}
 				else var latest = `Posted ${ago}`
 
-				if (state.current_user.relationships[post.post_author] &&
+				if (state.current_user                                 &&
+				    state.current_user.relationships[post.post_author] &&
 					state.current_user.relationships[post.post_author].rel_i_ban) var hide = `style='display: none'`
 				else var hide = ''
 
@@ -2762,7 +2766,7 @@ async function render(state) { /////////////////////////////////////////
 	function user_info(u) {
 		let img = user_icon(u)
 
-		if (u.user_id == maybe('state.current_user.user_id')) {
+		if (state.current_user && u.user_id == state.current_user.user_id) {
 			var edit_or_logout = `<div style='float:right'>
 			<b><a href='/edit_profile'>edit profile</a> &nbsp; 
 			   <a href='#' onclick="$.get('/logout', function(data) { $('#status').html(data) });return false">logout</a></b><p>
