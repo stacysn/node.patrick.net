@@ -2484,7 +2484,6 @@ async function render(state) { /////////////////////////////////////////
 				let imgdiv		  = (state.current_user && state.current_user.user_hide_post_list_photos) ? '' : get_first_image(post)
 				let arrowbox_html = arrowbox(post)
 				let extlink		  = get_external_link(post)
-				let sharelink	  = share_post(post)
 				let firstwords	  = `<font size='-1'>${first_words(post.post_content, 30)}</font>`
 
 				if (URL.parse(state.req.url).pathname.match(/post_moderation/) && (state.current_user.user_level == 4)) {
@@ -2505,7 +2504,7 @@ async function render(state) { /////////////////////////////////////////
 					state.current_user.relationships[post.post_author].rel_i_ban) var hide = `style='display: none'`
 				else var hide = ''
 
-				return `<div class='post' id='post-${post.post_id}' ${hide} >${arrowbox_html}${imgdiv}<b><font size='+1'>${link}</font></b> ${extlink} ${sharelink}<br>by 
+				return `<div class='post' id='post-${post.post_id}' ${hide} >${arrowbox_html}${imgdiv}<b><font size='+1'>${link}</font></b> ${extlink}<br>by 
 						<a href='/user/${ post.user_name }'>${ post.user_name }</a> ${hashlink} &nbsp; ${latest} ${unread} ${approval_link}
 						<br>${firstwords}</div>`
 			})
@@ -2678,7 +2677,8 @@ async function render(state) { /////////////////////////////////////////
 	function share_post(post) {
 		let share_title = encodeURI(post.post_title).replace(/%20/g,' ')
 		share_link	= encodeURI('https://' + CONF.domain +	post2path(post) )
-		return `<a href='mailto:?subject=${share_title}&body=${share_link}' title='email this' ><img src='/images/mailicon.jpg' width=15 height=12 ></a>`
+		return `<a href='mailto:?subject=${share_title}&body=${share_link}' title='email this' >share
+                <img src='/images/mailicon.jpg' width=15 height=12 ></a>`
 	}
 
 	function slugify(s) { // url-safe pretty chars only; not used for navigation, only for seo and humans
