@@ -593,6 +593,36 @@ async function render(state) { /////////////////////////////////////////
             send_html(200, '') // make it disappear from post_moderation page
         },
 
+        best : async function() {
+
+			if ('true' === _GET('all')) {
+				var sql = `select sql_calc_found_rows * from comments left join users on user_id=comment_author where comment_likes > 3
+                           order by comment_likes desc limit 40`
+
+				var m = `<h2>best comments of all time</h2>or view the <A HREF='/best'>last week's</A> best comments<p>`
+			}
+			else {
+				var sql = `select sql_calc_found_rows * from comments left join users on user_id=comment_author where comment_likes > 3
+                           and comment_date > date_sub(now(), interval 7 day) order by comment_likes desc limit 40`
+
+				var m = `<h2>best comments in the last week</h2>or view the <A HREF='/best?all=true'>all-time</A> best comments<p>`
+			}
+
+            state.comments = await query(sql, [], state)
+
+            let offset = 0
+            state.comments = state.comments.map(comment => { comment.row_number = ++offset; return comment })
+
+            let content = html(
+                midpage(
+                    m,
+                    comment_list()
+                )
+            )
+
+            return send_html(200, content)
+        },
+
         comment_jail : async function() { // no pagination, just most recent 80
 
             // comments not freed in 30 days will be deleted
@@ -2707,7 +2737,7 @@ async function render(state) { /////////////////////////////////////////
 
     function top_topics() {
         var formatted = state.header_data.top3.map(item => `<a href='/topic/${ item.post_topic }'>#${ item.post_topic }</a>`)
-        return formatted.join(' ') + ` <a href='/random'>random</a> <a href='/topics/'>more&raquo;</a>`
+        return formatted.join(' ') + ` <a href='/random'>#random</a> <a href='/topics/'>more&raquo;</a>`
     }
 
     function topic_list() {
