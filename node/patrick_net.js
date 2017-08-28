@@ -2922,7 +2922,8 @@ async function render(state) { /////////////////////////////////////////
 
             // we will check to see if it's a valid post title, and if so, redirect them to that post
             await get_connection_from_pool(state)
-            let title = strip_tags(segments(state.req.url)[1]).substring(0,255)
+            let path    = URL.parse(state.req.url).path.replace(/\?.*/,'').split('/')
+            let title   = decodeURIComponent(strip_tags(path[1]).substring(0,255)).replace(/\+/g, ' ')
             let results = await query(`select post_id from posts where post_title = ?`, [title], state)
 
             if (results.length) redirect(`/post/${results[0].post_id}`, 301)                
