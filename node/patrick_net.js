@@ -2409,8 +2409,6 @@ async function render(state) { /////////////////////////////////////////
         document.getElementById('watch').innerHTML = data; });
         return false" title='comments by email'>${watch_indicator(state.post.postview_want_email)}</a>`
 
-        let current_user_name = state.current_user ? state.current_user.user_name : 'anonymous'
-
         let edit_link = ''
         if (state.current_user && ((state.current_user.user_id == state.post.post_author) || (state.current_user.user_level >= 4)) ) {
             edit_link = `<a href='/edit_post?p=${state.post.post_id}&${nonce_parms}'>edit</a> &nbsp; `
@@ -2426,7 +2424,7 @@ async function render(state) { /////////////////////////////////////////
                 <p>By ${user_link(state.post)} ${follow_button(state.post)} &nbsp; ${format_date(state.post.post_date)} ${uncivil}
                 ${state.post.post_views} views &nbsp; ${state.post.post_comments} comments &nbsp;
                 ${watcheye} &nbsp;
-                <a href="#commentform" onclick="addquote( '${state.post.post_id}', '0', '0', '${current_user_name}' ); return false;"
+                <a href="#commentform" onclick="addquote( '${state.post.post_id}', '0', '0', '${state.post.user_name}' ); return false;"
                    title="Select some text then click this to quote" >quote</a> &nbsp;
                 &nbsp; ${share_post(state.post)} &nbsp; ${edit_link} ${delete_link}
                 <p><div class="entry" class="alt" id="comment-0" >${ state.post.post_content }</div></div>`
