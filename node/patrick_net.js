@@ -960,7 +960,7 @@ async function render(state) { /////////////////////////////////////////
                 login(state, email, password)
             }
             else {
-                state.message     = `Darn, that key has already been used. Please try 'forgot password' if you need to log in.`
+                state.message = `Darn, that key has already been used. Please try 'forgot password' if you need to log in.`
 
                 let content = html(
                     midpage(
@@ -1259,14 +1259,14 @@ async function render(state) { /////////////////////////////////////////
                     if (results[0]) state.message = `That user name is already registered. Please choose a different one.</a>`
                     else {
                         await query('insert into users set ?', state.post_data, state)
-                        state.message = await send_login_link(state)
+                        message = await send_login_link(state)
                     }
                 }
             }
 
             let content = html(
                 midpage(
-                h1(),
+                `<h2>${message}</h2>`,
                 text()
                 )
             )
@@ -2261,9 +2261,7 @@ async function render(state) { /////////////////////////////////////////
 
             var content = html(
                 midpage(
-                    popup(),
-                    post_list(),
-                    post_pagination()
+                    h1()
                 )
             )
         }
@@ -2704,7 +2702,7 @@ async function render(state) { /////////////////////////////////////////
 
             format_mail(state.post_data.user_email, `Your ${ CONF.domain } login info`, message)
 
-            return 'Please check your email for the login link'
+            return `Please check your ${state.post_data.user_email} email for the login link`
         }
         else return `Could not find user with email ${ state.post_data.user_email }`
     }
