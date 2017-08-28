@@ -62,9 +62,9 @@ function get_connection_from_pool(state) {
         state.ip = state.req.headers['x-forwarded-for']
 
         if (LOCKS[state.ip]) {
-            console.log(`Rate limit exceeded by ${ state.ip } by asking for ${state.req.url}`)
-            reject(state)
-            return send_html(403, 'Rate Limit Exceeded')
+            console.log(`Rate limit exceeded by ${ state.ip } by asking for ${state.req.url}, threadId is ${LOCKS[state.ip].threadId}`)
+            reject(false)
+            throw { code : 403, message : 'rate limit exceeded' }
         }
 
         POOL.getConnection(function(err, db) {
@@ -77,7 +77,7 @@ function get_connection_from_pool(state) {
             }
             console.log(`dblock for ${state.ip} when asking for ${state.req.url}`)
 
-            fulfill(state)
+            fulfill(true)
         })
     })
 }
@@ -1092,9 +1092,7 @@ async function render(state) { /////////////////////////////////////////
                 ['Set-Cookie'     , `${ CONF.pwcookie   }=_; Expires=${d}; Path=/`]
             ] // do not use 'secure' parm with cookie or will be unable to test login in dev, bc dev is http only
 
-            state.res.writeHead(200, headers)
-            state.res.end(html)
-            if (state.db) state.db.release()
+            send(200, headers, html)
         },
 
         new_post : async function() {
@@ -1175,6 +1173,20 @@ async function render(state) { /////////////////////////////////////////
                 await query(`insert into postviews (postview_user_id, postview_post_id, postview_last_view)
                              values (?, ?, now()) on duplicate key update postview_last_view=now()`, [current_user_id, post_id], state)
                 await query(`update posts set post_views = post_views + 1 where post_id=?`, [post_id], state)
+            }
+        },
+
+        post_by_title : async function() { // check to see if url like /some%20topic is actually a valid post title
+
+			let path    = URL.parse(state.req.url).path.replace(/\?.*/,'').split('/')
+			let title   = decodeURIComponent(strip_tags(path[2]).substring(0,255)).replace(/\+/g, ' ')
+			let results = await query(`select post_id from posts where post_title = ?`, [title], state)
+
+			if (results.length) redirect(`/post/${results[0].post_id}`, 301)
+            else {
+                let err = `${state.req.url} is not a valid url`
+                console.log(err)
+                send_html(404, err)
             }
         },
 
@@ -2268,9 +2280,7 @@ async function render(state) { /////////////////////////////////////////
             ['Set-Cookie'     , `${pwcookie};   Expires=${decade}; Path=/`]
         ] // do not use 'secure' parm with cookie or will be unable to test login in dev, bc dev is http only
 
-        state.res.writeHead(200, headers)
-        state.res.end(content)
-        if (state.db) state.db.release()
+        send(200, headers, content)
     }
 
     function loginprompt() {
@@ -2601,9 +2611,7 @@ async function render(state) { /////////////////////////////////////////
           'Expires'        : new Date().toUTCString()
         }
 
-        state.res.writeHead(code, headers)
-        state.res.end(message)
-        if (state.db) state.db.release()
+        send(code, headers, message)
     }
 
     function registerform() {
@@ -2659,6 +2667,13 @@ async function render(state) { /////////////////////////////////////////
         }
     }
 
+    function send(code, headers, content) {
+        state.res.writeHead(code, headers)
+        state.res.end(content)
+        if (state.db) try { state.db.release() }
+                      catch (e) { console.log(`${e.message} when releasing ${db.threadId} for ${state.req.url}`) }
+    }
+
     function send_html(code, html) {
 
         //html = html.replace(/\/\/.*/, ' ') // remove js comments
@@ -2670,9 +2685,7 @@ async function render(state) { /////////////////////////////////////////
             'Expires'        : new Date().toUTCString()
         }
 
-        state.res.writeHead(code, headers)
-        state.res.end(html)
-        if (state.db) state.db.release()
+        send(code, headers, html)
     }
 
     async function send_login_link(state) {
@@ -2918,22 +2931,12 @@ async function render(state) { /////////////////////////////////////////
         if (matches = segments(state.req.url)[1].match(/^(\d+)$/)) { // legacy url starts with a post number
             redirect(`/post/${matches[1]}`, 301)                
         }
-        else if (segments(state.req.url)[1].match(/^\w+/)) { // legacy url starts with some word w is not one of our functions
-
-            // we will check to see if it's a valid post title, and if so, redirect them to that post
-            await get_connection_from_pool(state)
-            let path    = URL.parse(state.req.url).path.replace(/\?.*/,'').split('/')
-            let title   = decodeURIComponent(strip_tags(path[1]).substring(0,255)).replace(/\+/g, ' ')
-            let results = await query(`select post_id from posts where post_title = ?`, [title], state)
-
-            if (results.length) redirect(`/post/${results[0].post_id}`, 301)                
-            else                redirect(`/`, 301) // no idea what that was, so just send them to home page
-        }
-        else {
-            let err = `${state.req.url} is not a valid url`
-            console.log(err)
-            send_html(404, err)
-        }
+		else {
+			// legacy url starts with some word other than one of our functions
+			// we will check to see if it's a valid post title, and if so, redirect them to that post
+            matches = URL.parse(state.req.url).path.replace(/\?.*/,'').split('/')[1].match(/(.*)/)
+			redirect(`/post_by_title/${matches[1]}`, 301)
+		}
     }
 
 } // end of render()
