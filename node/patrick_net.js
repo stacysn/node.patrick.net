@@ -2422,7 +2422,7 @@ async function render(state) { /////////////////////////////////////////
 
         return `<div class='comment' >${arrowbox_html} ${icon} <h2 style='display:inline' >${ link }</h2>
                 <p>By ${user_link(state.post)} ${follow_button(state.post)} &nbsp; ${format_date(state.post.post_date)} ${uncivil}
-                ${state.post.post_views} views &nbsp; ${state.post.post_comments} comments &nbsp;
+                ${state.post.post_views.number_format()} views &nbsp; ${state.post.post_comments.number_format()} comments &nbsp;
                 ${watcheye} &nbsp;
                 <a href="#commentform" onclick="addquote( '${state.post.post_id}', '0', '0', '${state.post.user_name}' ); return false;"
                    title="Select some text then click this to quote" >quote</a> &nbsp;
@@ -2669,7 +2669,7 @@ async function render(state) { /////////////////////////////////////////
         state.res.writeHead(code, headers)
         state.res.end(content)
         if (state.db) try { state.db.release() }
-                      catch (e) { console.log(`${e.message} when releasing ${db.threadId} for ${state.req.url}`) }
+                      catch (e) { console.log(`${e.message} when releasing ${state.db.threadId} for ${state.req.url}`) }
     }
 
     function send_html(code, html) {
