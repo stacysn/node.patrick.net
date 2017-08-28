@@ -891,7 +891,7 @@ async function render(state) { /////////////////////////////////////////
 
         home : async function () {
 
-            if (p = intval(_GET('p'))) redirect(`/post/${p}`, 301) // legacy redirect for cases like /?p=1216301
+            if (p = intval(_GET('p'))) return redirect(`/post/${p}`, 301) // legacy redirect for cases like /?p=1216301
 
             let current_user_id = state.current_user ? state.current_user.user_id : 0
 
