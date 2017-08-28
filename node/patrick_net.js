@@ -2106,6 +2106,8 @@ async function render(state) { /////////////////////////////////////////
 
         var queries = state.queries.sortByProp('ms').map( (item) => { return `${ item.ms }ms ${ item.sql }` }).join('\n')
 
+        let title = state.post ? state.post.post_title : CONF.domain
+
         return `<!DOCTYPE html><html lang="en">
         <head>
         <link href='/${ CONF.stylesheet }' rel='stylesheet' type='text/css' />
@@ -2113,7 +2115,7 @@ async function render(state) { /////////////////////////////////////////
         <meta charset='utf-8' />
         <meta name='description' content='${ CONF.description }' />
         <meta name='viewport' content='width=device-width, initial-scale=1, shrink-to-fit=no' />
-        <title>${ CONF.domain }</title>
+        <title>${ title }</title>
         <script type="text/javascript">
 
         function addquote(post_id, offset, comment_id, author) {
