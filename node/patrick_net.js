@@ -44,8 +44,6 @@ if (CLUSTER.isMaster) {
 
 function run(req, res) { // handle a single http request
 
-    if (segments(req.url)[1].match(/^\d+$/)) req.url = '/post' + req.url // allow legacy post-number based urls
-
     var state = { // start accumulation of state for this request
         page    : segments(req.url)[1] || 'home',
         queries : [],
@@ -892,6 +890,8 @@ async function render(state) { /////////////////////////////////////////
         },
 
         home : async function () {
+
+            if (p = intval(_GET('p'))) redirect(`/post/${p}`, 301) // legacy redirect for cases like /?p=1216301
 
             let current_user_id = state.current_user ? state.current_user.user_id : 0
 
@@ -2591,7 +2591,7 @@ async function render(state) { /////////////////////////////////////////
         return ret
     }
 
-    function redirect(redirect_to) {
+    function redirect(redirect_to, code=303) {
 
         var message = `Redirecting to ${ redirect_to }`
 
@@ -2601,7 +2601,7 @@ async function render(state) { /////////////////////////////////////////
           'Expires'        : new Date().toUTCString()
         }
 
-        state.res.writeHead(303, headers)
+        state.res.writeHead(code, headers)
         state.res.end(message)
         if (state.db) state.db.release()
     }
@@ -2914,9 +2914,25 @@ async function render(state) { /////////////////////////////////////////
         }
     }
     else {
-        let err = `${state.req.url} is not a valid url`
-        console.log(err)
-        send_html(404, err)
+        var matches
+        if (matches = segments(state.req.url)[1].match(/^(\d+)$/)) { // legacy url starts with a post number
+            redirect(`/post/${matches[1]}`, 301)                
+        }
+        else if (segments(state.req.url)[1].match(/^\w+/)) { // legacy url starts with some word w is not one of our functions
+
+            // we will check to see if it's a valid post title, and if so, redirect them to that post
+            await get_connection_from_pool(state)
+            let title = strip_tags(segments(state.req.url)[1]).substring(0,255)
+            let results = await query(`select post_id from posts where post_title = ?`, [title], state)
+
+            if (results.length) redirect(`/post/${results[0].post_id}`, 301)                
+            else                redirect(`/`, 301) // no idea what that was, so just send them to home page
+        }
+        else {
+            let err = `${state.req.url} is not a valid url`
+            console.log(err)
+            send_html(404, err)
+        }
     }
 
 } // end of render()
