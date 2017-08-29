@@ -38,9 +38,7 @@ if (CLUSTER.isMaster) {
     })
 } else HTTP.createServer(run).listen(CONF.http_port)
 
-////////////////////////////////////////////////////////////////////////////////
 // end of top-level code; everything below is in a function
-////////////////////////////////////////////////////////////////////////////////
 
 function run(req, res) { // handle a single http request
 
@@ -487,9 +485,11 @@ async function render(state) { /////////////////////////////////////////
 
                 send_html(200, format_comment(state.comment)) // send html fragment
 
-                await query('update users set user_last_comment_ip = ? where user_id = ?', [state.ip, state.current_user.user_id], state)
-                await query('update posts set post_modified = ?, post_comments=(select count(*) from comments where comment_post_id=?) where post_id = ?',
-                            [post_data.comment_date, post_data.comment_post_id, post_data.comment_post_id], state)
+                await query(`update users set user_last_comment_ip = ? where user_id = ?`, [state.ip, state.current_user.user_id], state)
+                await query(`update posts set post_modified = ?,
+                                              post_latest_comment_id = ?,
+                                              post_comments=(select count(*) from comments where comment_post_id=?) where post_id = ?`,
+                            [post_data.comment_date, comment_id, post_data.comment_post_id, post_data.comment_post_id], state)
                             // we select the count(*) from comments to make the comment counts self-correcting in case they get off somehow
 
                 // update postviews so that user does not see his own comment as unread
