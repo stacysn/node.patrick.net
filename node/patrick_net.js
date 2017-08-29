@@ -279,13 +279,14 @@ Number.prototype.number_format = function() {
 
 String.prototype.linkify = function(ref) {
 
-    var imagePattern     = /((https?:\/\/[\w$%&~\/.\-;:=,?@\[\]+]*?)\.(jpg|jpeg|gif|gifv|png|bmp))(\s|$)/gim
-    var urlPattern       = /\b(https?:\/\/[a-z0-9-+&@#\/%?=~_|!:,.;]*[a-z0-9-+&@#\/%=~_|])(\s|$)/gim // http://, https://
-    var pseudoUrlPattern = /(^|[^\/])(www\.[\S]+(\b|$))(\s|$)/gim                                    // www. sans http:// or https://
-    var emailpostPattern = /([\w.]+@[a-zA-Z_-]+?(?:\.[a-zA-Z]{2,6})+)\b(?!["<])/gim
-    var linebreakPattern = /\n/gim
-    var youtubePattern   = /(?:^|\s)[a-zA-Z\/\/:\.]*youtu(be.com\/watch\?v=|.be\/|be.com\/v\/|be.com\/embed\/)([a-zA-Z0-9\-_]+)([a-zA-Z0-9\/\*\-\_\?\&\;\%\=\.]*)/i
-    var vimeoPattern     = /(?:^|\s)[a-zA-Z\/\/:\.]*(player.)?vimeo.com\/(video\/)?([a-zA-Z0-9]+)/i
+    let imagePattern     = /((https?:\/\/[\w$%&~\/.\-;:=,?@\[\]+]*?)\.(jpg|jpeg|gif|gifv|png|bmp))(\s|$)/gim
+    let urlPattern       = /\b(https?:\/\/[a-z0-9-+&@#\/%?=~_|!:,.;]*[a-z0-9-+&@#\/%=~_|])(\s|$)/gim // http://, https://
+    let pseudoUrlPattern = /(^|[^\/])(www\.[\S]+(\b|$))(\s|$)/gim                                    // www. sans http:// or https://
+    let emailpostPattern = /([\w.]+@[a-zA-Z_-]+?(?:\.[a-zA-Z]{2,6})+)\b(?!["<])/gim
+    let linebreakPattern = /\n/gim
+    let youtubePattern   = /(?:^|\s)[a-zA-Z\/\/:\.]*youtu(be.com\/watch\?v=|.be\/|be.com\/v\/|be.com\/embed\/)([a-zA-Z0-9\-_]+)([a-zA-Z0-9\/\*\-\_\?\&\;\%\=\.]*)/i
+    let vimeoPattern     = /(?:^|\s)[a-zA-Z\/\/:\.]*(player.)?vimeo.com\/(video\/)?([a-zA-Z0-9]+)/i
+
     let result = this
         .replace(/\r/gim,          '')
         .replace(vimeoPattern,     '<iframe src="//player.vimeo.com/video/$3" width="500" height="375" frameborder="0" webkitallowfullscreen mozallowfullscreen allowfullscreen></iframe>')
@@ -1782,6 +1783,11 @@ async function render(state) { /////////////////////////////////////////
     function comment_edit_box() { // edit existing comment, redirect back to whole post page
 
         let comment_id = intval(_GET('c'))
+
+        state.comment.comment_content = state.comment.comment_content
+                                        .replace(/<br>/gim, '\n')
+                                        .replace(/<p>/gim,  '\n')
+                                        .replace(/<\/p>/gim, '')
 
         return `
         <h1>edit comment</h1>
