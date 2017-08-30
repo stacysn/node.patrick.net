@@ -1631,7 +1631,7 @@ async function render(state) { /////////////////////////////////////////
 
     function admin_user(u) { // links to administer a user
 
-        if (maybe('state.current_user.user_id') != 1) return
+        if (state.current_user && state.current_user.user_id != 1) return ``
 
         return `<hr>
             <a href='mailto:${u.user_email}'>email ${u.user_email}</a> &nbsp;
