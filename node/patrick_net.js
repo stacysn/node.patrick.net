@@ -226,6 +226,12 @@ function strip_all_tags(s) {
     return s.replace(/(<([^>]+)>)/g,'')
 }
 
+function newlineify(s) { // transform the html shown in the edit box to be more human-friendly
+    return s.replace(/<br>/gim, '\n')
+            .replace(/<p>/gim,  '\n')
+            .replace(/<\/p>/gim, '')
+}
+
 function first_words(string, num) {
 
     string = strip_all_tags(string)
@@ -1785,10 +1791,7 @@ async function render(state) { /////////////////////////////////////////
 
         let comment_id = intval(_GET('c'))
 
-        state.comment.comment_content = state.comment.comment_content
-                                        .replace(/<br>/gim, '\n')
-                                        .replace(/<p>/gim,  '\n')
-                                        .replace(/<\/p>/gim, '')
+        state.comment.comment_content = newlineify(state.comment.comment_content)
 
         return `
         <h1>edit comment</h1>
@@ -2459,14 +2462,14 @@ async function render(state) { /////////////////////////////////////////
         return results
     }
 
-    function post_form() { // used both for composing new posts and for editing existing posts; distinction is the presence of p, an existing post_id
+    function post_form() { // used both for composing new posts and for editing existing posts; distinction is the presence of p, the post_id
 
         // todo: add conditional display of user-name chooser for non-logged in users
 
         if (_GET('p')) {
             var fn = 'edit'
-            var title = state.post.post_title.replace(/'/g, '&apos;') // replace so that it displays correctly in single-quoted html value below
-            var content = state.post.post_content.replace(/'/g, '&apos;')
+            var title = state.post.post_title.replace(/'/g, '&apos;') // replace to display correctly in single-quoted html value below
+            var content = newlineify(state.post.post_content.replace(/'/g, '&apos;'))
             var post_id = `<input type='hidden' name='post_id' value='${state.post.post_id}' />`
         }
         else {
