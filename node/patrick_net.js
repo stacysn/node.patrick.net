@@ -1279,14 +1279,14 @@ async function render(state) { /////////////////////////////////////////
                     if (results[0]) state.message = `That user name is already registered. Please choose a different one.</a>`
                     else {
                         await query('insert into users set user_registered=now(), ?', state.post_data, state)
-                        message = await send_login_link(state)
+                        state.message = await send_login_link(state)
                     }
                 }
             }
 
             let content = html(
                 midpage(
-                `<h2>${message}</h2>`,
+                `<h2>${state.message}</h2>`,
                 text()
                 )
             )
