@@ -204,6 +204,14 @@ function intval(s) { // return integer from a string or float
     return parseInt(s) ? parseInt(s) : 0
 }
 
+function no_links(content) {
+
+    let c = CHEERIO.load(content)
+
+    if (!c('a').length) return 1
+    else                return 0
+}
+
 function strip_tags(s) { // use like this: str = strip_tags('<p>There is some <u>text</u> here</p>', '<b><i><u><p><ol><ul>')
 
     // these are the only allowed tags that users can enter in posts or comments; they will not be stripped
@@ -467,9 +475,10 @@ async function render(state) { /////////////////////////////////////////
 
             if (!post_data.comment_content) return send_html(200, '') // empty comment
 
-            // rate limit by user's ip address
-            var results = await query('select (unix_timestamp(now()) - unix_timestamp(user_last_comment_time)) as ago from users where user_last_comment_time is not null and user_last_comment_ip = ? order by user_last_comment_time desc limit 1',
-                [state.ip], state)
+            // rate limit comment insertion by user's ip address
+            var results = await query(`select (unix_timestamp(now()) - unix_timestamp(user_last_comment_time)) as ago from users
+                                       where user_last_comment_time is not null and user_last_comment_ip = ?
+                                       order by user_last_comment_time desc limit 1`, [state.ip], state)
 
             if (results.length && results[0].ago < 2) { // this ip already commented less than two seconds ago
                 state.message = 'You are posting comments too quickly! Please slow down'
@@ -480,30 +489,34 @@ async function render(state) { /////////////////////////////////////////
                 post_data.comment_content  = strip_tags(post_data.comment_content.linkify())
                 post_data.comment_dislikes = 0
                 post_data.comment_likes    = 0
-                post_data.comment_approved = 1
                 post_data.comment_date     = new Date().toISOString().slice(0, 19).replace('T', ' ') // mysql datetime format
+                post_data.comment_approved = state.current_user ? 1 : no_links(post_data.comment_content) // approve anon content if no links
  
                 let insert_result = await query('insert into comments set ?', post_data, state)
                 let comment_id = insert_result.insertId
 
                 // now select the inserted row so that we pick up the comment_date time and user data for displaying the comment
-                results = await query('select * from comments left join users on comment_author=user_id where comment_id = ?', [comment_id], state)
+                results = await query('select * from comments left join users on comment_author=user_id where comment_id = ?',
+                                      [comment_id], state)
 
                 state.comment = results[0]
 
                 send_html(200, format_comment(state.comment)) // send html fragment
 
-                await query(`update users set user_last_comment_ip = ? where user_id = ?`, [state.ip, state.current_user.user_id], state)
                 await query(`update posts set post_modified = ?,
                                               post_latest_comment_id = ?,
                                               post_comments=(select count(*) from comments where comment_post_id=?) where post_id = ?`,
                             [post_data.comment_date, comment_id, post_data.comment_post_id, post_data.comment_post_id], state)
                             // we select the count(*) from comments to make the comment counts self-correcting in case they get off somehow
 
-                // update postviews so that user does not see his own comment as unread
-                await query(`insert into postviews (postview_user_id, postview_post_id, postview_last_view)
-                             values (?, ?, now()) on duplicate key update postview_last_view=now()`,
-                             [state.current_user.user_id, post_data.comment_post_id], state)
+                if (state.current_user) {
+                    // update postviews so that user does not see his own comment as unread
+                    await query(`insert into postviews (postview_user_id, postview_post_id, postview_last_view)
+                                 values (?, ?, now()) on duplicate key update postview_last_view=now()`,
+                                 [state.current_user.user_id, post_data.comment_post_id], state)
+
+                    await query(`update users set user_last_comment_ip = ? where user_id = ?`, [state.ip, state.current_user.user_id], state)
+                }
             }
         },
 
@@ -552,7 +565,6 @@ async function render(state) { /////////////////////////////////////////
             post_data               = state.post_data
             post_data.post_content  = strip_tags(post_data.post_content.linkify()) // remove all but a small set of allowed html tags
             post_data.post_approved = state.current_user ? 1 : 0 // not logged in posts go into moderation
-            // todo: create a function to check content before approving!
 
             if (intval(post_data.post_id)) { // editing old post
                 await query('update posts set ?, post_modified=now() where post_id=?', [post_data, intval(post_data.post_id)], state)
@@ -2451,7 +2463,7 @@ async function render(state) { /////////////////////////////////////////
         let sql = `select sql_calc_found_rows * from comments
                    left join users on comment_author=user_id
                    left join commentvotes on (comment_id = commentvote_comment_id and commentvote_user_id = ?)
-                   where comment_post_id = ?
+                   where comment_post_id = ? and comment_approved = 1
                    order by comment_date limit 40 offset ?`
 
         let results = await query(sql, [user_id, post.post_id, offset], state)
