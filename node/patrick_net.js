@@ -270,6 +270,8 @@ function get_transporter() {
 
 function mail(email, subject, message) {
 
+    if (!email) return // because sometimes we may try to mail a user with null for user_email in database
+
     let mailOptions = {
         from:    CONF.admin_email,
         to:      email,
@@ -497,6 +499,7 @@ async function render(state) { /////////////////////////////////////////
                             // we select the count(*) from comments to make the comment counts self-correcting in case they get off somehow
 
                 if (state.current_user) {
+
                     // update postviews so that user does not see his own comment as unread
                     await query(`insert into postviews (postview_user_id, postview_post_id, postview_last_view)
                                  values (?, ?, now()) on duplicate key update postview_last_view=now()`,
@@ -505,8 +508,7 @@ async function render(state) { /////////////////////////////////////////
                     await query(`update users set user_last_comment_ip = ? where user_id = ?`, [state.ip, state.current_user.user_id], state)
                 }
 
-                // do slowest thing last: send email to moderator if comment not approved
-                if (!post_data.comment_approved) {
+                if (!post_data.comment_approved) { // email moderator if comment not approved
                     mail(CONF.admin_email, 'new comment needs review',
                     `${post_data.comment_content}<p><a href='https://${CONF.domain}/comment_moderation'>moderation page</a>`)
                 }
@@ -1950,7 +1952,7 @@ async function render(state) { /////////////////////////////////////////
             var follow = `<span id='follow' >${follow_link}</span>`
         }
 
-        return `<div style='display: none;' > ${follow_link} ${unfollow_link} </div> ${follow}`
+        return `<span style='display: none;' > ${follow_link} ${unfollow_link} </span> ${follow}`
     }
 
     function footer() {
@@ -2857,15 +2859,13 @@ async function render(state) { /////////////////////////////////////////
         return `${edit_or_logout}
                 <center>
                 <a href='/user/${u.user_name}' >${ img }</a><h2>${u.user_name}</h2>
-                <p>joined ${ format_date(u.user_registered) }
+                ${u.user_aboutyou ? u.user_aboutyou : ''}
+                <p>joined ${ format_date(u.user_registered) } &nbsp;
                 ${u.user_country ? u.user_country : ''}
-                ${u.user_posts.number_format()} posts
+                ${u.user_posts.number_format()} posts &nbsp;
                 <a href='/comments?a=${encodeURI(u.user_name)}&offset=${offset}'>${ u.user_comments.number_format() } comments</a> &nbsp;
                 ${follow_button(u)} &nbsp;
-                <div style='display: none;' >
-                    ${ignore_link}
-                    ${unignore_link}
-                </div>
+                <span style='display: none;' > ${ignore_link} ${unignore_link} </span>
                 ${ignore}
                 </center>`
     }
