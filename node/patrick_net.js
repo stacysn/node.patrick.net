@@ -272,7 +272,7 @@ function get_transporter() {
     })
 }
 
-function format_mail(email, subject, message) {
+function mail(email, subject, message) {
 
     let mailOptions = {
         from:    CONF.admin_email,
@@ -282,7 +282,7 @@ function format_mail(email, subject, message) {
     }
 
     get_transporter().sendMail(mailOptions, (error, info) => {
-        if (error) console.log('error in format_mail: ' + error)
+        if (error) console.log('error in mail: ' + error)
         else       console.log('%s sent: %s', info.messageId, info.response)
     })
 }
@@ -1040,7 +1040,7 @@ async function render(state) { /////////////////////////////////////////
                     <font size='-1'>Stop getting <A HREF='https://${CONF.domain}/edit_profile#user_summonable'>notified of likes</A>
                     </font></body></html>`
 
-                    format_mail(u.user_email, subject, message)
+                    mail(u.user_email, subject, message)
                 }
 
                 // Now if Patrick was the liker, then the user gets a bias bump up.
@@ -1091,7 +1091,7 @@ async function render(state) { /////////////////////////////////////////
                     <font size='-1'>Stop getting <A HREF='https://${CONF.domain}/edit_profile#user_summonable'>notified of likes</A>
                     </font></body></html>`
 
-                    format_mail(u.user_email, subject, message)
+                    mail(u.user_email, subject, message)
                 }
             }
             else return send_html(200, '') // send empty string if no comment_id or post_id
@@ -2722,7 +2722,7 @@ async function render(state) { /////////////////////////////////////////
 
             let message = `Click here to log in and get your password: <a href='${ key_link }'>${ key_link }</a>`
 
-            format_mail(state.post_data.user_email, `Your ${ CONF.domain } login info`, message)
+            mail(state.post_data.user_email, `Your ${ CONF.domain } login info`, message)
 
             return `Please check your ${state.post_data.user_email} email for the login link`
         }
