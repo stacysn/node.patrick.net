@@ -582,7 +582,12 @@ async function render(state) { /////////////////////////////////////////
                 var p = results.insertId
             }
 
-            if (!state.current_user) return die(`The moderator will approve your post soon`) // do nothing if not logged in
+            if (!post_data.post_approved) {
+                mail(CONF.admin_email, 'new post needs review',
+                    `${post_data.post_content}<p><a href='https://${CONF.domain}/post_moderation'>post moderation page</a>`)
+
+                return die(`The moderator will approve your post soon`)
+            }
 
             redirect(`/post/${p}`)
         },
