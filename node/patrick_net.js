@@ -105,7 +105,7 @@ async function header_data(state) { // data that the page header needs to render
     }
 }
 
-function collect_post_data(state) { // if there is any POST data, accumulate it and append it to req object
+function collect_post_data(state) { // if there is any POST data, accumulate it and return it in fulfill()
 
     return new Promise(function(fulfill, reject) {
 
@@ -121,13 +121,9 @@ function collect_post_data(state) { // if there is any POST data, accumulate it 
                 }
             })
 
-            state.req.on('end', function () {
-                var post_data = QUERYSTRING.parse(body)
-                state.post_data = post_data
-                fulfill(state)
-            })
+            state.req.on('end', function () { fulfill( QUERYSTRING.parse(body) ) })
         }
-        else fulfill(state)
+        else reject()
     })
 }
 
@@ -462,9 +458,7 @@ async function render(state) { /////////////////////////////////////////
                 return send_html(200, popup())
             }
 
-            await collect_post_data(state)
-
-            post_data = state.post_data
+            let post_data = await collect_post_data(state)
 
             if (!post_data.comment_content) return send_html(200, '') // empty comment
 
@@ -523,8 +517,7 @@ async function render(state) { /////////////////////////////////////////
 
             if (!valid_nonce()) return die('invalid nonce')
 
-            await collect_post_data(state)
-            let post_data = state.post_data
+            let post_data = await collect_post_data(state)
 
             if (!post_data.comment_content) return die('please go back and enter some content')
 
@@ -559,9 +552,7 @@ async function render(state) { /////////////////////////////////////////
 
         accept_post : async function() { // insert new post or update old post
 
-            await collect_post_data(state)
-
-            post_data               = state.post_data
+            post_data               = await collect_post_data(state)
             post_data.post_content  = strip_tags(post_data.post_content.linkify()) // remove all but a small set of allowed html tags
             post_data.post_approved = state.current_user ? 1 : 0 // not logged in posts go into moderation
 
@@ -1216,10 +1207,10 @@ async function render(state) { /////////////////////////////////////////
 
         post_login : async function() {
 
-            await collect_post_data(state)
+            let post_data = await collect_post_data(state)
 
-            email    = state.post_data.email
-            password = state.post_data.password
+            email    = post_data.email
+            password = post_data.password
 
             login(state, email, password)
         },
@@ -1249,8 +1240,6 @@ async function render(state) { /////////////////////////////////////////
 
         recoveryemail : async function() {
 
-            await collect_post_data(state)
-
             state.message = await send_login_link(state)
 
             let content = html(
@@ -1265,24 +1254,24 @@ async function render(state) { /////////////////////////////////////////
 
         registration : async function() {
 
-            await collect_post_data(state)
+            let post_data = await collect_post_data(state)
 
-            if (/\W/.test(state.post_data.user_name))               state.message = 'Please go back and enter username consisting only of letters'
-            if (!/^\w.*@.+\.\w+$/.test(state.post_data.user_email)) state.message = 'Please go back and enter a valid email'
+            if (/\W/.test(post_data.user_name))               state.message = 'Please go back and enter username consisting only of letters'
+            if (!/^\w.*@.+\.\w+$/.test(post_data.user_email)) state.message = 'Please go back and enter a valid email'
 
             if (!state.message) { // no error yet
 
-                var results = await query('select * from users where user_email = ?', [state.post_data.user_email], state)
+                var results = await query('select * from users where user_email = ?', [post_data.user_email], state)
 
                 if (results[0]) {
                     state.message = `That email is already registered. Please use the "forgot password" link above.</a>`
                 }
                 else {
-                    let results = await query('select * from users where user_name = ?', [state.post_data.user_name], state)
+                    let results = await query('select * from users where user_name = ?', [post_data.user_name], state)
 
                     if (results[0]) state.message = `That user name is already registered. Please choose a different one.</a>`
                     else {
-                        await query('insert into users set user_registered=now(), ?', state.post_data, state)
+                        await query('insert into users set user_registered=now(), ?', post_data, state)
                         state.message = await send_login_link(state)
                     }
                 }
@@ -1411,26 +1400,26 @@ async function render(state) { /////////////////////////////////////////
             if (!valid_nonce())      return die('invalid nonce')
             if (!state.current_user) return die('must be logged in to update profile')
 
-            await collect_post_data(state)
+            let post_data = await collect_post_data(state)
 
-            if (/\W/.test(state.post_data.user_name))              return die('Please go back and enter username consisting only of letters')
-            if (!/^\w.*@.+\.\w+$/.test(state.post_data.user_email)) return die('Please go back and enter a valid email')
+            if (/\W/.test(post_data.user_name))              return die('Please go back and enter username consisting only of letters')
+            if (!/^\w.*@.+\.\w+$/.test(post_data.user_email)) return die('Please go back and enter a valid email')
 
-            state.post_data.user_summonable            = intval(state.post_data.user_summonable)
-            state.post_data.user_hide_post_list_photos = intval(state.post_data.user_hide_post_list_photos)
+            post_data.user_summonable            = intval(post_data.user_summonable)
+            post_data.user_hide_post_list_photos = intval(post_data.user_hide_post_list_photos)
 
-            state.post_data.user_aboutyou = strip_tags(state.post_data.user_aboutyou.linkify()) 
+            post_data.user_aboutyou = strip_tags(post_data.user_aboutyou.linkify()) 
 
             await query(`update users set user_email                 = ?,
                                           user_name                  = ?,
                                           user_summonable            = ?,
                                           user_hide_post_list_photos = ?,
                                           user_aboutyou              = ?  where user_id = ?`,
-                [state.post_data.user_email,
-                 state.post_data.user_name,
-                 state.post_data.user_summonable,
-                 state.post_data.user_hide_post_list_photos,
-                 state.post_data.user_aboutyou,
+                [post_data.user_email,
+                 post_data.user_name,
+                 post_data.user_summonable,
+                 post_data.user_hide_post_list_photos,
+                 post_data.user_aboutyou,
                  state.current_user.user_id], state).catch(error => {
                     if (error.code.match(/ER_DUP_ENTRY/)) return die(`Sorry, looks like someone already took that email or user name`)
                     else                                  return die(`Something went wrong with save`)
@@ -2714,23 +2703,25 @@ async function render(state) { /////////////////////////////////////////
 
     async function send_login_link(state) {
 
-      if (!/^\w.*@.+\.\w+$/.test(state.post_data.user_email)) return 'Please go back and enter a valid email'
+        let post_data = await collect_post_data(state)
+
+        if (!/^\w.*@.+\.\w+$/.test(post_data.user_email)) return 'Please go back and enter a valid email'
 
         let baseurl  = (/^dev\./.test(OS.hostname())) ? CONF.baseurl_dev : CONF.baseurl // CONF.baseurl_dev is for testing email
         let key      = get_nonce(Date.now())
         let key_link = `${ baseurl }/key_login?key=${ key }`
 
-        var results = await query('update users set user_activation_key=? where user_email=?', [key, state.post_data.user_email], state)
+        var results = await query('update users set user_activation_key=? where user_email=?', [key, post_data.user_email], state)
 
         if (results.changedRows) {
 
             let message = `Click here to log in and get your password: <a href='${ key_link }'>${ key_link }</a>`
 
-            mail(state.post_data.user_email, `Your ${ CONF.domain } login info`, message)
+            mail(post_data.user_email, `Your ${ CONF.domain } login info`, message)
 
-            return `Please check your ${state.post_data.user_email} email for the login link`
+            return `Please check your ${post_data.user_email} email for the login link`
         }
-        else return `Could not find user with email ${ state.post_data.user_email }`
+        else return `Could not find user with email ${ post_data.user_email }`
     }
 
     function share_post(post) {
