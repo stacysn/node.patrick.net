@@ -517,6 +517,12 @@ async function render(state) { /////////////////////////////////////////
 
                     await query(`update users set user_last_comment_ip = ? where user_id = ?`, [state.ip, state.current_user.user_id], state)
                 }
+
+                // do slowest thing last: send email to moderator if comment not approved
+                if (!post_data.comment_approved) {
+                    mail(CONF.admin_email, 'new comment needs review',
+                    `${post_data.comment_content}<p><a href='https://${CONF.domain}/comment_moderation'>moderation page</a>`)
+                }
             }
         },
 
