@@ -452,14 +452,7 @@ async function render(state) { /////////////////////////////////////////
     var pages = {
 
         about : async function() {
-
-            let content = html(
-                midpage(
-                    about_this_site()
-                )
-            )
-
-            send_html(200, content)
+            redirect(`/post/${CONF.about_post_id}`)
         },
 
         accept_comment : async function() { // insert new comment
@@ -2797,11 +2790,11 @@ async function render(state) { /////////////////////////////////////////
     function unread_comments_icon(post, last_view) { // return the blinky icon if there are unread comments in a post
 
         // if post.post_latest_commenter_id is an ignored user, just return
+        // prevents user from seeing blinky for ignored users, but unfortunately also prevents blinky for wanted unread comments before that
         if (state.current_user
          && state.current_user.relationships
          && state.current_user.relationships[post.post_latest_commenter_id]
          && state.current_user.relationships[post.post_latest_commenter_id].rel_i_ban) { return '' }
-
 
         // if post_modified > last time they viewed this post, then give them a link to earliest unread comment
         let last_viewed = Date.parse(last_view) / 1000
