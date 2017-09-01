@@ -21,7 +21,7 @@ LOCKS = {} // db locks to allow only one db connection per ip; helps mitigate do
 POOL = MYSQL.createPool(CONF.db)
 POOL.on('release', db => { // delete the lock for the released db.threadId, and any locks that are older than 2000 milliseconds
     Object.keys(LOCKS).map(ip => {
-        if (LOCKS[ip].threadId == db.threadId || LOCKS[ip].ts < (Date.now() - 2000)) {
+        if (LOCKS[ip].threadId === db.threadId || LOCKS[ip].ts < (Date.now() - 2000)) {
             delete LOCKS[ip]
             console.log(`unlock for ${ ip }`)
         }
@@ -109,7 +109,7 @@ function collect_post_data(state) { // if there is any POST data, accumulate it 
 
     return new Promise(function(fulfill, reject) {
 
-        if (state.req.method == 'POST') {
+        if (state.req.method === 'POST') {
             var body = ''
 
             state.req.on('data', function (data) {
@@ -141,7 +141,7 @@ async function set_user(state) { // update state with whether they are logged in
 
         var results = await query('select * from users where user_id = ? and user_pass = ?', [pairs[CONF.usercookie], pairs[CONF.pwcookie]], state)
 
-        if (0 == results.length) state.current_user = null
+        if (0 === results.length) state.current_user = null
         else                     state.current_user = results[0]
 
         await set_relations(state)
@@ -582,7 +582,7 @@ async function render(state) { /////////////////////////////////////////
 
             if (!comment_id)                        return send_html(200, '')
             if (!state.current_user)                return send_html(200, '')
-            if (state.current_user.user_level != 4) return send_html(200, '')
+            if (state.current_user.user_level !== 4) return send_html(200, '')
             if (!valid_nonce())                     return send_html(200, '')
 
             await query('update comments set comment_approved=1, comment_date=now() where comment_id=?', [comment_id], state)
@@ -598,7 +598,7 @@ async function render(state) { /////////////////////////////////////////
 
             if (!post_id)                           return send_html(200, '')
             if (!state.current_user)                return send_html(200, '')
-            if (state.current_user.user_level != 4) return send_html(200, '')
+            if (state.current_user.user_level !== 4) return send_html(200, '')
             if (!valid_nonce())                     return send_html(200, '')
 
             await query('update posts set post_approved=1, post_modified=now() where post_id=?', [post_id], state)
@@ -750,7 +750,8 @@ async function render(state) { /////////////////////////////////////////
 
                 let post = results[0]
 
-                if ((state.current_user.user_id == post.post_author) || (state.current_user.user_id == 1)) { // if it's their own post or if it's admin
+                // if it's their own post or if it's admin
+                if ((state.current_user.user_id === post.post_author) || (state.current_user.user_id === 1)) {
 
                     let results = await query(`delete from posts where post_id = ?`, [post_id], state)
                     return die(`${results.affectedRows} post deleted`)
@@ -791,7 +792,7 @@ async function render(state) { /////////////////////////////////////////
                 // no emailing done of dislikes
 
                 // Now if Patrick was the disliker, then the user gets a bias bump down.
-                if (1 == state.current_user.user_id) {
+                if (1 === state.current_user.user_id) {
                     await query(`update users set user_pbias=user_pbias-1 where user_id=?`, [comment_row.comment_author], state)
                 }
             }
@@ -1039,7 +1040,7 @@ async function render(state) { /////////////////////////////////////////
                 }
 
                 // Now if Patrick was the liker, then the user gets a bias bump up.
-                if (1 == state.current_user.user_id) {
+                if (1 === state.current_user.user_id) {
                     await query(`update users set user_pbias=user_pbias+1 where user_id=?`, [comment_row.comment_author], state)
                 }
             }
@@ -1126,10 +1127,10 @@ async function render(state) { /////////////////////////////////////////
             let nuke_id = intval(_GET('nuke_id'))
             let u = await get_userrow(nuke_id)
 
-            if (!valid_nonce())                  return die('invalid nonce')
-            if (1 != state.current_user.user_id) return die('permission denied')
-            if (1 == nuke_id)                    return die('admin cannot nuke himself')
-            if (!u.user_comments > 3)            return die('cannot nuke user with more than 3 comments')
+            if (!valid_nonce())                   return die('invalid nonce')
+            if (1 !== state.current_user.user_id) return die('permission denied')
+            if (1 === nuke_id)                    return die('admin cannot nuke himself')
+            if (!u.user_comments > 3)             return die('cannot nuke user with more than 3 comments')
 
             let country = await ip2country(u.user_last_comment_ip)
 
@@ -1164,7 +1165,7 @@ async function render(state) { /////////////////////////////////////////
 
             state.post = results[0]
 
-            if (0 == results.length) return send_html(404, `No post with id "${post_id}"`)
+            if (0 === results.length) return send_html(404, `No post with id "${post_id}"`)
             else {
                 state.comments            = await post_comment_list(state.post) // pick up the comment list for this post
                 state.comments.found_rows = await sql_calc_found_rows()
@@ -1642,7 +1643,7 @@ async function render(state) { /////////////////////////////////////////
 
     function admin_user(u) { // links to administer a user
 
-        if (state.current_user && state.current_user.user_id != 1) return ``
+        if (state.current_user && state.current_user.user_id !== 1) return ``
 
         return `<hr>
             <a href='mailto:${u.user_email}'>email ${u.user_email}</a> &nbsp;
@@ -1755,7 +1756,7 @@ async function render(state) { /////////////////////////////////////////
 
         // for the last comment in the whole result set (not just last on this page) add an id="last"
         if (state.comments) { // state.comments may not be defined, for example when we just added one comment
-            var last = (c.row_number == state.comments.found_rows) ? `<span id='last'></span>` : ''
+            var last = (c.row_number === state.comments.found_rows) ? `<span id='last'></span>` : ''
         }
         else var last = ''
 
@@ -1847,7 +1848,7 @@ async function render(state) { /////////////////////////////////////////
             var previous_offset = (offset - 40 > 0) ? offset - 40 : 0
             var next_offset     = (offset + 40 > total - 40) ? total - 40 : offset + 40 // last page will always be 40 comments
 
-            if (offset != 0) { // don't need these links if we are on the first page
+            if (offset !== 0) { // don't need these links if we are on the first page
                 var first_link    = `${pathname}?${query.replace(/offset=\d+/, 'offset=0')}#comments`
                 var previous_link = `${pathname}?${query.replace(/offset=\d+/, 'offset=' + previous_offset)}#comments`
             }
@@ -1891,16 +1892,16 @@ async function render(state) { /////////////////////////////////////////
 
         if (!state.current_user) return ''
 
-        if (URL.parse(state.req.url).pathname.match(/jail/) && (state.current_user.user_level == 4)) {
+        if (URL.parse(state.req.url).pathname.match(/jail/) && (state.current_user.user_level === 4)) {
              return `<a href='/liberate?comment_id=${c.comment_id}' >liberate</a>`
         }
         
-        if (URL.parse(state.req.url).pathname.match(/comment_moderation/) && (state.current_user.user_level == 4)) {
+        if (URL.parse(state.req.url).pathname.match(/comment_moderation/) && (state.current_user.user_level === 4)) {
             return `<a href='#' onclick="$.get('/approve_comment?comment_id=${ c.comment_id }&${create_nonce_parms()}', function() { $('#comment-${ c.comment_id }').remove() }); return false">approve</a>`
         }
 
         if (state.current_user.user_pbias >= 3) {
-            return (state.current_user.user_id == c.comment_author || state.current_user.user_id == 1) ?
+            return (state.current_user.user_id === c.comment_author || state.current_user.user_id === 1) ?
                 `<a href='#' onclick="if (confirm('Really mark as uncivil?')) { $.get('/uncivil?c=${ c.comment_id }&${create_nonce_parms()}', function() { $('#comment-${ c.comment_id }').remove() }); return false}" title='attacks person, not point' >uncivil</a>` : ''
         }
     }
@@ -2042,7 +2043,7 @@ async function render(state) { /////////////////////////////////////////
 
         if (!state.current_user) return ''
 
-        return (state.current_user.user_id == c.comment_author || state.current_user.user_id == 1) ?
+        return (state.current_user.user_id === c.comment_author || state.current_user.user_id === 1) ?
             `<a href='#' onclick="if (confirm('Really delete?')) { $.get('/delete_comment?comment_id=${ c.comment_id }&post_id=${ c.comment_post_id }&${create_nonce_parms()}', function() { $('#comment-${ c.comment_id }').remove() }); return false}">delete</a>` : ''
     }
 
@@ -2050,7 +2051,7 @@ async function render(state) { /////////////////////////////////////////
 
         if (!state.current_user) return ''
 
-        if ((state.current_user.user_id == c.comment_author) || (state.current_user.user_level == 4)) {
+        if ((state.current_user.user_id === c.comment_author) || (state.current_user.user_level === 4)) {
             return `<a href='/edit_comment?c=${c.comment_id}&${create_nonce_parms()}'>edit</a>`
         }
 
@@ -2094,8 +2095,8 @@ async function render(state) { /////////////////////////////////////////
 
         let parm = '' // default is no offset parm, ie last page of comments
 
-        if (_GET('offset') == 0) parm = `?offset=0`
-        else if (_GET('offset')) parm = `?offset=${_GET('offset')}`
+        if (_GET('offset') === 0) parm = `?offset=0`
+        else if (_GET('offset'))  parm = `?offset=${_GET('offset')}`
 
         return `<a href='/post/${c.comment_post_id}/${parm}#comment-${c.comment_id}' title='permalink' >${format_date(c.comment_date)}</a>`
     }
@@ -2151,7 +2152,8 @@ async function render(state) { /////////////////////////////////////////
                 }
             }
             else { // either we are on mobile (no selection possible) or the user did not select any text
-                theSelection = document.getElementById('comment-' + comment_id + '-text').innerHTML; // whole comment, or post when comment_id == 0
+                // whole comment, or post when comment_id === 0
+                theSelection = document.getElementById('comment-' + comment_id + '-text').innerHTML;
             }
 
             if (theSelection.length > 1024) var theSelection = theSelection.substring(0, 1000) + '...'; // might mangle tags
@@ -2245,7 +2247,7 @@ async function render(state) { /////////////////////////////////////////
 
         var results = await query('select * from users where user_email = ? and user_pass = ?', [email, md5(password)], state)
 
-        if (0 == results.length) {
+        if (0 === results.length) {
             state.login_failed_email = email
             state.current_user       = null
             var user_id              = ''
@@ -2258,8 +2260,8 @@ async function render(state) { /////////////////////////////////////////
             var user_pass            = state.current_user.user_pass
         }
 
-        if ('post_login' == state.page) var content = icon_or_loginprompt(state)
-        if ('key_login'  == state.page) {
+        if ('post_login' === state.page) var content = icon_or_loginprompt(state)
+        if ('key_login'  === state.page) {
 
             var current_user_id = state.current_user ? state.current_user.user_id : 0
 
@@ -2425,12 +2427,12 @@ async function render(state) { /////////////////////////////////////////
         return false" title='comments by email'>${watch_indicator(state.post.postview_want_email)}</a>`
 
         let edit_link = ''
-        if (state.current_user && ((state.current_user.user_id == state.post.post_author) || (state.current_user.user_level >= 4)) ) {
+        if (state.current_user && ((state.current_user.user_id === state.post.post_author) || (state.current_user.user_level >= 4)) ) {
             edit_link = `<a href='/edit_post?p=${state.post.post_id}&${nonce_parms}'>edit</a> &nbsp; `
         }
 
         let delete_link = ''
-        if (state.current_user && ((state.current_user.user_id == state.post.post_author && !state.post.post_comments) || (state.current_user.user_level >= 4))) {
+        if (state.current_user && ((state.current_user.user_id === state.post.post_author && !state.post.post_comments) || (state.current_user.user_level >= 4))) {
             let confirm_del = `onClick="javascript:return confirm('Really delete?')"`
             delete_link = ` &nbsp; <a href='/delete_post?post_id=${state.post.post_id}&${nonce_parms}' ${confirm_del} >delete</a> &nbsp;` 
         }
@@ -2528,13 +2530,13 @@ async function render(state) { /////////////////////////////////////////
                 let extlink       = get_external_link(post)
                 let firstwords    = `<font size='-1'>${first_words(post.post_content, 30)}</font>`
 
-                if (URL.parse(state.req.url).pathname.match(/post_moderation/) && (state.current_user.user_level == 4)) {
+                if (URL.parse(state.req.url).pathname.match(/post_moderation/) && (state.current_user.user_level === 4)) {
                     var approval_link = `<a href='#' onclick="$.get('/approve_post?post_id=${ post.post_id }&${create_nonce_parms()}', function() { $('#post-${ post.post_id }').remove() }); return false">approve</a>`
                 }
                 else var approval_link = ''
 
                 if (post.post_comments) {
-                    let s = (post.post_comments == 1) ? '' : 's';
+                    let s = (post.post_comments === 1) ? '' : 's';
                     let path = post2path(post)
                     // should add commas to post_comments here
                     var latest = `<a href='${path}'>${post.post_comments}&nbsp;comment${s}</a>, latest <a href='${path}#comment-${post.post_latest_comment_id}' >${ago}</a>`
@@ -2823,7 +2825,7 @@ async function render(state) { /////////////////////////////////////////
     function user_info(u) {
         let img = user_icon(u)
 
-        if (state.current_user && u.user_id == state.current_user.user_id) {
+        if (state.current_user && u.user_id === state.current_user.user_id) {
             var edit_or_logout = `<div style='float:right'>
             <b><a href='/edit_profile'>edit profile</a> &nbsp; 
                <a href='#' onclick="$.get('/logout', function(data) { $('#status').html(data) });return false">logout</a></b><p>
@@ -2875,7 +2877,7 @@ async function render(state) { /////////////////////////////////////////
     function user_list() {
 
         let d = _GET('d') ? _GET('d').replace(/[^adesc]/, '').substring(0,4)  : 'desc' // asc or desc
-        let i = (d == 'desc') ? 'asc' : 'desc'                                         // invert asc or desc
+        let i = (d === 'desc') ? 'asc' : 'desc'                                         // invert asc or desc
 
         let header = `
         <form name='input' action='/users' method='get' >
@@ -2924,8 +2926,8 @@ async function render(state) { /////////////////////////////////////////
 
         if (intval(_GET('ts')) < (Date.now() - 3600000)) return false // don't accept timestamps older than an hour
 
-        if (get_nonce(_GET('ts')) == _GET('nonce')) return true
-        else                                        return false
+        if (get_nonce(_GET('ts')) === _GET('nonce')) return true
+        else                                         return false
     }
 
     function watch_indicator(want_email) {
