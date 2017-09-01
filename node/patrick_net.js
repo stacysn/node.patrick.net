@@ -2796,6 +2796,13 @@ async function render(state) { /////////////////////////////////////////
 
     function unread_comments_icon(post, last_view) { // return the blinky icon if there are unread comments in a post
 
+        // if post.post_latest_commenter_id is an ignored user, just return
+        if (state.current_user
+         && state.current_user.relationships
+         && state.current_user.relationships[post.post_latest_commenter_id]
+         && state.current_user.relationships[post.post_latest_commenter_id].rel_i_ban) { return '' }
+
+
         // if post_modified > last time they viewed this post, then give them a link to earliest unread comment
         let last_viewed = Date.parse(last_view) / 1000
         let modified    = Date.parse(post.post_modified) / 1000
