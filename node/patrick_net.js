@@ -480,7 +480,7 @@ async function render(state) { /////////////////////////////////////////
                 return send_html(200, popup())
             }
 
-            let post_data = await collect_post_data(state)
+            let post_data = await collect_post_data_and_trim(state)
 
             if (!post_data.comment_content) return send_html(200, '') // empty comment
 
@@ -539,7 +539,7 @@ async function render(state) { /////////////////////////////////////////
 
             if (!valid_nonce()) return die('invalid nonce')
 
-            let post_data = await collect_post_data(state)
+            let post_data = await collect_post_data_and_trim(state)
 
             if (!post_data.comment_content) return die('please go back and enter some content')
 
@@ -573,7 +573,7 @@ async function render(state) { /////////////////////////////////////////
 
         accept_post : async function() { // insert new post or update old post
 
-            post_data               = await collect_post_data(state)
+            let post_data           = await collect_post_data_and_trim(state)
             post_data.post_content  = strip_tags(post_data.post_content.linkify()) // remove all but a small set of allowed html tags
             post_data.post_approved = state.current_user ? 1 : 0 // not logged in posts go into moderation
 
@@ -1189,7 +1189,7 @@ async function render(state) { /////////////////////////////////////////
 
                 send_html(200, content) // send html right away, before updating postviews and posts tables
 
-                let want_email = state.post.postview_want_email
+                let want_email = state.post.postview_want_email || 0 // keep as 1 or 0 from db, or set to 0 if is null in db
                 if( '0' == _GET('want_email') ) want_email = 0
 
                 await query(`insert into postviews (postview_user_id, postview_post_id, postview_last_view, postview_want_email)
@@ -1216,12 +1216,9 @@ async function render(state) { /////////////////////////////////////////
 
         post_login : async function() {
 
-            let post_data = await collect_post_data(state)
+            let post_data = await collect_post_data_and_trim(state)
 
-            email    = post_data.email
-            password = post_data.password
-
-            login(state, email, password)
+            login(state, post_data.email, post_data.password)
         },
 
         post_moderation : async function () {
@@ -1263,7 +1260,7 @@ async function render(state) { /////////////////////////////////////////
 
         registration : async function() {
 
-            let post_data = await collect_post_data(state)
+            let post_data = await collect_post_data_and_trim(state)
 
             if (/\W/.test(post_data.user_name))               state.message = 'Please go back and enter username consisting only of letters'
             if (!/^\w.*@.+\.\w+$/.test(post_data.user_email)) state.message = 'Please go back and enter a valid email'
@@ -1404,7 +1401,7 @@ async function render(state) { /////////////////////////////////////////
             if (!valid_nonce())      return die('invalid nonce')
             if (!state.current_user) return die('must be logged in to update profile')
 
-            let post_data = await collect_post_data(state)
+            let post_data = await collect_post_data_and_trim(state)
 
             if (/\W/.test(post_data.user_name))              return die('Please go back and enter username consisting only of letters')
             if (!/^\w.*@.+\.\w+$/.test(post_data.user_email)) return die('Please go back and enter a valid email')
