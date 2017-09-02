@@ -126,6 +126,12 @@ function collect_post_data(state) { // if there is any POST data, accumulate it 
     })
 }
 
+async function collect_post_data_and_trim(state) { // to deal with safari on iphone tacking on unwanted whitespace to post form data
+    let post_data = await collect_post_data(state)
+    Object.keys(post_data).forEach(key => { post_data[key] = post_data[key].trim() })
+    return post_data
+}
+
 async function set_user(state) { // update state with whether they are logged in or not
 
     try {
@@ -483,7 +489,7 @@ async function render(state) { /////////////////////////////////////////
                                      where user_last_comment_time is not null and user_last_comment_ip = ?
                                      order by user_last_comment_time desc limit 1`, [state.ip], state)
 
-            if (ago < 2) { // this ip already commented less than two seconds ago
+            if (ago && ago < 2) { // this ip already commented less than two seconds ago
                 state.message = 'You are posting comments too quickly! Please slow down'
                 return send_html(200, popup())
             }
@@ -504,7 +510,7 @@ async function render(state) { /////////////////////////////////////////
 
                 send_html(200, format_comment(state.comment)) // send html fragment
 
-                //commentmail(comment_id)
+                comment_mail(state.comment)
 
                 await query(`update posts set post_modified = ?,
                                               post_latest_comment_id = ?,
@@ -541,7 +547,7 @@ async function render(state) { /////////////////////////////////////////
             var ago = await get_var('select (unix_timestamp(now()) - unix_timestamp(user_last_comment_time)) as ago from users where user_last_comment_time is not null and user_last_comment_ip = ? order by user_last_comment_time desc limit 1',
                 [state.ip], state)
 
-            if (ago < 2) { // this ip already commented less than two seconds ago
+            if (ago && ago < 2) { // this ip already commented less than two seconds ago
                 return die('You are posting comments too quickly! Please slow down')
             }
             else {
@@ -627,13 +633,13 @@ async function render(state) { /////////////////////////////////////////
 				var sql = `select * from comments left join users on user_id=comment_author where comment_likes > 3
                            order by comment_likes desc limit 40`
 
-				var m = `<h2>best comments of all time</h2>or view the <A HREF='/best'>last week's</A> best comments<p>`
+				var m = `<h2>best comments of all time</h2>or view the <a href='/best'>last week's</a> best comments<p>`
 			}
 			else {
 				var sql = `select * from comments left join users on user_id=comment_author where comment_likes > 3
                            and comment_date > date_sub(now(), interval 7 day) order by comment_likes desc limit 40`
 
-				var m = `<h2>best comments in the last week</h2>or view the <A HREF='/best?all=true'>all-time</A> best comments<p>`
+				var m = `<h2>best comments in the last week</h2>or view the <a href='/best?all=true'>all-time</a> best comments<p>`
 			}
 
             state.comments = await query(sql, [], state)
@@ -1039,7 +1045,7 @@ async function render(state) { /////////////////////////////////////////
                     <a href='https://${CONF.domain}/users/${state.current_user.user_name}' >${state.current_user.user_name}</a>
                         liked the comment you made here:<p>\r\n\r\n
                     <a href='${comment_url}' >${comment_url}</a><p>${comment_row.comment_content}<p>\r\n\r\n
-                    <font size='-1'>Stop getting <A HREF='https://${CONF.domain}/edit_profile#user_summonable'>notified of likes</A>
+                    <font size='-1'>Stop getting <a href='https://${CONF.domain}/edit_profile#user_summonable'>notified of likes</a>
                     </font></body></html>`
 
                     mail(u.user_email, subject, message)
@@ -1084,7 +1090,7 @@ async function render(state) { /////////////////////////////////////////
                     <a href='https://${CONF.domain}/users/${state.current_user.user_name}' >${state.current_user.user_name}</a>
                         liked the post you made here:<p>\r\n\r\n
                     <a href='${post_url}' >${post_url}</a><p>${post_row.post_content}<p>\r\n\r\n
-                    <font size='-1'>Stop getting <A HREF='https://${CONF.domain}/edit_profile#user_summonable'>notified of likes</A>
+                    <font size='-1'>Stop getting <a href='https://${CONF.domain}/edit_profile#user_summonable'>notified of likes</a>
                     </font></body></html>`
 
                     mail(u.user_email, subject, message)
@@ -1183,8 +1189,13 @@ async function render(state) { /////////////////////////////////////////
 
                 send_html(200, content) // send html right away, before updating postviews and posts tables
 
-                await query(`insert into postviews (postview_user_id, postview_post_id, postview_last_view)
-                             values (?, ?, now()) on duplicate key update postview_last_view=now()`, [current_user_id, post_id], state)
+                let want_email = state.post.postview_want_email
+                if( '0' == _GET('want_email') ) want_email = 0
+
+                await query(`insert into postviews (postview_user_id, postview_post_id, postview_last_view, postview_want_email)
+                             values (?, ?, now(), ?) on duplicate key update postview_last_view=now()`,
+                             [ current_user_id, post_id, want_email ], state)
+
                 await query(`update posts set post_views = post_views + 1 where post_id=?`, [post_id], state)
             }
         },
@@ -1710,84 +1721,63 @@ async function render(state) { /////////////////////////////////////////
         return filename
     }
 
-    /*
-	function commentmail(comment_id) { // reasons to send out comment emails: @user summons, user watching post
+	async function comment_mail(c) { // reasons to send out comment emails: @user summons, user watching post
 
-		extract((array) db.get_row("select * from comments where comment_id=comment_id"))
-		if (!comment_post_id) return
+		let p              = await get_row(`select * from posts where post_id=?`, [c.comment_post_id], state)
+		let commenter      = c.user_name
+        let already_mailed = []
 
-		post_title = strip_tags(db.get_var("select post_title from posts where post_id=comment_post_id"))
-		commenter  = real_if_private(comment_post_id, comment_author)
+		// if comment_content contains a summons like @user, and user is user_summonable, then email user the comment
+		if (matches = c.comment_content.match('/@(\w+)/m') ) { // just use the first @user in the comment, not multipel
+			let summoned_user_username = matches[1]
 
-		// If comment_content contains a summons like "@<user>", and user is user_summonable, then email user.
-		if ( preg_match('/@([\w.,-]+)/i', comment_content, matches) || preg_match('/@"([\w .,-]+)"/i', comment_content, matches) ) {
-			summoned_user_username = matches[1]
+            var u
+			if (u = await get_row(`select * from users where user_name=? and user_id != ? and user_summonable=1`,
+                                       [summoned_user_username, c.comment_author], state)) {
 
-			if (u = db.get_row("select * from users where user_name='summoned_user_username' and user_id != 'comment_author' and user_summonable=1")) {
+				let subject  = `New ${CONF.domain} comment by ${commenter} directed at ${summoned_user_username}`
 
-				subject  = "New Patrick.net comment by commenter directed at summoned_user_username"
+				let notify_message  = `<html><body><head><base href="https://${CONF.domain}/" ></head>
+				New comment by ${commenter} in <a href='https://${CONF.domain}${post2path(p)}'>${p.post_title}</a>:<p>
+				<p>${c.comment_content}<p>
+				<p><a href='https://${CONF.domain}${post2path(p)}?c=${c.comment_id}#comment-${c.comment_id}'>Reply</a><p>
+				<font size='-1'>Stop allowing <a href='https://${CONF.domain}/profile'>summons</a></font></body></html>`
 
-				notify_message  = '<html><body><head><base href="https://patrick.net/" ></head>'
-				notify_message += "New comment by commenter in <A HREF='https://patrick.net" . post_id2path(comment_post_id) .
-					"'>post_title</A>:<p>\r\n\r\n"
+                if (u.user_email) mail(u.user_email, subject, notify_message) // user_email could be null in db
 
-				notify_message += "<p>comment_content<p>\r\n\r\n"
-
-				notify_message += "<p><A HREF='https://patrick.net". post_id2path(comment_post_id) .
-					"?c=comment_id#comment-comment_id'>Reply</A><p>\r\n\r\n"
-
-				notify_message += "<font size='-1'>Stop allowing <A HREF='https://patrick.net/profile.php" .
-					"#user_summonable'>summons</A></font><br>\r\n\r\n"
-
-				notify_message += '</body></html>'
-
-				format_mail(u.user_email, subject, notify_message)
-				format_mail('p@patrick.net', subject, notify_message) // Just so I have a record.
-				already_mailed[u.user_id]++ // Include in already_mailed hash so we don't duplicate emails below.
+                // include in already_mailed so we don't duplicate emails below
+				already_mailed[u.user_id] ? already_mailed[u.user_id]++ : already_mailed[u.user_id] = 1
 			}
 		}
 
-		// commecomment_idnt_author is the commenter logged in right now, who probably doesn't want to get his own comment in email.
-		// Select all other subscriber user_id's and send them the comment by mail.
+		// commenter logged in right now probably doesn't want to get his own comment in email
+		// select all other subscriber user ids and send them the comment by mail
+		sql = `select postview_user_id, postview_post_id from postviews
+						where postview_post_id=? and postview_want_email=1 and postview_user_id != ?
+						group by postview_user_id` // Group by so that user_id is in there only once.
 
-		sql = "select postview_user_id, postview_post_id from postviews
-						where postview_post_id=comment_post_id and postview_want_email=1 and postview_user_id != comment_author
-						group by postview_user_id" // Group by so that user_id is in there only once.
+        let rows = []
+		if (rows = await query(sql, [c.comment_post_id, c.comment_author], state)) {
+            rows.forEach(async function(row) {
 
-		if (rows = db.get_results(sql)) {
+				if (already_mailed[row.postview_user_id]) return
 
-			foreach (rows as row) {
+				let u = await get_userrow(row.postview_user_id)
 
-				if (already_mailed[row.postview_user_id]) continue
+				let subject = `New ${CONF.domain} comment in '${p.post_title}'`
 
-				u = get_userrow(row.postview_user_id)
+				let notify_message  = `<html><body><head><base href="https://${CONF.domain}" ></head>
+				New comment by ${commenter} in <a href='https://${CONF.domain}${post2path(p)}'>${p.post_title}</a>:<p>
+				<p>${c.comment_content}<p>\r\n\r\n
+				<p><a href='https://${CONF.domain}${post2path(p)}?c=${c.comment_id}#comment-${c.comment_id}'>Reply</a><p>
+				<font size='-1'>Stop watching <a href='https://${CONF.domain}${post2path(p)}?want_email=0'>${p.post_title}</a></font><br>
+				<font size='-1'>Stop watching <a href='https://${CONF.domain}/autowatch?off=true'>all posts</a></font></body></html>`
 
-				subject       = "New Patrick.net comment in 'post_title'"
-
-				notify_message  = '<html><body><head><base href="https://patrick.net/" ></head>'
-
-				notify_message += "New comment by commenter in <A HREF='https://patrick.net" . post_id2path(comment_post_id) .
-					"'>post_title</A>:<p>\r\n\r\n"
-
-				notify_message += "<p>comment_content<p>\r\n\r\n"
-
-				notify_message += "<p><A HREF='https://patrick.net". post_id2path(comment_post_id) .
-					"?c=comment_id#comment-comment_id'>Reply</A><p>\r\n\r\n"
-
-				notify_message += "<font size='-1'>Stop watching <A HREF='https://patrick.net". post_id2path(comment_post_id) .
-								   "?want_email=0'>post_title</A></font><br>\r\n\r\n"
-
-				notify_message += "<font size='-1'>Stop watching <A HREF='https://patrick.net/autowatch.php" .
-					"?off=true'>all posts</A></font><br>\r\n"
-
-				notify_message += '</body></html>'
-
-				format_mail(u.user_email, subject, notify_message)
-				already_mailed[row.postview_user_id]++ // Include in already_mailed hash so we don't duplicate emails below.
-			}
+				mail(u.user_email, subject, notify_message)
+				already_mailed[u.user_id] ? already_mailed[u.user_id]++ : already_mailed[u.user_id] = 1
+			})
 		}
 	}
-    */
 
     function format_comment(c) {
 
@@ -2029,7 +2019,7 @@ async function render(state) { /////////////////////////////////////////
         <a href='/users'>users</a> &nbsp;
         <a href='/about'>about</a> &nbsp;
         <a href='/post/1302130/2017-01-28-patnet-improvement-suggestions'>suggestions</a> &nbsp;
-        <a href='https://github.com/killelea/node.patrick.net'>source code</a> &nbsp;
+        <a href='https://github.com/killelea/node.${CONF.domain}'>source code</a> &nbsp;
         <a href='mailto:${ CONF.admin_email }' >contact</a> &nbsp;
         <br>
         <a href='/topics'>topics</a> &nbsp;
@@ -2760,9 +2750,9 @@ async function render(state) { /////////////////////////////////////////
 
     async function send_login_link(state) {
 
-        let post_data = await collect_post_data(state)
+        let post_data = await collect_post_data_and_trim(state)
 
-        if (!/^\w.*@.+\.\w+$/.test(post_data.user_email)) return 'Please go back and enter a valid email'
+        if (!/^\w.*@.+\.\w+$/.test(post_data.user_email)) return `Please go back and enter a valid email`
 
         let baseurl  = (/^dev\./.test(OS.hostname())) ? CONF.baseurl_dev : CONF.baseurl // CONF.baseurl_dev is for testing email
         let key      = get_nonce(Date.now())
@@ -2849,7 +2839,7 @@ async function render(state) { /////////////////////////////////////////
 
         if (modified > last_viewed) {
 
-            let unread = `<a href='/since?p=${post.post_id}&when=${last_viewed}' ><img src='/content/unread_comments.gif' width='19' height='18' title='View unread comments'></A>`
+            let unread = `<a href='/since?p=${post.post_id}&when=${last_viewed}' ><img src='/content/unread_comments.gif' width='19' height='18' title='View unread comments'></a>`
 
             return unread
         }
@@ -2938,16 +2928,16 @@ async function render(state) { /////////////////////////////////////////
         </form><p>
         <table width='100%' cellpadding='10' style="overflow-x:auto;" ><tr>
         <th ></th>
-        <th                    ><A HREF='/users?ob=user_name&d=${ i }'       title='order by user name' >Username</A></th>
-        <th                    ><A HREF='/users?ob=user_registered&d=${ i }' title='order by registration date' >Registered</A></th>
-        <th class='text-right' ><A HREF='/users?ob=user_posts&d=${ i }'      title='order by number of posts started' >Posts</A></th>
-        <th class='text-right' ><A HREF='/users?ob=user_comments&d=${ i }'   title='order by number of comments' >Comments</A></th>
-        <th class='text-right' ><A HREF='/users?ob=user_likes&d=${ i }'      title='number of likes user got' >Likes</A></th>
-        <th class='text-right' ><A HREF='/users?ob=user_dislikes&d=${ i }'   title='number of dislikes user got' >Dislikes</A></th>
-        <th class='text-right' ><A HREF='/users?ob=user_friends&d=${ i }'    title='order by number of friends' >Friends</A></th>
-        <th class='text-right' ><A HREF='/users?ob=user_followers&d=${ i }'  title='order by number of followers' >Followers</A></th>
-        <th class='text-right' ><A HREF='/users?ob=user_ignoredby&d=${ i }'  title='how many people are ignoring user' >Ignored By</A></th>
-        <th class='text-right' ><A HREF='/users?ob=user_ignoring&d=${ i }'   title='how many people user is ignoring' >Ignoring</A></th>
+        <th                    ><a href='/users?ob=user_name&d=${ i }'       title='order by user name' >Username</a></th>
+        <th                    ><a href='/users?ob=user_registered&d=${ i }' title='order by registration date' >Registered</a></th>
+        <th class='text-right' ><a href='/users?ob=user_posts&d=${ i }'      title='order by number of posts started' >Posts</a></th>
+        <th class='text-right' ><a href='/users?ob=user_comments&d=${ i }'   title='order by number of comments' >Comments</a></th>
+        <th class='text-right' ><a href='/users?ob=user_likes&d=${ i }'      title='number of likes user got' >Likes</a></th>
+        <th class='text-right' ><a href='/users?ob=user_dislikes&d=${ i }'   title='number of dislikes user got' >Dislikes</a></th>
+        <th class='text-right' ><a href='/users?ob=user_friends&d=${ i }'    title='order by number of friends' >Friends</a></th>
+        <th class='text-right' ><a href='/users?ob=user_followers&d=${ i }'  title='order by number of followers' >Followers</a></th>
+        <th class='text-right' ><a href='/users?ob=user_ignoredby&d=${ i }'  title='how many people are ignoring user' >Ignored By</a></th>
+        <th class='text-right' ><a href='/users?ob=user_ignoring&d=${ i }'   title='how many people user is ignoring' >Ignoring</a></th>
         </tr>`
 
         if (state.users.length) {
