@@ -294,7 +294,6 @@ Number.prototype.number_format = function() {
 
 String.prototype.linkify = function(ref) {
 
-    let at_user_pattern  = /@(\w+)/gim
     let imagePattern     = /((https?:\/\/[\w$%&~\/.\-;:=,?@\[\]+]*?)\.(jpg|jpeg|gif|gifv|png|bmp))(\s|$)/gim
     let urlPattern       = /\b(https?:\/\/[a-z0-9-+&@#\/%?=~_|!:,.;]*[a-z0-9-+&@#\/%=~_|])(\s|$)/gim // http://, https://
     let pseudoUrlPattern = /(^|[^\/])(www\.[\S]+(\b|$))(\s|$)/gim                                    // www. sans http:// or https://
@@ -312,7 +311,6 @@ String.prototype.linkify = function(ref) {
         .replace(urlPattern,       '<a href="$1">$1</a> ')
         .replace(pseudoUrlPattern, '$1<a href="http://$2">$2</a> ')
         .replace(emailpostPattern, '<a href="mailto:$1">$1</a> ')
-        .replace(at_user_pattern,  '<a href="/user/$1">@$1</a>')
         .replace(linebreakPattern, '<br>')
 
     result = block_unknown_iframes(result)
