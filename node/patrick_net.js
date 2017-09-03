@@ -479,7 +479,7 @@ async function render(state) { /////////////////////////////////////////
 
             if (!valid_nonce()) { // do not die, because that will return a whole html page to be appended into the #comment_list slot
                 // show values for debugging nonce problems
-                state.message = `invalid nonce: ${_GET('nonce')} !== ${get_nonce(_GET('ts'))} with ts=${_GET('ts')} and now=${Date.now()}`
+                state.message = invalid_nonce_message()
                 return send_html(200, popup())
             }
 
@@ -540,7 +540,7 @@ async function render(state) { /////////////////////////////////////////
 
         accept_edited_comment : async function() { // update old comment
 
-            if (!valid_nonce()) return die('invalid nonce')
+            if (!valid_nonce()) return die(invalid_nonce_message())
 
             let post_data = await collect_post_data_and_trim(state)
 
@@ -765,7 +765,7 @@ async function render(state) { /////////////////////////////////////////
         delete_post : async function() { // delete a whole post, but not its comments
 
             if (!state.current_user) return die('you must be logged in to delete a post')
-            if (!valid_nonce())      return die('invalid nonce')
+            if (!valid_nonce())      return die(invalid_nonce_message())
 
             if (post_id = intval(_GET('post_id'))) {
 
@@ -848,7 +848,7 @@ async function render(state) { /////////////////////////////////////////
 
         edit_comment : async function () {
 
-            if (!valid_nonce()) return die('invalid nonce')
+            if (!valid_nonce()) return die(invalid_nonce_message())
 
             let comment_id = intval(_GET('c'))
             state.comment = await get_row(`select * from comments left join users on user_id=comment_author
@@ -869,7 +869,7 @@ async function render(state) { /////////////////////////////////////////
 
         edit_post : async function () {
 
-            if (!valid_nonce()) return die('invalid nonce')
+            if (!valid_nonce()) return die(invalid_nonce_message())
 
             let post_id = intval(_GET('p'))
             state.post = await get_row(`select * from posts left join users on user_id=post_author where post_id=?`, [post_id], state)
@@ -1136,7 +1136,7 @@ async function render(state) { /////////////////////////////////////////
             let nuke_id = intval(_GET('nuke_id'))
             let u = await get_userrow(nuke_id)
 
-            if (!valid_nonce())                   return die('invalid nonce')
+            if (!valid_nonce())                   return die(invalid_nonce_message())
             if (1 !== state.current_user.user_id) return die('permission denied')
             if (1 === nuke_id)                    return die('admin cannot nuke himself')
             if (!u.user_comments > 3)             return die('cannot nuke user with more than 3 comments')
@@ -1403,7 +1403,7 @@ async function render(state) { /////////////////////////////////////////
 
         update_profile : async function() { // accept data from profile_form
 
-            if (!valid_nonce())      return die('invalid nonce')
+            if (!valid_nonce())      return die(invalid_nonce_message())
             if (!state.current_user) return die('must be logged in to update profile')
 
             let post_data = await collect_post_data_and_trim(state)
@@ -2973,6 +2973,10 @@ async function render(state) { /////////////////////////////////////////
 
         if (get_nonce(_GET('ts')) === _GET('nonce')) return true
         else                                         return false
+    }
+
+    function invalid_nonce_message() {
+        return `invalid nonce: ${_GET('nonce')} !== ${get_nonce(_GET('ts'))} with ts=${_GET('ts')} and now=${Date.now()}`
     }
 
     function watch_indicator(want_email) {
