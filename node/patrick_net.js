@@ -478,7 +478,8 @@ async function render(state) { /////////////////////////////////////////
         accept_comment : async function() { // insert new comment
 
             if (!valid_nonce()) { // do not die, because that will return a whole html page to be appended into the #comment_list slot
-                state.message = `invalid nonce: ${_GET('nonce')} !== ${get_nonce(_GET('ts'))}` // show values for debugging nonce problems
+                // show values for debugging nonce problems
+                state.message = `invalid nonce: ${_GET('nonce')} !== ${get_nonce(_GET('ts'))} with ts=${_GET('ts')} and now=${Date.now()}`
                 return send_html(200, popup())
             }
 
