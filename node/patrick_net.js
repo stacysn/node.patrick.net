@@ -2082,8 +2082,9 @@ async function render(state) { /////////////////////////////////////////
 
     async function get_comment_list_by_search(s, start, num) {
 
-        let comments = await query(`select sql_calc_found_rows * from comments where match(comment_content) against (?)
-                                    limit ?, ?`, [s, start, num], state)
+        let comments = await query(`select sql_calc_found_rows * from comments left join users on comment_author=user_id
+                                    where match(comment_content) against (?)
+                                    order by comment_date desc limit ?, ?`, [s, start, num], state)
 
         let total = await sql_calc_found_rows()
 
