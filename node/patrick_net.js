@@ -203,6 +203,10 @@ function intval(s) { // return integer from a string or float
     return parseInt(s) ? parseInt(s) : 0
 }
 
+function valid_email(e) {
+    return /^\w.*@.+\.\w+$/.test(e)
+}
+
 function no_links(content) {
 
     let c = CHEERIO.load(content)
@@ -1260,8 +1264,8 @@ async function render(state) { /////////////////////////////////////////
 
             let post_data = await collect_post_data_and_trim(state)
 
-            if (/\W/.test(post_data.user_name))               state.message = 'Please go back and enter username consisting only of letters'
-            if (!/^\w.*@.+\.\w+$/.test(post_data.user_email)) state.message = 'Please go back and enter a valid email'
+            if (/\W/.test(post_data.user_name))     state.message = 'Please go back and enter username consisting only of letters'
+            if (!valid_email(post_data.user_email)) state.message = 'Please go back and enter a valid email'
 
             if (!state.message) { // no error yet
 
@@ -1401,8 +1405,8 @@ async function render(state) { /////////////////////////////////////////
 
             let post_data = await collect_post_data_and_trim(state)
 
-            if (/\W/.test(post_data.user_name))              return die('Please go back and enter username consisting only of letters')
-            if (!/^\w.*@.+\.\w+$/.test(post_data.user_email)) return die('Please go back and enter a valid email')
+            if (/\W/.test(post_data.user_name))     return die('Please go back and enter username consisting only of letters')
+            if (!valid_email(post_data.user_email)) return die('Please go back and enter a valid email')
 
             post_data.user_summonable            = intval(post_data.user_summonable)
             post_data.user_hide_post_list_photos = intval(post_data.user_hide_post_list_photos)
@@ -2748,7 +2752,7 @@ async function render(state) { /////////////////////////////////////////
 
         let post_data = await collect_post_data_and_trim(state)
 
-        if (!/^\w.*@.+\.\w+$/.test(post_data.user_email)) return `Please go back and enter a valid email`
+        if (!valid_email(post_data.user_email)) return `Please go back and enter a valid email`
 
         let baseurl  = (/^dev\./.test(OS.hostname())) ? CONF.baseurl_dev : CONF.baseurl // CONF.baseurl_dev is for testing email
         let key      = get_nonce(Date.now())
