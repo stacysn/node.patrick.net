@@ -755,9 +755,8 @@ async function render(state) { /////////////////////////////////////////
 
             await query('delete from comments where comment_id = ? and (comment_author = ? or 1 = ?)',
                         [comment_id, state.current_user.user_id, state.current_user.user_id], state)
-            await query('update posts set post_comments=(select count(*) from comments where comment_post_id=?) where post_id = ?',
-                        [post_id, post_id], state)
-                        // we select the count(*) from comments to make the comment counts self-correcting in case they get off somehow
+
+            await reset_latest_comment(post_id)
 
             send_html(200, '')
         },
