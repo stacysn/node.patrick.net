@@ -1175,9 +1175,20 @@ async function render(state) { /////////////////////////////////////////
             else {
                 state.comments            = await post_comment_list(state.post) // pick up the comment list for this post
                 state.comments.found_rows = await sql_calc_found_rows()
+                state.post.watchers       = await get_var(`select count(*) as c from postviews
+                                                           where postview_post_id=? and postview_want_email=1`, [post_id], state)
 
-                state.post.watchers = await get_var(`select count(*) as c from postviews where postview_post_id=? and postview_want_email=1`,
-                                                    [post_id], state)
+                state.post.post_views++ // increment here for display and in db on next line as record
+                await query(`update posts set post_views = ? where post_id=?`, [state.post.post_views, post_id], state)
+
+                if (current_user_id) {
+                    state.post.postview_want_email = state.post.postview_want_email || 0 // keep as 1 or 0 from db; set to 0 if null in db
+                    if( '0' == _GET('want_email') ) state.post.postview_want_email = 0
+
+                    await query(`replace into postviews set
+                                 postview_user_id=?, postview_post_id=?, postview_last_view=now(), postview_want_email=?`,
+                                 [ current_user_id, post_id, state.post.postview_want_email ], state)
+                }
 
                 let content = html(
                     midpage(
@@ -1189,16 +1200,7 @@ async function render(state) { /////////////////////////////////////////
                     )
                 )
 
-                send_html(200, content) // send html right away, before updating postviews and posts tables
-
-                let want_email = state.post.postview_want_email || 0 // keep as 1 or 0 from db, or set to 0 if is null in db
-                if( '0' == _GET('want_email') ) want_email = 0
-
-                await query(`insert into postviews (postview_user_id, postview_post_id, postview_last_view, postview_want_email)
-                             values (?, ?, now(), ?) on duplicate key update postview_last_view=now()`,
-                             [ current_user_id, post_id, want_email ], state)
-
-                await query(`update posts set post_views = post_views + 1 where post_id=?`, [post_id], state)
+                send_html(200, content)
             }
         },
 
