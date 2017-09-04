@@ -9,6 +9,7 @@ CRYPTO      = require('crypto')
 FORMIDABLE  = require('formidable')      // via npm for image uploading
 FS          = require('fs')
 HTTP        = require('http')
+JSDOM       = require('jsdom').JSDOM
 MOMENT      = require('moment-timezone') // via npm for time parsing
 MYSQL       = require('mysql')           // via npm to interface to mysql
 NODEMAILER  = require('nodemailer')      // via npm to send emails
@@ -218,7 +219,7 @@ function no_links(content) {
 function strip_tags(s) { // use like this: str = strip_tags('<p>There is some <u>text</u> here</p>', '<b><i><u><p><ol><ul>')
 
     // these are the only allowed tags that users can enter in posts or comments; they will not be stripped
-    let allowed = '<a><b><blockquote><br><code><font><hr><i><iframe><img><li><ol><p><source><strike><sub><sup><u><ul><video><vsmall>'
+    let allowed = '<a><b><blockquote><br><code><del><font><hr><i><iframe><img><li><ol><p><source><strike><sub><sup><u><ul><video><vsmall>'
 
     allowed = (((allowed || '') + '')
         .toLowerCase()
@@ -318,8 +319,57 @@ String.prototype.linkify = function(ref) {
         .replace(linebreakPattern, '<br>')
 
     result = block_unknown_iframes(result)
+    result = sanitize_html(result)
 
     return result
+}
+
+function sanitize_html(s) {
+
+    var allowed = { // with allowed attributes as an array
+        'a'          : ['href', 'title', 'rel', 'rev', 'name'],
+        'b'          : [],
+        'blockquote' : [],
+        'br'         : [],
+        'code'       : [],
+        'del'        : [],
+        'font'       : ['color', 'face'],
+        'hr'         : [],
+        'i'          : [],
+        'iframe'     : ['src'],
+        'img'        : ['alt', 'align', 'border', 'height', 'hspace', 'longdesc', 'vspace', 'src', 'width'],
+        'li'         : [],
+        'ol'         : [],
+        'ol'         : [],
+        'p'          : [],
+        'strike'     : [],
+        'sub'        : [],
+        'sup'        : [],
+        'u'          : [],
+        'ul'         : [],
+        'video'      : ['width', 'height', 'name', 'src', 'controls'],
+        'vsmall'     : [],
+    }
+
+    const dom = new JSDOM(s)
+
+    for (tag in allowed) {
+        let selection = dom.window.document.getElementsByTagName(tag)
+
+        for (var i=0; i < selection.length; i++) {
+            var item = selection[i]
+
+            if (item.hasAttributes()) {
+                for(var j = 0; j < item.attributes.length; j++) {
+                    if (allowed[tag].indexOf(item.attributes[j].name) == -1) {
+                        item.removeAttribute(item.attributes[j].name)
+                    }
+                }
+            }
+        }
+    }
+
+    return dom.serialize()
 }
 
 function block_unknown_iframes(s) { // special case: iframes are allowed, but only with vimeo and youtube src
@@ -334,7 +384,6 @@ function block_unknown_iframes(s) { // special case: iframes are allowed, but on
 
     if (matches = $('iframe').attr('src').match(/(https?:)?\/\/([\w\.]+)/)) {
         var host = matches[2]
-        console.log(host)
     }
     else return '' // not a valid frame src
 
@@ -2968,7 +3017,7 @@ async function render(state) { /////////////////////////////////////////
 
     function valid_nonce() {
 
-        if (intval(_GET('ts')) < (Date.now() - 3600000)) return false // don't accept timestamps older than an hour
+        if (intval(_GET('ts')) < (Date.now() - 7200000)) return false // don't accept timestamps older than two hours
 
         if (get_nonce(_GET('ts')) === _GET('nonce')) return true
         else                                         return false

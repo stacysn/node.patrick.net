@@ -9,6 +9,7 @@
   "dependencies": {
     "cheerio": "^1.0.0-rc.2",
     "formidable": "^1.1.1",
+    "jsdom": "^11.2.0",
     "moment-timezone": "^0.5.13",
     "mysql": "^2.5.4",
     "nodemailer": "^4.0.1"
