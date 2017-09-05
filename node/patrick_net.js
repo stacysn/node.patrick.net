@@ -337,7 +337,7 @@ function sanitize_html(s) {
         'font'       : ['color', 'face'],
         'hr'         : [],
         'i'          : [],
-        'iframe'     : ['src'],
+        'iframe'     : ['src', 'height', 'width'],
         'img'        : ['alt', 'align', 'border', 'height', 'hspace', 'longdesc', 'vspace', 'src', 'width'],
         'li'         : [],
         'ol'         : [],
