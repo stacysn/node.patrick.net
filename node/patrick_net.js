@@ -680,6 +680,26 @@ async function render(state) { /////////////////////////////////////////
             send_html(200, '') // make it disappear from post_moderation page
         },
 
+        autowatch : async function() {
+
+            var current_user_id = state.current_user ? state.current_user.user_id : 0
+
+            if (!current_user_id) die('must be logged in to stop watching all posts')
+
+            // left joins to also get each post's viewing and voting data for the current user if there is one
+            let sql = `update postviews set postview_want_email=0 where postview_user_id = ?`
+            await query(sql, [current_user_id], state)
+            state.message = `All email of new post comments turned off`
+
+            var content = html(
+                midpage(
+                    h1()
+                )
+            )
+
+            return send_html(200, content)
+        },
+
         best : async function() {
 
 			if ('true' === _GET('all')) {
