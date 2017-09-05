@@ -1188,7 +1188,7 @@ async function render(state) { /////////////////////////////////////////
             if (!valid_nonce())                   return die(invalid_nonce_message())
             if (1 !== state.current_user.user_id) return die('permission denied')
             if (1 === nuke_id)                    return die('admin cannot nuke himself')
-            if (!u.user_comments > 3)             return die('cannot nuke user with more than 3 comments')
+            if (u.user_comments > 3)              return die('cannot nuke user with more than 3 comments')
 
             let country = await ip2country(u.user_last_comment_ip)
 
@@ -1198,16 +1198,16 @@ async function render(state) { /////////////////////////////////////////
 
             let rows = await query('select distinct comment_post_id from comments where comment_author=?', [nuke_id], state)
 
-            for (row in rows) {
-                let post_id = row.comment_post_id
-                await query('delete from comments where comment_post_id=? and comment_author=?', [post_id, nuke_id], state)
-                await reset_latest_comment(post_id)
+            for (var i=0; i<rows.length; i++) {
+                let row = rows[i]
+                await query('delete from comments where comment_post_id=? and comment_author=?', [row.comment_post_id, nuke_id], state)
+                await reset_latest_comment(row.comment_post_id)
             }
             await query('delete from posts     where post_author=?',      [nuke_id], state)
             await query('delete from postviews where postview_user_id=?', [nuke_id], state)
             await query('delete from users     where user_id=?',          [nuke_id], state)
 
-            state.req.headers.referer.match(/moderation/) ? redirect('/moderation') : redirect(state.req.headers.referer) 
+            redirect(state.req.headers.referer) 
         },
 
         post : async function() { // show a single post and its comments
@@ -1837,6 +1837,7 @@ async function render(state) { /////////////////////////////////////////
         var date_link        = get_permalink(c)
         var del              = get_del_link(c)
         var edit             = get_edit_link(c)
+        var nuke             = get_nuke_link(c)
         var icon             = user_icon(c, 0.4, `'align='left' hspace='5' vspace='2'`) // scale image down
         var u                = c.user_name ? `<a href='/user/${c.user_name}'>${c.user_name}</a>` : 'anonymous'
         var clink            = contextual_link(c)
@@ -1885,6 +1886,7 @@ async function render(state) { /////////////////////////////////////////
             ${quote} &nbsp;
             ${edit} &nbsp;
             ${del} &nbsp;
+            ${nuke} &nbsp;
         </font><br><span id='comment-${c.comment_id}-text'>${ c.comment_content }</span></div>`
     }
 
@@ -2197,6 +2199,15 @@ async function render(state) { /////////////////////////////////////////
         // create or check a nonce string for input forms. this makes each form usable only once, and only from the ip that got the form.
         // hopefully this slows down spammers and cross-site posting tricks
         return md5(state.ip + CONF.nonce_secret + ts)
+    }
+
+    function get_nuke_link(c) {
+
+        if (!state.current_user) return ''
+
+        return (URL.parse(state.req.url).pathname.match(/comment_moderation/) && (state.current_user.user_level === 4)) ?
+            `<a href='/nuke?nuke_id=${c.comment_author}&${create_nonce_parms()}' onClick='javascript:return confirm("Really?")' >nuke</a>`
+            : ''
     }
 
     function get_permalink(c) {
