@@ -317,6 +317,7 @@ String.prototype.linkify = function(ref) {
         .replace(pseudoUrlPattern, '$1<a href="http://$2">$2</a> ')
         .replace(emailpostPattern, '<a href="mailto:$1">$1</a> ')
         .replace(linebreakPattern, '<br>')
+        .replace(/\0/g,            '') // do not allow null in strings
 
     result = block_unknown_iframes(result)
     result = sanitize_html(result)
