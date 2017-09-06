@@ -17,7 +17,8 @@ OS          = require('os')
 QUERYSTRING = require('querystring')
 URL         = require('url')
 
-LOCKS = {} // db locks to allow only one db connection per ip; helps mitigate dos attacks
+BASEURL     = (/^dev\./.test(OS.hostname())) ? CONF.baseurl_dev : CONF.baseurl // CONF.baseurl_dev is for testing, 'like http://dev' locally
+LOCKS       = {}                         // db locks to allow only one db connection per ip; helps mitigate dos attacks
 
 POOL = MYSQL.createPool(CONF.db)
 POOL.on('release', db => { // delete the lock for the released db.threadId, and any locks that are older than 2000 milliseconds
@@ -1797,22 +1798,22 @@ async function render(state) { /////////////////////////////////////////
 		let p              = await get_row(`select * from posts where post_id=?`, [c.comment_post_id], state)
 		let commenter      = c.user_name
         let already_mailed = []
+        let offset         = await cid2offset(p.post_id, c.comment_id)
 
 		// if comment_content contains a summons like @user, and user is user_summonable, then email user the comment
-		if (matches = c.comment_content.match('/@(\w+)/m') ) { // just use the first @user in the comment, not multipel
+		if (matches = c.comment_content.match(/@(\w+)/m)) { // just use the first @user in the comment, not multiple
 			let summoned_user_username = matches[1]
-
             var u
 			if (u = await get_row(`select * from users where user_name=? and user_id != ? and user_summonable=1`,
                                        [summoned_user_username, c.comment_author], state)) {
 
 				let subject  = `New ${CONF.domain} comment by ${commenter} directed at ${summoned_user_username}`
 
-				let notify_message  = `<html><body><head><base href="https://${CONF.domain}/" ></head>
-				New comment by ${commenter} in <a href='https://${CONF.domain}${post2path(p)}'>${p.post_title}</a>:<p>
+				let notify_message  = `<html><body><head><base href=${BASEURL}/" ></head>
+				New comment by ${commenter} in <a href='${BASEURL}${post2path(p)}'>${p.post_title}</a>:<p>
 				<p>${c.comment_content}<p>
-				<p><a href='https://${CONF.domain}${post2path(p)}?c=${c.comment_id}#comment-${c.comment_id}'>Reply</a><p>
-				<font size='-1'>Stop allowing <a href='https://${CONF.domain}/profile'>summons</a></font></body></html>`
+				<p><a href='${BASEURL}${post2path(p)}?offset=${offset}#comment-${c.comment_id}'>Reply</a><p>
+				<font size='-1'>Stop allowing <a href='${BASEURL}/profile'>summons</a></font></body></html>`
 
                 if (u.user_email) mail(u.user_email, subject, notify_message) // user_email could be null in db
 
@@ -1837,12 +1838,12 @@ async function render(state) { /////////////////////////////////////////
 
 				let subject = `New ${CONF.domain} comment in '${p.post_title}'`
 
-				let notify_message  = `<html><body><head><base href="https://${CONF.domain}" ></head>
-				New comment by ${commenter} in <a href='https://${CONF.domain}${post2path(p)}'>${p.post_title}</a>:<p>
+				let notify_message  = `<html><body><head><base href="${BASEURL}" ></head>
+				New comment by ${commenter} in <a href='${BASEURL}${post2path(p)}'>${p.post_title}</a>:<p>
 				<p>${c.comment_content}<p>\r\n\r\n
-				<p><a href='https://${CONF.domain}${post2path(p)}?c=${c.comment_id}#comment-${c.comment_id}'>Reply</a><p>
-				<font size='-1'>Stop watching <a href='https://${CONF.domain}${post2path(p)}?want_email=0'>${p.post_title}</a></font><br>
-				<font size='-1'>Stop watching <a href='https://${CONF.domain}/autowatch?off=true'>all posts</a></font></body></html>`
+				<p><a href='${BASEURL}${post2path(p)}?offset=${offset}#comment-${c.comment_id}'>Reply</a><p>
+				<font size='-1'>Stop watching <a href='${BASEURL}${post2path(p)}?want_email=0'>${p.post_title}</a></font><br>
+				<font size='-1'>Stop watching <a href='${BASEURL}/autowatch?off=true'>all posts</a></font></body></html>`
 
 				mail(u.user_email, subject, notify_message)
 				already_mailed[u.user_id] ? already_mailed[u.user_id]++ : already_mailed[u.user_id] = 1
@@ -2837,9 +2838,8 @@ async function render(state) { /////////////////////////////////////////
 
         if (!valid_email(post_data.user_email)) return `Please go back and enter a valid email`
 
-        let baseurl  = (/^dev\./.test(OS.hostname())) ? CONF.baseurl_dev : CONF.baseurl // CONF.baseurl_dev is for testing email
         let key      = get_nonce(Date.now())
-        let key_link = `${ baseurl }/key_login?key=${ key }`
+        let key_link = `${BASEURL}/key_login?key=${ key }`
 
         var results = await query('update users set user_activation_key=? where user_email=?', [key, post_data.user_email], state)
 
