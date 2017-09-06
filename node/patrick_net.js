@@ -631,8 +631,8 @@ async function render(state) { /////////////////////////////////////////
             post_data.post_content  = strip_tags(post_data.post_content.linkify()) // remove all but a small set of allowed html tags
             post_data.post_approved = state.current_user ? 1 : 0 // not logged in posts go into moderation
 
-            if (intval(post_data.post_id)) { // editing old post
-                await query('update posts set ?, post_modified=now() where post_id=?', [post_data, intval(post_data.post_id)], state)
+            if (intval(post_data.post_id)) { // editing old post, do not update post_modified time because it confuses users
+                await query('update posts set ? where post_id=?', [post_data, intval(post_data.post_id)], state)
                 var p = intval(post_data.post_id)
             }
             else { // new post
