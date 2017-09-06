@@ -420,17 +420,17 @@ function brandit(url) { // add ref=[domain name] to a url
 }
 
 async function get_row(sql, sql_parms, state) {
-	let results = await query(sql, sql_parms, state)
-	return results.length ? results[0] : null
+    let results = await query(sql, sql_parms, state)
+    return results.length ? results[0] : null
 }
 
 async function get_var(sql, sql_parms, state) {
-	let results = await query(sql, sql_parms, state)
-	
-	if (results.length) {
+    let results = await query(sql, sql_parms, state)
+    
+    if (results.length) {
         let firstkey = Object.keys(results[0])
         return results[0][firstkey]
-	}
+    }
     else return null
 }
 
@@ -703,18 +703,18 @@ async function render(state) { /////////////////////////////////////////
 
         best : async function() {
 
-			if ('true' === _GET('all')) {
-				var sql = `select * from comments left join users on user_id=comment_author where comment_likes > 3
+            if ('true' === _GET('all')) {
+                var sql = `select * from comments left join users on user_id=comment_author where comment_likes > 3
                            order by comment_likes desc limit 40`
 
-				var m = `<h2>best comments of all time</h2>or view the <a href='/best'>last week's</a> best comments<p>`
-			}
-			else {
-				var sql = `select * from comments left join users on user_id=comment_author where comment_likes > 3
+                var m = `<h2>best comments of all time</h2>or view the <a href='/best'>last week's</a> best comments<p>`
+            }
+            else {
+                var sql = `select * from comments left join users on user_id=comment_author where comment_likes > 3
                            and comment_date > date_sub(now(), interval 7 day) order by comment_likes desc limit 40`
 
-				var m = `<h2>best comments in the last week</h2>or view the <a href='/best?all=true'>all-time</a> best comments<p>`
-			}
+                var m = `<h2>best comments in the last week</h2>or view the <a href='/best?all=true'>all-time</a> best comments<p>`
+            }
 
             state.comments = await query(sql, [], state)
 
@@ -1277,11 +1277,11 @@ async function render(state) { /////////////////////////////////////////
 
         post_by_title : async function() { // check to see if url like /some%20topic is actually a valid post title
 
-			let path    = URL.parse(state.req.url).path.replace(/\?.*/,'').split('/')
-			let title   = decodeURIComponent(strip_tags(path[2]).substring(0,255)).replace(/\+/g, ' ')
-			let post_id = await get_var(`select post_id from posts where post_title = ?`, [title], state)
+            let path    = URL.parse(state.req.url).path.replace(/\?.*/,'').split('/')
+            let title   = decodeURIComponent(strip_tags(path[2]).substring(0,255)).replace(/\+/g, ' ')
+            let post_id = await get_var(`select post_id from posts where post_title = ?`, [title], state)
 
-			if (post_id) redirect(`/post/${post_id}`, 301)
+            if (post_id) redirect(`/post/${post_id}`, 301)
             else {
                 let err = `${state.req.url} is not a valid url`
                 console.log(err)
@@ -1793,63 +1793,63 @@ async function render(state) { /////////////////////////////////////////
         return filename
     }
 
-	async function comment_mail(c) { // reasons to send out comment emails: @user summons, user watching post
+    async function comment_mail(c) { // reasons to send out comment emails: @user summons, user watching post
 
-		let p              = await get_row(`select * from posts where post_id=?`, [c.comment_post_id], state)
-		let commenter      = c.user_name
+        let p              = await get_row(`select * from posts where post_id=?`, [c.comment_post_id], state)
+        let commenter      = c.user_name
         let already_mailed = []
         let offset         = await cid2offset(p.post_id, c.comment_id)
 
-		// if comment_content contains a summons like @user, and user is user_summonable, then email user the comment
-		if (matches = c.comment_content.match(/@(\w+)/m)) { // just use the first @user in the comment, not multiple
-			let summoned_user_username = matches[1]
+        // if comment_content contains a summons like @user, and user is user_summonable, then email user the comment
+        if (matches = c.comment_content.match(/@(\w+)/m)) { // just use the first @user in the comment, not multiple
+            let summoned_user_username = matches[1]
             var u
-			if (u = await get_row(`select * from users where user_name=? and user_id != ? and user_summonable=1`,
+            if (u = await get_row(`select * from users where user_name=? and user_id != ? and user_summonable=1`,
                                        [summoned_user_username, c.comment_author], state)) {
 
-				let subject  = `New ${CONF.domain} comment by ${commenter} directed at ${summoned_user_username}`
+                let subject  = `New ${CONF.domain} comment by ${commenter} directed at ${summoned_user_username}`
 
-				let notify_message  = `<html><body><head><base href=${BASEURL}/" ></head>
-				New comment by ${commenter} in <a href='${BASEURL}${post2path(p)}'>${p.post_title}</a>:<p>
-				<p>${c.comment_content}<p>
-				<p><a href='${BASEURL}${post2path(p)}?offset=${offset}#comment-${c.comment_id}'>Reply</a><p>
-				<font size='-1'>Stop allowing <a href='${BASEURL}/profile'>summons</a></font></body></html>`
+                let notify_message  = `<html><body><head><base href=${BASEURL}/" ></head>
+                New comment by ${commenter} in <a href='${BASEURL}${post2path(p)}'>${p.post_title}</a>:<p>
+                <p>${c.comment_content}<p>
+                <p><a href='${BASEURL}${post2path(p)}?offset=${offset}#comment-${c.comment_id}'>Reply</a><p>
+                <font size='-1'>Stop allowing <a href='${BASEURL}/profile'>summons</a></font></body></html>`
 
                 if (u.user_email) mail(u.user_email, subject, notify_message) // user_email could be null in db
 
                 // include in already_mailed so we don't duplicate emails below
-				already_mailed[u.user_id] ? already_mailed[u.user_id]++ : already_mailed[u.user_id] = 1
-			}
-		}
+                already_mailed[u.user_id] ? already_mailed[u.user_id]++ : already_mailed[u.user_id] = 1
+            }
+        }
 
-		// commenter logged in right now probably doesn't want to get his own comment in email
-		// select all other subscriber user ids and send them the comment by mail
-		sql = `select postview_user_id, postview_post_id from postviews
-						where postview_post_id=? and postview_want_email=1 and postview_user_id != ?
-						group by postview_user_id` // Group by so that user_id is in there only once.
+        // commenter logged in right now probably doesn't want to get his own comment in email
+        // select all other subscriber user ids and send them the comment by mail
+        sql = `select postview_user_id, postview_post_id from postviews
+                        where postview_post_id=? and postview_want_email=1 and postview_user_id != ?
+                        group by postview_user_id` // Group by so that user_id is in there only once.
 
         let rows = []
-		if (rows = await query(sql, [c.comment_post_id, c.comment_author], state)) {
+        if (rows = await query(sql, [c.comment_post_id, c.comment_author], state)) {
             rows.forEach(async function(row) {
 
-				if (already_mailed[row.postview_user_id]) return
+                if (already_mailed[row.postview_user_id]) return
 
-				let u = await get_userrow(row.postview_user_id)
+                let u = await get_userrow(row.postview_user_id)
 
-				let subject = `New ${CONF.domain} comment in '${p.post_title}'`
+                let subject = `New ${CONF.domain} comment in '${p.post_title}'`
 
-				let notify_message  = `<html><body><head><base href="${BASEURL}" ></head>
-				New comment by ${commenter} in <a href='${BASEURL}${post2path(p)}'>${p.post_title}</a>:<p>
-				<p>${c.comment_content}<p>\r\n\r\n
-				<p><a href='${BASEURL}${post2path(p)}?offset=${offset}#comment-${c.comment_id}'>Reply</a><p>
-				<font size='-1'>Stop watching <a href='${BASEURL}${post2path(p)}?want_email=0'>${p.post_title}</a></font><br>
-				<font size='-1'>Stop watching <a href='${BASEURL}/autowatch?off=true'>all posts</a></font></body></html>`
+                let notify_message  = `<html><body><head><base href="${BASEURL}" ></head>
+                New comment by ${commenter} in <a href='${BASEURL}${post2path(p)}'>${p.post_title}</a>:<p>
+                <p>${c.comment_content}<p>\r\n\r\n
+                <p><a href='${BASEURL}${post2path(p)}?offset=${offset}#comment-${c.comment_id}'>Reply</a><p>
+                <font size='-1'>Stop watching <a href='${BASEURL}${post2path(p)}?want_email=0'>${p.post_title}</a></font><br>
+                <font size='-1'>Stop watching <a href='${BASEURL}/autowatch?off=true'>all posts</a></font></body></html>`
 
-				mail(u.user_email, subject, notify_message)
-				already_mailed[u.user_id] ? already_mailed[u.user_id]++ : already_mailed[u.user_id] = 1
-			})
-		}
-	}
+                mail(u.user_email, subject, notify_message)
+                already_mailed[u.user_id] ? already_mailed[u.user_id]++ : already_mailed[u.user_id] = 1
+            })
+        }
+    }
 
     function format_comment(c) {
 
@@ -3084,12 +3084,12 @@ async function render(state) { /////////////////////////////////////////
         if (matches = segments(state.req.url)[1].match(/^(\d+)$/)) { // legacy url starts with a post number
             redirect(`/post/${matches[1]}`, 301)                
         }
-		else {
-			// legacy url starts with some word other than one of our functions
-			// we will check to see if it's a valid post title, and if so, redirect them to that post
+        else {
+            // legacy url starts with some word other than one of our functions
+            // we will check to see if it's a valid post title, and if so, redirect them to that post
             matches = URL.parse(state.req.url).path.replace(/\?.*/,'').split('/')[1].match(/(.*)/)
-			redirect(`/post_by_title/${matches[1]}`, 301)
-		}
+            redirect(`/post_by_title/${matches[1]}`, 301)
+        }
     }
 
 } // end of render()
