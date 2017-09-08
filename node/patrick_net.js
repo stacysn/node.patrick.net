@@ -968,13 +968,36 @@ async function render(state) { /////////////////////////////////////////
             send_html(200, content)
         },
 
-        follow : async function() { // get emails of a user's new posts
+        follow_topic : async function() { // get or turn off emails of posts in a topic; can be called as ajax or full page
 
+            let ajax  = intval(_GET('ajax'))
+            let topic = _GET('topic').replace(/\W/, '')
+
+            if (!topic)              return ajax ? send_html(200, '') : die('topic missing')
+            if (!state.current_user) return ajax ? send_html(200, '') : die('must be logged in to follow or unfollow')
+            if (!valid_nonce())      return ajax ? send_html(200, '') : die(invalid_nonce_message())
+
+            if (intval(_GET('undo'))) {
+                await query(`delete from topicwatches where topicwatch_name=? and topicwatch_user_id=?`,
+                            [topic, state.current_user.user_id], state)
+            }
+            else {
+                await query(`replace into topicwatches set topicwatch_start=now(), topicwatch_name=?, topicwatch_user_id=?`,
+                            [topic, state.current_user.user_id], state)
+            }
+
+            // either way, output follow button with right state and update this user's follow count
+            ajax ? send_html(200, follow_topic_button(topic)) : die('Follow status updated')
+        },
+
+        follow_user : async function() { // get or turn off emails of a user's new posts; can be called as ajax or full page
+
+            let ajax     = intval(_GET('ajax'))
             let other_id = intval(_GET('other_id'))
 
-            if (!other_id)            return send_html(200, '')
-            if (!state.current_user) return send_html(200, '')
-            if (!valid_nonce())      return send_html(200, '')
+            if (!other_id)           return ajax ? send_html(200, '') : die('other_id missing')
+            if (!state.current_user) return ajax ? send_html(200, '') : die('must be logged in to follow or unfollow')
+            if (!valid_nonce())      return ajax ? send_html(200, '') : die(invalid_nonce_message())
 
             if (intval(_GET('undo'))) {
                 await query(`replace into relationships set rel_i_follow=0, rel_self_id=?, rel_other_id=?`,
@@ -986,7 +1009,7 @@ async function render(state) { /////////////////////////////////////////
             }
 
             // either way, output follow button with right state and update this user's follow count
-            send_html(200, follow_button(await get_userrow(other_id)))
+            ajax ? send_html(200, follow_user_button(await get_userrow(other_id))) : die('Follow status updated')
 
             await query(`update users set user_followers=(select count(*) from relationships where rel_i_follow > 0 and rel_other_id=?)
                          where user_id=?`, [other_id, other_id], state)
@@ -1432,6 +1455,7 @@ async function render(state) { /////////////////////////////////////////
             let content = html(
                 midpage(
                     h1(),
+                    follow_topic_button(topic),
                     tabs(order, `&topic=${topic}`),
                     post_list(),
                     post_pagination(sql_calc_found_rows(), curpage, `&topic=${topic}&order=${order}`)
@@ -1809,11 +1833,11 @@ async function render(state) { /////////////////////////////////////////
 
                 let subject  = `New ${CONF.domain} comment by ${commenter} directed at ${summoned_user_username}`
 
-                let notify_message  = `<html><body><head><base href=${BASEURL}/" ></head>
+                let notify_message  = `<html><body><head><base href="${BASEURL}" ></head>
                 New comment by ${commenter} in <a href='${BASEURL}${post2path(p)}'>${p.post_title}</a>:<p>
                 <p>${c.comment_content}<p>
                 <p><a href='${BASEURL}${post2path(p)}?offset=${offset}#comment-${c.comment_id}'>Reply</a><p>
-                <font size='-1'>Stop allowing <a href='${BASEURL}/profile'>summons</a></font></body></html>`
+                <font size='-1'>Stop allowing <a href='${BASEURL}/profile'>@user summons</a></font></body></html>`
 
                 if (u.user_email) mail(u.user_email, subject, notify_message) // user_email could be null in db
 
@@ -1824,7 +1848,7 @@ async function render(state) { /////////////////////////////////////////
 
         // commenter logged in right now probably doesn't want to get his own comment in email
         // select all other subscriber user ids and send them the comment by mail
-        sql = `select postview_user_id, postview_post_id from postviews
+        let sql = `select postview_user_id, postview_post_id from postviews
                         where postview_post_id=? and postview_want_email=1 and postview_user_id != ?
                         group by postview_user_id` // Group by so that user_id is in there only once.
 
@@ -2060,30 +2084,55 @@ async function render(state) { /////////////////////////////////////////
         send_html(200, content)
     }
 
-    function follow_button(u) { // u is the user to follow, a row from users table
+    function follow_topic_button(t) { // t is the topic to follow, a \w+ string
 
-        let b = '<button type="button" class="btn btn-default btn-xs">follow</button>';
+        let b = `<button type="button" class="btn btn-default btn-xs" title="get emails of new posts in ${t}" >follow ${t}</button>`
 
-        var unfollow_link = `<span id='unfollow_link' >following ${u.user_name}<sup>
-                             <a href='#' onclick="$.get('/follow?other_id=${u.user_id}&undo=1&${create_nonce_parms()}',
-                             function() { document.getElementById('follow').innerHTML = document.getElementById('follow_link').innerHTML }); return false" >x</a></sup></span>`
+        var unfollow_topic_link = `<span id='unfollow_topic_link' >following ${t}<sup>
+                             <a href='#' onclick="$.get('/follow_topic?topic=${t}&undo=1&${create_nonce_parms()}&ajax=1',
+                             function() { document.getElementById('follow').innerHTML = document.getElementById('follow_topic_link').innerHTML }); return false" >x</a></sup></span>`
 
-        var follow_link = `<span id='follow_link' >
+        var follow_topic_link = `<span id='follow_topic_link' >
+                           <a href='#' title='get emails of new posts in ${t}'
+                           onclick="$.get('/follow_topic?topic=${t}&${create_nonce_parms()}&ajax=1',
+                           function() { document.getElementById('follow').innerHTML = document.getElementById('unfollow_topic_link').innerHTML }); return false" >${b}</a></span>`
+
+        if (state.current_user
+         && state.current_user.topics
+         && state.current_user.topics[t]) {
+            var follow = `<span id='follow' >${unfollow_topic_link}</span>`
+        }
+        else {
+            var follow = `<span id='follow' >${follow_topic_link}</span>`
+        }
+
+        return `<span style='display: none;' > ${follow_topic_link} ${unfollow_topic_link} </span> ${follow}`
+    }
+
+    function follow_user_button(u) { // u is the user to follow, a row from users table
+
+        let b = `<button type="button" class="btn btn-default btn-xs" title="get emails of new posts by ${u.user_name}" >follow ${u.user_name}</button>`
+
+        var unfollow_user_link = `<span id='unfollow_user_link' >following ${u.user_name}<sup>
+                             <a href='#' onclick="$.get('/follow_user?other_id=${u.user_id}&undo=1&${create_nonce_parms()}&ajax=1',
+                             function() { document.getElementById('follow').innerHTML = document.getElementById('follow_user_link').innerHTML }); return false" >x</a></sup></span>`
+
+        var follow_user_link = `<span id='follow_user_link' >
                            <a href='#' title='hide all posts and comments by ${u.user_name}'
-                           onclick="$.get('/follow?other_id=${u.user_id}&${create_nonce_parms()}',
-                           function() { document.getElementById('follow').innerHTML = document.getElementById('unfollow_link').innerHTML }); return false" >${b}</a></span>`
+                           onclick="$.get('/follow_user?other_id=${u.user_id}&${create_nonce_parms()}&ajax=1',
+                           function() { document.getElementById('follow').innerHTML = document.getElementById('unfollow_user_link').innerHTML }); return false" >${b}</a></span>`
 
         if (state.current_user
          && state.current_user.relationships
          && state.current_user.relationships[u.user_id]
          && state.current_user.relationships[u.user_id].rel_i_follow) {
-            var follow = `<span id='follow' >${unfollow_link}</span>`
+            var follow = `<span id='follow' >${unfollow_user_link}</span>`
         }
         else {
-            var follow = `<span id='follow' >${follow_link}</span>`
+            var follow = `<span id='follow' >${follow_user_link}</span>`
         }
 
-        return `<span style='display: none;' > ${follow_link} ${unfollow_link} </span> ${follow}`
+        return `<span style='display: none;' > ${follow_user_link} ${unfollow_user_link} </span> ${follow}`
     }
 
     function footer() {
@@ -2517,6 +2566,77 @@ async function render(state) { /////////////////////////////////////////
         return `<script type='text/javascript'> alert('${ state.message }');</script>`
     }
 
+    async function post_mail(p) { // reasons to send out post emails: @user, user following post author, user following post topic
+
+        var already_mailed = []
+
+        // if post_content contains a summons like @user, and user is user_summonable, then email user the post
+        if (matches = p.post_content.match(/@(\w+)/m)) { // just use the first @user in the post, not multiple
+            var summoned_user_username = matches[1]
+            var u
+            if (u = await get_row(`select * from users where user_name=? and user_id != ? and user_summonable=1`,
+                                       [summoned_user_username, p.post_author], state)) {
+
+                let subject  = `New ${CONF.domain} post by ${p.user_name} directed at ${summoned_user_username}`
+
+                let notify_message  = `<html><body><head><base href="${BASEURL}" ></head>
+                New post by ${p.user_name}:  <a href='${BASEURL}${post2path(p)}'>${p.post_title}</a><p>
+                <p>${p.post_content}<p>
+                <p><a href='${BASEURL}${post2path(p)}'>Reply</a><p>
+                <font size='-1'>Stop allowing <a href='${BASEURL}/profile'>@user summons</a></font></body></html>`
+
+                if (u.user_email) mail(u.user_email, subject, notify_message) // user_email could be null in db
+
+                // include in already_mailed so we don't duplicate emails below
+                already_mailed[u.user_id] ? already_mailed[u.user_id]++ : already_mailed[u.user_id] = 1
+            }
+        }
+
+        // now do user follower emails
+        var rows = []
+        if (rows = await query(`select distinct rel_self_id as user_id from relationships where rel_other_id = ? and rel_i_follow > 0`,
+                               [p.post_author], state)) {
+            rows.forEach(async function(row) {
+
+                if (already_mailed[row.rel_self_id]) return
+
+                let u = await get_userrow(row.rel_self_id)
+
+                let subject = `New ${CONF.domain} post by ${p.user_name}`
+
+                let notify_message  = `<html><body><head><base href="${BASEURL}" ></head>
+                New post by ${p.user_name}, <a href='${BASEURL}${post2path(p)}'>${p.post_title}</a>:<p>
+                <p>${p.post_content}<p>\r\n\r\n
+                <p><a href='${BASEURL}${post2path(p)}?offset=${offset}#post-${p.post_id}'>Reply</a><p>
+                <font size='-1'>Stop following <a href='${BASEURL}/user/${p.user_name}'>${p.user_name}</a></font><br>`
+
+                mail(u.user_email, subject, notify_message)
+                already_mailed[u.user_id] ? already_mailed[u.user_id]++ : already_mailed[u.user_id] = 1
+            })
+        }
+
+        // now do topic follower emails
+        if (rows = await query(`select distinct topicwatch_user_id from topicwatches where topicwatch_name = ?`, [p.post_topic], state)) {
+            rows.forEach(async function(row) {
+
+                if (already_mailed[row.topicwatch_user_id]) return
+
+                let u = await get_userrow(row.topicwatch_user_id)
+
+                let subject = `New ${CONF.domain} post in ${p.post_topic}`
+
+                let notify_message  = `<html><body><head><base href="${BASEURL}" ></head>
+                New post in ${p.post_topic}, <a href='${BASEURL}${post2path(p)}'>${p.post_title}</a>:<p>
+                <p>${p.post_content}<p>\r\n\r\n
+                <p><a href='${BASEURL}${post2path(p)}?offset=${offset}#post-${p.post_id}'>Reply</a><p>
+                <font size='-1'>Stop following <a href='${BASEURL}/topic/${p.post_topic}'>${p.post_topic}</a></font><br>`
+
+                mail(u.user_email, subject, notify_message)
+                already_mailed[u.user_id] ? already_mailed[u.user_id]++ : already_mailed[u.user_id] = 1
+            })
+        }
+    }
+
     function post_pagination(post_count, curpage, extra) {
 
         let links    = ''
@@ -2567,7 +2687,7 @@ async function render(state) { /////////////////////////////////////////
         }
 
         return `<div class='comment' >${arrowbox_html} ${icon} <h2 style='display:inline' >${ link }</h2>
-                <p>By ${user_link(state.post)} ${follow_button(state.post)} &nbsp; ${format_date(state.post.post_date)} ${uncivil}
+                <p>By ${user_link(state.post)} ${follow_user_button(state.post)} &nbsp; ${format_date(state.post.post_date)} ${uncivil}
                 ${state.post.post_views.number_format()} views &nbsp; ${state.post.post_comments.number_format()} comments &nbsp;
                 ${watcheye} &nbsp;
                 <a href="#commentform" onclick="addquote( '${state.post.post_id}', '0', '0', '${state.post.user_name}' ); return false;"
@@ -2989,7 +3109,7 @@ async function render(state) { /////////////////////////////////////////
                 ${u.user_country ? u.user_country : ''}
                 ${u.user_posts.number_format()} posts &nbsp;
                 <a href='/comments?a=${encodeURI(u.user_name)}&offset=${offset}'>${ u.user_comments.number_format() } comments</a> &nbsp;
-                ${follow_button(u)} &nbsp;
+                ${follow_user_button(u)} &nbsp;
                 <span style='display: none;' > ${ignore_link} ${unignore_link} </span>
                 ${ignore}
                 </center>`
