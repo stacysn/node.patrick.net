@@ -148,8 +148,8 @@ async function set_user(state) { // update state with whether they are logged in
 
         state.current_user = await get_row('select * from users where user_id = ? and user_pass = ?',
                                            [pairs[CONF.usercookie], pairs[CONF.pwcookie]], state)
-
         await set_relations(state)
+        await set_topics(state)
 
         // update users currently online for display in header
         await query(`delete from onlines where online_last_view < date_sub(now(), interval 5 minute)`, null, state)
@@ -190,6 +190,13 @@ async function set_relations(state) { // update state object with their relation
         state.current_user.relationships = [] // now renumber results array using user_ids to make later access easy
 
         for (var i = 0; i < results.length; ++i) state.current_user.relationships[results[i].rel_other_id] = results[i]
+    }
+}
+
+async function set_topics(state) { // update state object with their topics they follow
+    if (state.current_user) {
+        var results = await query(`select topicwatch_name from topicwatches`, [state.current_user.user_id], state)
+        state.current_user.topics = results.map(row => row.topicwatch_name)
     }
 }
 
@@ -2099,7 +2106,7 @@ async function render(state) { /////////////////////////////////////////
 
         if (state.current_user
          && state.current_user.topics
-         && state.current_user.topics[t]) {
+         && state.current_user.topics.indexOf(t) !== -1) {
             var follow = `<span id='follow' >${unfollow_topic_link}</span>`
         }
         else {
