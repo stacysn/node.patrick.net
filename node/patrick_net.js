@@ -971,7 +971,7 @@ async function render(state) { /////////////////////////////////////////
         follow_topic : async function() { // get or turn off emails of posts in a topic; can be called as ajax or full page
 
             let ajax  = intval(_GET('ajax'))
-            let topic = _GET('topic').replace(/\W/, '')
+            let topic = _GET('topic').replace(/\W/, '').toLowerCase()
 
             if (!topic)              return ajax ? send_html(200, '') : die('topic missing')
             if (!state.current_user) return ajax ? send_html(200, '') : die('must be logged in to follow or unfollow')
