@@ -263,12 +263,6 @@ function first_words(string, num) {
     else                                     return firstwords.join(' ')
 }
 
-function text2hashtag(text) { // given some text, pull out first hashtag as link
-    let matches = null
-    if (matches = text.match(/[\s>]#(\w{1,32})/)) return `in <a href='/topic/${matches[1]}'>#${matches[1]}</a>`
-    else                                          return ''
-}
-
 function get_transporter() {
     return NODEMAILER.createTransport({
         host:   CONF.email.host,
@@ -2793,7 +2787,7 @@ async function render(state) { /////////////////////////////////////////
                 else var unread = ''
 
                 let ago           = MOMENT(post.post_modified).fromNow();
-                let hashlink      = text2hashtag(post.post_content)
+                let hashlink      = `in <a href='/topic/${post.post_topic}'>#${post.post_topic}</a>`
                 let imgdiv        = (state.current_user && state.current_user.user_hide_post_list_photos) ? '' : get_first_image(post)
                 let arrowbox_html = arrowbox(post)
                 let extlink       = get_external_link(post)
@@ -2817,9 +2811,9 @@ async function render(state) { /////////////////////////////////////////
                     state.current_user.relationships[post.post_author].rel_i_ban) var hide = `style='display: none'`
                 else var hide = ''
 
-                return `<div class='post' id='post-${post.post_id}' ${hide} >${arrowbox_html}${imgdiv}<b><font size='+1'>${link}</font></b> ${extlink}<br>by 
-                        <a href='/user/${ post.user_name }'>${ post.user_name }</a> ${hashlink} &nbsp; ${latest} ${unread} ${approval_link}
-                        <br>${firstwords}</div>`
+                return `<div class='post' id='post-${post.post_id}' ${hide} >${arrowbox_html}${imgdiv}<b><font size='+1'>${link}</font></b>
+                       ${extlink}<br>by <a href='/user/${ post.user_name }'>${ post.user_name }</a> ${hashlink} &nbsp;
+                       ${latest} ${unread} ${approval_link} <br>${firstwords}</div>`
             })
         }
         else formatted = []
