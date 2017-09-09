@@ -641,7 +641,7 @@ async function render(state) { /////////////////////////////////////////
             post_data.post_approved = state.current_user ? 1 : 0 // not logged in posts go into moderation
 
             if (matches = post_data.post_content.match(/#(\w+)/)) post_data.post_topic = matches[1] // first tag in the post becomes topic
-            else                                                  post_data.post_topic = ''
+            else                                                  post_data.post_topic = 'misc'
 
             if (intval(post_data.post_id)) { // editing old post, do not update post_modified time because it confuses users
                 await query('update posts set ? where post_id=?', [post_data, intval(post_data.post_id)], state)
