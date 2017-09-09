@@ -100,8 +100,8 @@ async function header_data(state) { // data that the page header needs to render
     state.header_data = {
         comments : await get_var(`select count(*) as c from comments`,                                     null, state), // int
         onlines  : await query(`select * from onlines order by online_username`,                           null, state), // obj
-        top3     : await query(`select post_topic, count(*) as c from posts
-                                where length(post_topic) > 0 group by post_topic order by c desc limit 3`, null, state), // obj
+        //top3     : await query(`select post_topic, count(*) as c from posts
+        //                        where length(post_topic) > 0 group by post_topic order by c desc limit 3`, null, state), // obj
         tot      : await get_var(`select count(*) as c from users`,                                        null, state), // int
     }
 }
@@ -195,7 +195,7 @@ async function set_relations(state) { // update state object with their relation
 
 async function set_topics(state) { // update state object with their topics they follow
     if (state.current_user) {
-        var results = await query(`select topicwatch_name from topicwatches`, [state.current_user.user_id], state)
+        var results = await query(`select topicwatch_name from topicwatches where topicwatch_user_id=?`, [state.current_user.user_id], state)
         state.current_user.topics = results.map(row => row.topicwatch_name)
     }
 }
@@ -307,6 +307,7 @@ Number.prototype.number_format = function() {
 
 String.prototype.linkify = function(ref) {
 
+    let hashtagPattern   = /^#(\w+)/gim
     let imagePattern     = /((https?:\/\/[\w$%&~\/.\-;:=,?@\[\]+]*?)\.(jpg|jpeg|gif|gifv|png|bmp))(\s|$)/gim
     let urlPattern       = /\b(https?:\/\/[a-z0-9-+&@#\/%?=~_|!:,.;]*[a-z0-9-+&@#\/%=~_|])(\s|$)/gim // http://, https://
     let pseudoUrlPattern = /(^|[^\/])(www\.[\S]+(\b|$))(\s|$)/gim                                    // www. sans http:// or https://
@@ -320,6 +321,7 @@ String.prototype.linkify = function(ref) {
         .replace(/\r/gim,          '')
         .replace(vimeoPattern,     '<iframe src="//player.vimeo.com/video/$3" width="500" height="375" frameborder="0" webkitallowfullscreen mozallowfullscreen allowfullscreen></iframe>')
         .replace(youtubePattern,   '<iframe width="500" height="375" src="//www.youtube.com/embed/$2$3" allowfullscreen></iframe>')
+        .replace(hashtagPattern,   '<a href="/topic/$1">#$1</a>')
         .replace(imagePattern,     '<img src="$1"> ')
         .replace(urlPattern,       '<a href="$1">$1</a> ')
         .replace(pseudoUrlPattern, '$1<a href="http://$2">$2</a> ')
@@ -637,6 +639,9 @@ async function render(state) { /////////////////////////////////////////
             let post_data           = await collect_post_data_and_trim(state)
             post_data.post_content  = strip_tags(post_data.post_content.linkify()) // remove all but a small set of allowed html tags
             post_data.post_approved = state.current_user ? 1 : 0 // not logged in posts go into moderation
+
+            if (matches = post_data.post_content.match(/#(\w+)/)) post_data.post_topic = matches[1] // first tag in the post becomes topic
+            else                                                  post_data.post_topic = ''
 
             if (intval(post_data.post_id)) { // editing old post, do not update post_modified time because it confuses users
                 await query('update posts set ? where post_id=?', [post_data, intval(post_data.post_id)], state)
@@ -985,6 +990,7 @@ async function render(state) { /////////////////////////////////////////
             if (!valid_nonce())      return ajax ? send_html(200, '') : die(invalid_nonce_message())
 
             if (intval(_GET('undo'))) {
+
                 await query(`delete from topicwatches where topicwatch_name=? and topicwatch_user_id=?`,
                             [topic, state.current_user.user_id], state)
             }
@@ -1291,8 +1297,15 @@ async function render(state) { /////////////////////////////////////////
                                  [ current_user_id, post_id, state.post.postview_want_email ], state)
                 }
 
+                state.post.prev = intval(await get_var(`select max(post_id) as prev from posts where post_topic=? and post_id < ? limit 1`,
+                                                  [state.post.post_topic, state.post.post_id], state))
+
+                state.post.next = intval(await get_var(`select min(post_id) as next from posts where post_topic=? and post_id > ? limit 1`,
+                                                  [state.post.post_topic, state.post.post_id], state))
+
                 let content = html(
                     midpage(
+                        topic_nav(),
                         post(),
                         comment_pagination(),
                         comment_list(), // mysql offset is greatest item number to ignore, next item is first returned
@@ -2095,7 +2108,7 @@ async function render(state) { /////////////////////////////////////////
 
         let b = `<button type="button" class="btn btn-default btn-xs" title="get emails of new posts in ${t}" >follow ${t}</button>`
 
-        var unfollow_topic_link = `<span id='unfollow_topic_link' >following ${t}<sup>
+        var unfollow_topic_link = `<span id='unfollow_topic_link' >following<sup>
                              <a href='#' onclick="$.get('/follow_topic?topic=${t}&undo=1&${create_nonce_parms()}&ajax=1',
                              function() { document.getElementById('follow').innerHTML = document.getElementById('follow_topic_link').innerHTML }); return false" >x</a></sup></span>`
 
@@ -2302,7 +2315,7 @@ async function render(state) { /////////////////////////////////////////
     }
 
     function h1() {
-        return `<h1>${ state.message }</h1>`
+        return `<h1 style='display: inline;' >${ state.message }</h1>`
     }
 
     function header() {
@@ -3019,9 +3032,14 @@ async function render(state) { /////////////////////////////////////////
         return `${ state.text || '' }`
     }
 
-    function top_topics() {
-        var formatted = state.header_data.top3.map(item => `<a href='/topic/${ item.post_topic }'>#${ item.post_topic }</a>`)
-        return formatted.join(' ') + ` <a href='/random'>#random</a> <a href='/topics/'>more&raquo;</a>`
+    function top_topics() { // try just statically coding these to save 26ms on each hit
+        //var formatted = state.header_data.top3.map(item => `<a href='/topic/${ item.post_topic }'>#${ item.post_topic }</a>`)
+        //return formatted.join(' ') + ` <a href='/random'>#random</a> <a href='/topics/'>more&raquo;</a>`
+        return `
+            <a href='/topic/housing'>#housing</a> 
+            <a href='/topic/investing'>#investing</a> 
+            <a href='/topic/politics'>#politics</a> 
+            <a href='/random'>#random</a> <a href='/topics/'>more&raquo;</a>`
     }
 
     function topic_list() {
@@ -3032,6 +3050,13 @@ async function render(state) { /////////////////////////////////////////
 
             return formatted.join(' ')
         }
+    }
+
+    function topic_nav() {
+        let prev_link = state.post.prev ? `&laquo;<a href='/post/${state.post.prev}'>prev</a> &nbsp;` : ''
+        let next_link = state.post.next ? `&nbsp; <a href='/post/${state.post.next}'>next</a>&raquo;` : ''
+
+        return `${prev_link} <a href='/topic/${state.post.post_topic}'>#${state.post.post_topic}</a> ${next_link}`
     }
 
     function unread_comments_icon(post, last_view) { // return the blinky icon if there are unread comments in a post
