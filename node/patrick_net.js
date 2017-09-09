@@ -2323,16 +2323,18 @@ async function render(state) { /////////////////////////////////////////
         var hashtag = ''
 
         // display hashtag in title if we are on a post in that topic, or in the index for that topic
-        if (state.post && state.post.post_topic) hashtag = `<b><a href='/topic/${state.post.post_topic}'>#${state.post.post_topic}</a></b>`
+        if (state.post && state.post.post_topic) hashtag =
+            `<a href='/topic/${state.post.post_topic}'><h1 class='sitename' >#${state.post.post_topic}</h1></a>`
 
         if (state.page === 'topic') {
             var topic = segments(state.req.url)[2] // like /topic/housing
-            hashtag = `<b><a href='/topic/${topic}'>#${topic}</a></b>`
+            hashtag = `<a href='/topic/${topic}'><h1 class='sitename' >#${topic}</h1></a>`
         }
 
         return `<div class='comment' >
             <div style='float:right' >${ icon_or_loginprompt(state) }</div>
-            <a href='/' ><h1 class='sitename' title='back to home page' >${ CONF.domain }</h1></a> ${hashtag}<br>
+            <a href='/' ><h1 class='sitename' title='back to home page' >${ CONF.domain }</h1></a> &nbsp; ${hashtag}
+            <br>
             <font size='-1'>${ top_topics() + '<br>' + brag() + '</font><br>' + new_post_button() }
             </div>`
     }
