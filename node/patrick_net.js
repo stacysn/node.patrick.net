@@ -2133,7 +2133,7 @@ async function render(state) { /////////////////////////////////////////
 
         let b = `<button type="button" class="btn btn-default btn-xs" title="get emails of new posts by ${u.user_name}" >follow ${u.user_name}</button>`
 
-        var unfollow_user_link = `<span id='unfollow_user_link' >following ${u.user_name}<sup>
+        var unfollow_user_link = `<span id='unfollow_user_link' >following<sup>
                              <a href='#' onclick="$.get('/follow_user?other_id=${u.user_id}&undo=1&${create_nonce_parms()}&ajax=1',
                              function() { document.getElementById('follow').innerHTML = document.getElementById('follow_user_link').innerHTML }); return false" >x</a></sup></span>`
 
