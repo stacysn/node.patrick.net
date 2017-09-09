@@ -3056,7 +3056,7 @@ async function render(state) { /////////////////////////////////////////
         let prev_link = state.post.prev ? `&laquo;<a href='/post/${state.post.prev}'>prev</a> &nbsp;` : ''
         let next_link = state.post.next ? `&nbsp; <a href='/post/${state.post.next}'>next</a>&raquo;` : ''
 
-        return `${prev_link} <a href='/topic/${state.post.post_topic}'>#${state.post.post_topic}</a> ${next_link}`
+        return `${prev_link} <b><a href='/topic/${state.post.post_topic}'>#${state.post.post_topic}</a></b> ${next_link}`
     }
 
     function unread_comments_icon(post, last_view) { // return the blinky icon if there are unread comments in a post
