@@ -2313,9 +2313,20 @@ async function render(state) { /////////////////////////////////////////
     }
 
     function header() {
+
+        var hashtag = ''
+
+        // display hashtag in title if we are on a post in that topic, or in the index for that topic
+        if (state.post && state.post.post_topic) hashtag = `<b><a href='/topic/${state.post.post_topic}'>#${state.post.post_topic}</a></b>`
+
+        if (state.page === 'topic') {
+            var topic = segments(state.req.url)[2] // like /topic/housing
+            hashtag = `<b><a href='/topic/${topic}'>#${topic}</a></b>`
+        }
+
         return `<div class='comment' >
             <div style='float:right' >${ icon_or_loginprompt(state) }</div>
-            <a href='/' ><h1 class='sitename' title='back to home page' >${ CONF.domain }</h1></a><br>
+            <a href='/' ><h1 class='sitename' title='back to home page' >${ CONF.domain }</h1></a> ${hashtag}<br>
             <font size='-1'>${ top_topics() + '<br>' + brag() + '</font><br>' + new_post_button() }
             </div>`
     }
@@ -3047,10 +3058,10 @@ async function render(state) { /////////////////////////////////////////
     }
 
     function topic_nav() {
-        let prev_link = state.post.prev ? `&laquo;<a href='/post/${state.post.prev}'>prev</a> &nbsp;` : ''
-        let next_link = state.post.next ? `&nbsp; <a href='/post/${state.post.next}'>next</a>&raquo;` : ''
+        let prev_link = state.post.prev ? `&laquo; <a href='/post/${state.post.prev}'>prev</a>  &nbsp;` : ''
+        let next_link = state.post.next ? `&nbsp;  <a href='/post/${state.post.next}'>next</a> &raquo;` : ''
 
-        return `${prev_link} <b><a href='/topic/${state.post.post_topic}'>#${state.post.post_topic}</a></b> ${next_link}`
+        return `<b>${prev_link} ${next_link}</b>`
     }
 
     function unread_comments_icon(post, last_view) { // return the blinky icon if there are unread comments in a post
