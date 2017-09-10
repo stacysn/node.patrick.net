@@ -3226,17 +3226,17 @@ async function render(state) { /////////////////////////////////////////
     if (typeof pages[state.page] === 'function') { // hit the db iff the request is for a valid url
         try {
             await get_connection_from_pool(state)
-            await block_countries(state)
             await block_nuked(state)
+            await block_countries(state)
             await set_user(state)
             await header_data(state)
             await pages[state.page](state)
         }
         catch(e) {
-            console.log(`${Date()} ${state.req.url} FAILED with headers ${JSON.stringify(state.req.headers)}`)
-            return send_html(500, `node server error: ${e}`)
+            console.log(`${Date()} ${state.req.url} failed with error message: ${e.message}`)
+            return send_html(intval(e.code) || 500, `node server says: ${e.message}`)
         }
     }
-    else return send_html(404, `404: ${state.page} was not found`)
+    else return send_html(404, `${state.page} was not found`)
 
 } // end of render()
