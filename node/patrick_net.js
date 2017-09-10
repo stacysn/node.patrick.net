@@ -302,8 +302,8 @@ Number.prototype.number_format = function() {
 String.prototype.linkify = function(ref) {
 
     let hashtagPattern   = /^#(\w+)/gim
-    let boldPattern      = /\*(.+)\*/gim
-    let italicPattern    = /_(.+)_/gim
+    let boldPattern      = / \*(.+)\*/gim
+    let italicPattern    = / _(.+)_/gim
     let blockquotePattern= /""(.+)""/gim
     let imagePattern     = /((https?:\/\/[\w$%&~\/.\-;:=,?@\[\]+]*?)\.(jpg|jpeg|gif|gifv|png|bmp))(\s|$)/gim
     let urlPattern       = /\b(https?:\/\/[a-z0-9-+&@#\/%?=~_|!:,.;]*[a-z0-9-+&@#\/%=~_|])(\s|$)/gim // http://, https://
@@ -324,8 +324,8 @@ String.prototype.linkify = function(ref) {
         .replace(pseudoUrlPattern, '$1<a href="http://$2">$2</a> ')
         .replace(emailpostPattern, '<a href="mailto:$1">$1</a> ')
         .replace(linebreakPattern, '<br>')
-        .replace(boldPattern,      '<b>$1</b>')
-        .replace(italicPattern,    '<i>$1</i>')
+        .replace(boldPattern,      ' <b>$1</b>')
+        .replace(italicPattern,    ' <i>$1</i>')
         .replace(blockquotePattern,'<blockquote>$1</blockquote>')
         .replace(/\0/g,            '') // do not allow null in strings
 
