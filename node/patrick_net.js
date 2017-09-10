@@ -2060,7 +2060,7 @@ async function render(state) { /////////////////////////////////////////
           <fieldset> 
           <input type='text'   name='s'      value='' size='17' /> 
           <input type='hidden' name='offset' value='0' /> 
-          <input type='submit' name='submit' value='Search comments &raquo;' />  
+          <input type='submit'               value='Search comments &raquo;' />  
           </fieldset> 
         </form><p>`
     }
@@ -2884,7 +2884,7 @@ async function render(state) { /////////////////////////////////////////
         <h2>about you</h2>
         <textarea class='form-control' rows='3' name='user_aboutyou' >${u.user_aboutyou}</textarea><br>
 
-        <input type='submit' class='btn btn-success btn-sm' value='Save' name='submit' />
+        <input type='submit' class='btn btn-success btn-sm' value='Save' />
         </form><p><h3>ignored users</h3>(click to unignore that user)<br>`
 
         let ignored_users = state.current_user.relationships.filter(rel => rel.rel_i_ban)
@@ -3240,11 +3240,12 @@ async function render(state) { /////////////////////////////////////////
             await pages[state.page](state)
         }
         catch(e) {
-            console.log(e)
-            send_html(500, e.message)
+            console.log(Date() + e)
+            send_html(500, e.message || JSON.stringify(e))
         }
     }
     else {
+        console.log(`not a function: ${state.page} so attempting fallback to number or title`)
         var matches
         if (matches = segments(state.req.url)[1].match(/^(\d+)$/)) { // legacy url starts with a post number
             redirect(`/post/${matches[1]}`, 301)                
