@@ -639,6 +639,7 @@ async function render(state) { /////////////////////////////////////////
             let post_data           = await collect_post_data_and_trim(state)
             post_data.post_content  = strip_tags(post_data.post_content.linkify()) // remove all but a small set of allowed html tags
             post_data.post_approved = state.current_user ? 1 : 0 // not logged in posts go into moderation
+            delete post_data.submit
 
             if (matches = post_data.post_content.match(/#(\w+)/)) post_data.post_topic = matches[1] // first tag in the post becomes topic
             else                                                  post_data.post_topic = 'misc'
@@ -3240,7 +3241,7 @@ async function render(state) { /////////////////////////////////////////
             await pages[state.page](state)
         }
         catch(e) {
-            console.log(Date() + e)
+            console.log(`${Date()} ${e} ${e.stack}`)
             send_html(500, e.message || JSON.stringify(e))
         }
     }
