@@ -1925,6 +1925,8 @@ async function render(state) { /////////////////////////////////////////
 
         var offset = intval(_GET('offset'))
 
+        c.user_name = c.user_name || 'anonymous' // so we don't display 'null' in case the comment is anonymous
+
         var quote = `<a href="#commentform"
                       onclick="addquote('${c.comment_post_id}', '${offset}', '${c.comment_id}', '${c.user_name}'); return false;"
                       title="select some text then click this to quote" >quote</a>`
@@ -2717,6 +2719,8 @@ async function render(state) { /////////////////////////////////////////
             let confirm_del = `onClick="javascript:return confirm('Really delete?')"`
             delete_link = ` &nbsp; <a href='/delete_post?post_id=${state.post.post_id}&${nonce_parms}' ${confirm_del} >delete</a> &nbsp;` 
         }
+
+        state.post.user_name = state.post.user_name || 'anonymous' // so we don't display 'null' in case the post is anonymous
 
         return `<div class='comment' >${arrowbox_html} ${icon} <h2 style='display:inline' >${ link }</h2>
                 <p>By ${user_link(state.post)} ${follow_user_button(state.post)} &nbsp; ${format_date(state.post.post_date)} ${uncivil}
