@@ -1032,6 +1032,12 @@ async function render(state) { /////////////////////////////////////////
 
             await query(`update users set user_followers=(select count(*) from relationships where rel_i_follow > 0 and rel_other_id=?)
                          where user_id=?`, [other_id, other_id], state)
+
+            // mail the user who has just been followed
+            let u = await get_userrow(other_id)
+            mail(u.user_email, `you have a new follower on ${CONF.domain}`,
+                `<a href='https://${CONF.domain}/user/${state.current_user.user_name}'>${state.current_user.user_name}</a> is now following
+                 you on ${CONF.domain} and will get emails of your new posts`)
         },
 
         home : async function () {
