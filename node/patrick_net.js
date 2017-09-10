@@ -650,7 +650,12 @@ async function render(state) { /////////////////////////////////////////
             }
             else { // new post
                 post_data.post_author = state.current_user ? state.current_user.user_id : 0
-                var results = await query('insert into posts set ?, post_modified=now()', post_data, state)
+                try {
+                    var results = await query('insert into posts set ?, post_modified=now()', post_data, state)
+                }
+                catch (e) {
+                    return die(e)
+                }
                 var p = results.insertId
             }
 
@@ -1152,7 +1157,7 @@ async function render(state) { /////////////////////////////////////////
                     let subject  = `${state.current_user.user_name} liked your comment`
 
                     let message = `<html><body><head><base href='https://${CONF.domain}/' ></head>
-                    <a href='https://${CONF.domain}/users/${state.current_user.user_name}' >${state.current_user.user_name}</a>
+                    <a href='https://${CONF.domain}/user/${state.current_user.user_name}' >${state.current_user.user_name}</a>
                         liked the comment you made here:<p>\r\n\r\n
                     <a href='${comment_url}' >${comment_url}</a><p>${comment_row.comment_content}<p>\r\n\r\n
                     <font size='-1'>Stop getting <a href='https://${CONF.domain}/edit_profile#user_summonable'>notified of likes</a>
@@ -1197,7 +1202,7 @@ async function render(state) { /////////////////////////////////////////
                     let subject  = `${state.current_user.user_name} liked your post`
 
                     let message = `<html><body><head><base href='https://${CONF.domain}/' ></head>
-                    <a href='https://${CONF.domain}/users/${state.current_user.user_name}' >${state.current_user.user_name}</a>
+                    <a href='https://${CONF.domain}/user/${state.current_user.user_name}' >${state.current_user.user_name}</a>
                         liked the post you made here:<p>\r\n\r\n
                     <a href='${post_url}' >${post_url}</a><p>${post_row.post_content}<p>\r\n\r\n
                     <font size='-1'>Stop getting <a href='https://${CONF.domain}/edit_profile#user_summonable'>notified of likes</a>
@@ -1316,20 +1321,6 @@ async function render(state) { /////////////////////////////////////////
                 )
 
                 send_html(200, content)
-            }
-        },
-
-        post_by_title : async function() { // check to see if url like /some%20topic is actually a valid post title
-
-            let path    = URL.parse(state.req.url).path.replace(/\?.*/,'').split('/')
-            let title   = decodeURIComponent(strip_tags(path[2]).substring(0,255)).replace(/\+/g, ' ')
-            let post_id = await get_var(`select post_id from posts where post_title = ?`, [title], state)
-
-            if (post_id) redirect(`/post/${post_id}`, 301)
-            else {
-                let err = `${state.req.url} is not a valid url`
-                console.log(err)
-                send_html(404, err)
             }
         },
 
@@ -1618,7 +1609,7 @@ async function render(state) { /////////////////////////////////////////
             let user_name = decodeURIComponent(segments(state.req.url)[2]).replace(/[^\w._ -]/g, '') // like /user/Patrick
             let u = await get_row(`select * from users where user_name=?`, [user_name], state)
 
-            if (!u) return die(`no such user: ${user_name}`)
+            if (!u) return die(`no such user: ${user_name} url is ${state.req.url}`)
 
             // left joins to also get each post's viewing and voting data for the current user if there is one
             let sql = `select sql_calc_found_rows * from posts
@@ -1762,12 +1753,13 @@ async function render(state) { /////////////////////////////////////////
 
     function admin_user(u) { // links to administer a user
 
+        if (!state.current_user)                                    return ``
         if (state.current_user && state.current_user.user_id !== 1) return ``
 
         return `<hr>
             <a href='mailto:${u.user_email}'>email ${u.user_email}</a> &nbsp;
             <a href='https://whatismyipaddress.com/ip/${u.user_last_comment_ip}'>${u.user_last_comment_ip}</a> &nbsp;
-            <a href='/user/${u.user_name}&${create_nonce_parms()}&become=1' >become ${u.user_name}</a> &nbsp;
+            <a href='/user/${u.user_name}?become=1&${create_nonce_parms()}' >become ${u.user_name}</a> &nbsp;
             <a href='/nuke?nuke_id=${u.user_id}&${create_nonce_parms()}' onClick='javascript:return confirm("Really?")' >nuke</a> &nbsp;
             <hr>`
     }
@@ -3185,8 +3177,8 @@ async function render(state) { /////////////////////////////////////////
         <th class='text-right' ><a href='/users?ob=user_dislikes&d=${ i }'   title='number of dislikes user got' >Dislikes</a></th>
         <th class='text-right' ><a href='/users?ob=user_friends&d=${ i }'    title='order by number of friends' >Friends</a></th>
         <th class='text-right' ><a href='/users?ob=user_followers&d=${ i }'  title='order by number of followers' >Followers</a></th>
-        <th class='text-right' ><a href='/users?ob=user_ignoredby&d=${ i }'  title='how many people are ignoring user' >Ignored By</a></th>
-        <th class='text-right' ><a href='/users?ob=user_ignoring&d=${ i }'   title='how many people user is ignoring' >Ignoring</a></th>
+        <th class='text-right' ><a href='/users?ob=user_bannedby&d=${ i }'   title='how many people are ignoring user' >Ignored By</a></th>
+        <th class='text-right' ><a href='/users?ob=user_banning&d=${ i }'    title='how many people user is ignoring' >Ignoring</a></th>
         </tr>`
 
         if (state.users.length) {
@@ -3241,22 +3233,10 @@ async function render(state) { /////////////////////////////////////////
             await pages[state.page](state)
         }
         catch(e) {
-            console.log(`${Date()} ${e} ${e.stack}`)
-            send_html(500, e.message || JSON.stringify(e))
+            console.log(`${Date()} ${state.req.url} FAILED with headers ${JSON.stringify(state.req.headers)}`)
+            return send_html(500, `node server error: ${e}`)
         }
     }
-    else {
-        var matches
-        if (matches = segments(state.req.url)[1].match(/^(\d+)$/)) { // legacy url starts with a post number
-            redirect(`/post/${matches[1]}`, 301)                
-        }
-        else {
-            // legacy url starts with some word other than one of our functions
-            // we will check to see if it's a valid post title, and if so, redirect them to that post
-            matches = URL.parse(state.req.url).path.replace(/\?.*/,'').split('/')[1].match(/(.*)/)
-            console.log(`not a function: ${state.page} so attempting fallback to ${matches[1]}`)
-            redirect(`/post_by_title/${matches[1]}`, 301)
-        }
-    }
+    else return send_html(404, `404: ${state.page} was not found`)
 
 } // end of render()
