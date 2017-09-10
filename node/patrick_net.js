@@ -3246,7 +3246,6 @@ async function render(state) { /////////////////////////////////////////
         }
     }
     else {
-        console.log(`not a function: ${state.page} so attempting fallback to number or title`)
         var matches
         if (matches = segments(state.req.url)[1].match(/^(\d+)$/)) { // legacy url starts with a post number
             redirect(`/post/${matches[1]}`, 301)                
@@ -3255,6 +3254,7 @@ async function render(state) { /////////////////////////////////////////
             // legacy url starts with some word other than one of our functions
             // we will check to see if it's a valid post title, and if so, redirect them to that post
             matches = URL.parse(state.req.url).path.replace(/\?.*/,'').split('/')[1].match(/(.*)/)
+            console.log(`not a function: ${state.page} so attempting fallback to ${matches[1]}`)
             redirect(`/post_by_title/${matches[1]}`, 301)
         }
     }
