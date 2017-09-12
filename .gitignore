@@ -1,5 +1,5 @@
 *.swp
 /node/conf.json*
 !/node/conf.json.dist
-html/images/
+html/*
 node/node_modules/
