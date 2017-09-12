@@ -2092,7 +2092,7 @@ async function render(state) { /////////////////////////////////////////
 
     function die(message) {
 
-        console.log(`died because: ${message}`)
+        console.log(`${Date()} ${state.req.url} died because: ${message}`)
 
         state.message = message
 
@@ -2798,7 +2798,7 @@ async function render(state) { /////////////////////////////////////////
                 if (!state.current_user && post.post_title.match(/thunderdome/gi)) return '' // hide thunderdome posts if not logged in
                 if (!state.current_user && post.post_nsfw)                         return '' // hide porn posts if not logged in
 
-                net = post.post_likes - post.post_dislikes
+                let net = post.post_likes - post.post_dislikes
 
                 if (state.current_user) { // user is logged in
                     if (!post.postview_last_view)
