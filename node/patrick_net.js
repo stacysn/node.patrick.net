@@ -49,6 +49,7 @@ function run(req, res) { // handle a single http request
         queries : [],
         req     : req,
         res     : res,
+        start_t : Date.now(),
     }
 
     render(state)
@@ -665,6 +666,7 @@ async function render(state) { /////////////////////////////////////////
 
                 return die(`The moderator will approve your post soon`)
             }
+            else await update_prev_next(post_data.post_topic, p)
 
             redirect(`/post/${p}`)
         },
@@ -864,6 +866,10 @@ async function render(state) { /////////////////////////////////////////
                 if ((state.current_user.user_id === post.post_author) || (state.current_user.user_id === 1)) {
 
                     let results = await query(`delete from posts where post_id = ?`, [post_id], state)
+
+                    await update_prev_next(post.post_topic, post.post_prev_in_topic)
+                    await update_prev_next(post.post_topic, post.post_next_in_topic)
+
                     return die(`${results.affectedRows} post deleted`)
                 }
                 else return die('permission to delete post denied')
@@ -873,7 +879,8 @@ async function render(state) { /////////////////////////////////////////
 
         dislike : async function() { // given a comment or post, downvote it
 
-            if (!state.current_user) return `<a href='#' onclick="midpage.innerHTML = registerform.innerHTML; return false" >Please register</a>`
+            if (!state.current_user)
+                return send_html(200, `<a href='#' onclick="midpage.innerHTML = registerform.innerHTML; return false" >Please register</a>`)
 
             if (intval(_GET('comment_id'))) {
                 let comment_id = intval(_GET('comment_id'))
@@ -1126,7 +1133,8 @@ async function render(state) { /////////////////////////////////////////
 
         like : async function() { // given a comment or post, upvote it
 
-            if (!state.current_user) return `<a href='#' onclick="midpage.innerHTML = registerform.innerHTML; return false" >Please register</a>`
+            if (!state.current_user)
+                return send_html(200, `<a href='#' onclick="midpage.innerHTML = registerform.innerHTML; return false" >Please register</a>`)
 
             if (intval(_GET('comment_id'))) {
                 let comment_id = intval(_GET('comment_id'))
@@ -1309,11 +1317,10 @@ async function render(state) { /////////////////////////////////////////
                                  [ current_user_id, post_id, state.post.postview_want_email ], state)
                 }
 
-                state.post.prev = intval(await get_var(`select max(post_id) as prev from posts where post_topic=? and post_id < ? limit 1`,
-                                                  [state.post.post_topic, state.post.post_id], state))
-
-                state.post.next = intval(await get_var(`select min(post_id) as next from posts where post_topic=? and post_id > ? limit 1`,
-                                                  [state.post.post_topic, state.post.post_id], state))
+                if (null === state.post.post_prev_in_topic || null === state.post.post_next_in_topic) { // update if not filled in yet
+                    [state.post.post_prev_in_topic, state.post.post_next_in_topic] =
+                        await update_prev_next(state.post.post_topic, state.post.post_id)
+                }
 
                 let content = html(
                     midpage(
@@ -2434,7 +2441,8 @@ async function render(state) { /////////////////////////////////////////
             ${ footer() }
             </div>
         </body>
-        <script async src="/jquery.min.js"></script><!-- ${'\n' + queries + '\n'} -->
+        <script async src="/jquery.min.js"></script>
+        <!-- ${'\n' + queries + '\n'}\n${Date.now() - state.start_t} ms total -->
         </html>`
     }
 
@@ -2690,7 +2698,7 @@ async function render(state) { /////////////////////////////////////////
 
     function post() { // format a single post for display
 
-        let uncivil         = ''
+        let uncivil       = ''
         let arrowbox_html = arrowbox(state.post)
         let icon          = user_icon(state.post, 1, `align='left' hspace='5' vspace='2'`)
         let link          = post_link(state.post)
@@ -2791,6 +2799,10 @@ async function render(state) { /////////////////////////////////////////
     function post_list() { // format a list of posts from whatever source; pass in only a limited number, because all will display
 
         if (state.posts) {
+            let nonce_parms = create_nonce_parms()
+            let moderation = 0
+            if (URL.parse(state.req.url).pathname.match(/post_moderation/) && (state.current_user.user_level === 4)) moderation = 1
+            
             var formatted = state.posts.map(post => {
 
                 var link = post_link(post)
@@ -2815,8 +2827,8 @@ async function render(state) { /////////////////////////////////////////
                 let extlink       = get_external_link(post)
                 let firstwords    = `<font size='-1'>${first_words(post.post_content, 30)}</font>`
 
-                if (URL.parse(state.req.url).pathname.match(/post_moderation/) && (state.current_user.user_level === 4)) {
-                    var approval_link = `<a href='#' onclick="$.get('/approve_post?post_id=${ post.post_id }&${create_nonce_parms()}', function() { $('#post-${ post.post_id }').remove() }); return false">approve</a>`
+                if (moderation) {
+                    var approval_link = `<a href='#' onclick="$.get('/approve_post?post_id=${ post.post_id }&${nonce_parms}', function() { $('#post-${ post.post_id }').remove() }); return false">approve</a>`
                 }
                 else var approval_link = ''
 
@@ -3069,8 +3081,8 @@ async function render(state) { /////////////////////////////////////////
     }
 
     function topic_nav() {
-        let prev_link = state.post.prev ? `&laquo; <a href='/post/${state.post.prev}'>prev</a>  &nbsp;` : ''
-        let next_link = state.post.next ? `&nbsp;  <a href='/post/${state.post.next}'>next</a> &raquo;` : ''
+        let prev_link = state.post.post_prev_in_topic ? `&laquo; <a href='/post/${state.post.post_prev_in_topic}'>prev</a>  &nbsp;` : ''
+        let next_link = state.post.post_next_in_topic ? `&nbsp;  <a href='/post/${state.post.post_next_in_topic}'>next</a> &raquo;` : ''
 
         return `<b>${prev_link} ${next_link}</b>`
     }
@@ -3095,6 +3107,21 @@ async function render(state) { /////////////////////////////////////////
             return unread
         }
         else return ''
+    }
+
+    async function update_prev_next(post_topic, post_id) { // slow, so do this only when post is changed or the prev or next is null
+
+        if (!post_topic || !post_id) return
+
+        let prev = intval(await get_var(`select max(post_id) as prev from posts where post_topic=? and post_id < ? limit 1`,
+                                          [post_topic, post_id], state))
+
+        let next = intval(await get_var(`select min(post_id) as next from posts where post_topic=? and post_id > ? limit 1`,
+                                          [post_topic, post_id], state))
+
+        await query(`update posts set post_prev_in_topic=?, post_next_in_topic=? where post_id=?`, [prev, next, post_id], state)
+
+        return [prev, next]
     }
 
     function upload_form() {
