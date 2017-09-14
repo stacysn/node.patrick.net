@@ -1298,8 +1298,8 @@ async function render(state) { /////////////////////////////////////////
                                         left join users on user_id=post_author
                                         where post_id=?`, [current_user_id, current_user_id, post_id], state)
 
-            if (!state.post)               return die(`No post with id "${post_id}"`)
-            if (!state.post.post_approved) return die(`That post is waiting for moderation`)
+            if (!state.post)               { await repair_referer(); return die(`No post with id "${post_id}"`) }
+            if (!state.post.post_approved) { await repair_referer(); return die(`That post is waiting for moderation`) }
 
             state.comments            = await post_comment_list(state.post) // pick up the comment list for this post
             state.comments.found_rows = await sql_calc_found_rows()
@@ -2937,6 +2937,17 @@ async function render(state) { /////////////////////////////////////////
             </form>
             <script type="text/javascript">document.getElementById('user_name').focus();</script>
         </div>`
+    }
+
+    async function repair_referer() { // look at referer to a bad post; if it exist, call update_prev_next() on that
+
+        if (matches = state.req.headers.referer.match(/\/post\/(\d+)/m)) {
+            var referring_post_id = intval(matches[1])
+
+            var post = await get_row(`select * from posts where post_id=?`, [referring_post_id], state)
+
+            if (post) await update_prev_next(post.post_topic, post.post_id)
+        }
     }
 
     async function reset_latest_comment(post_id) { // reset post table data about latest comment, esp post_modified time
