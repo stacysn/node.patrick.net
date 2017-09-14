@@ -3113,11 +3113,11 @@ async function render(state) { /////////////////////////////////////////
 
         if (!post_topic || !post_id) return
 
-        let prev = intval(await get_var(`select max(post_id) as prev from posts where post_topic=? and post_id < ? limit 1`,
-                                          [post_topic, post_id], state))
+        let prev = intval(await get_var(`select max(post_id) as prev from posts
+                                         where post_topic=? and post_id < ? and post_approved=1 limit 1`, [post_topic, post_id], state))
 
-        let next = intval(await get_var(`select min(post_id) as next from posts where post_topic=? and post_id > ? limit 1`,
-                                          [post_topic, post_id], state))
+        let next = intval(await get_var(`select min(post_id) as next from posts
+                                         where post_topic=? and post_id > ? and post_approved=1 limit 1`, [post_topic, post_id], state))
 
         await query(`update posts set post_prev_in_topic=?, post_next_in_topic=? where post_id=?`, [prev, next, post_id], state)
 
