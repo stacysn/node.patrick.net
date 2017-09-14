@@ -2347,9 +2347,13 @@ async function render(state) { /////////////////////////////////////////
 
     function html(...args) {
 
-        var queries = state.queries.sortByProp('ms').map( (item) => { return `${ item.ms }ms ${ item.sql }` }).join('\n')
+        var db_total_ms = 0
+        var queries = state.queries.sortByProp('ms').map( (item) => {
+            db_total_ms += item.ms
+            return `${ item.ms }ms ${ item.sql }`
+        }).join('\n')
 
-        let title = state.post ? state.post.post_title : CONF.domain
+        var title = state.post ? state.post.post_title : CONF.domain
 
         return `<!DOCTYPE html><html lang="en">
         <head>
@@ -2440,7 +2444,7 @@ async function render(state) { /////////////////////////////////////////
             </div>
         </body>
         <script async src="/jquery.min.js"></script>
-        <!-- ${'\n' + queries + '\n'}\n${Date.now() - state.start_t} ms total -->
+        <!-- ${'\n' + queries + '\n'}\n${db_total_ms} ms db\n${Date.now() - state.start_t} ms total time -->
         </html>`
     }
 
