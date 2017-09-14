@@ -1318,8 +1318,8 @@ async function render(state) { /////////////////////////////////////////
                              [ current_user_id, post_id, state.post.postview_want_email ], state)
             }
 
-            if (null === state.post.post_prev_in_topic || null === state.post.post_next_in_topic) { // update if not filled in yet
-                [state.post.post_prev_in_topic, state.post.post_next_in_topic] =
+            if (!state.post.post_prev_in_topic || !state.post.post_next_in_topic) {
+                [state.post.post_prev_in_topic,    state.post.post_next_in_topic] =
                     await update_prev_next(state.post.post_topic, state.post.post_id)
             }
 
