@@ -3277,7 +3277,7 @@ async function render(state) { /////////////////////////////////////////
         try {
             await get_connection_from_pool(state)
             await block_nuked(state)
-            await block_countries(state)
+            //await block_countries(state) // comment this out to save the 50ms and see if we get extra spam
             await set_user(state)
             await header_data(state)
             await pages[state.page](state)
