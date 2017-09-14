@@ -1298,43 +1298,43 @@ async function render(state) { /////////////////////////////////////////
                                         left join users on user_id=post_author
                                         where post_id=?`, [current_user_id, current_user_id, post_id], state)
 
-            if (!state.post) return send_html(404, `No post with id "${post_id}"`)
-            else {
-                state.comments            = await post_comment_list(state.post) // pick up the comment list for this post
-                state.comments.found_rows = await sql_calc_found_rows()
-                state.post.watchers       = await get_var(`select count(*) as c from postviews
-                                                           where postview_post_id=? and postview_want_email=1`, [post_id], state)
+            if (!state.post)               return die(`No post with id "${post_id}"`)
+            if (!state.post.post_approved) return die(`That post is waiting for moderation`)
 
-                state.post.post_views++ // increment here for display and in db on next line as record
-                await query(`update posts set post_views = ? where post_id=?`, [state.post.post_views, post_id], state)
+            state.comments            = await post_comment_list(state.post) // pick up the comment list for this post
+            state.comments.found_rows = await sql_calc_found_rows()
+            state.post.watchers       = await get_var(`select count(*) as c from postviews
+                                                       where postview_post_id=? and postview_want_email=1`, [post_id], state)
 
-                if (current_user_id) {
-                    state.post.postview_want_email = state.post.postview_want_email || 0 // keep as 1 or 0 from db; set to 0 if null in db
-                    if( '0' == _GET('want_email') ) state.post.postview_want_email = 0
+            state.post.post_views++ // increment here for display and in db on next line as record
+            await query(`update posts set post_views = ? where post_id=?`, [state.post.post_views, post_id], state)
 
-                    await query(`replace into postviews set
-                                 postview_user_id=?, postview_post_id=?, postview_last_view=now(), postview_want_email=?`,
-                                 [ current_user_id, post_id, state.post.postview_want_email ], state)
-                }
+            if (current_user_id) {
+                state.post.postview_want_email = state.post.postview_want_email || 0 // keep as 1 or 0 from db; set to 0 if null in db
+                if( '0' == _GET('want_email') ) state.post.postview_want_email = 0
 
-                if (null === state.post.post_prev_in_topic || null === state.post.post_next_in_topic) { // update if not filled in yet
-                    [state.post.post_prev_in_topic, state.post.post_next_in_topic] =
-                        await update_prev_next(state.post.post_topic, state.post.post_id)
-                }
-
-                let content = html(
-                    midpage(
-                        topic_nav(),
-                        post(),
-                        comment_pagination(),
-                        comment_list(), // mysql offset is greatest item number to ignore, next item is first returned
-                        comment_pagination(),
-                        comment_box()
-                    )
-                )
-
-                send_html(200, content)
+                await query(`replace into postviews set
+                             postview_user_id=?, postview_post_id=?, postview_last_view=now(), postview_want_email=?`,
+                             [ current_user_id, post_id, state.post.postview_want_email ], state)
             }
+
+            if (null === state.post.post_prev_in_topic || null === state.post.post_next_in_topic) { // update if not filled in yet
+                [state.post.post_prev_in_topic, state.post.post_next_in_topic] =
+                    await update_prev_next(state.post.post_topic, state.post.post_id)
+            }
+
+            let content = html(
+                midpage(
+                    topic_nav(),
+                    post(),
+                    comment_pagination(),
+                    comment_list(), // mysql offset is greatest item number to ignore, next item is first returned
+                    comment_pagination(),
+                    comment_box()
+                )
+            )
+
+            send_html(200, content)
         },
 
         post_login : async function() {
@@ -2098,8 +2098,6 @@ async function render(state) { /////////////////////////////////////////
     }
 
     function die(message) {
-
-        console.log(`${Date()} ${state.req.url} died because: ${message}`)
 
         state.message = message
 
