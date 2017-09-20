@@ -56,3 +56,21 @@ it('should get logged in page', function (done) {
         done()
     })
 })
+
+it('should create a post', function (done) {
+
+    var options = {
+        method  : 'POST',
+        url     : base_url + '/accept_post',
+        form    : {
+            post_title   : 'test post ' + Math.random(),
+            post_content : Math.random() 
+        },
+    }
+
+    request.post(options, function (err, resp, body) {
+        assert.ok(!err, 'no error')
+        done()
+    })
+})
+
