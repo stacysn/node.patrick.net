@@ -1236,7 +1236,6 @@ async function render(state) { /////////////////////////////////////////
 
             // you must use the undocumented "array" feature of res.writeHead to set multiple cookies, because json
             var headers = [
-                ['Content-Length' , html.length                               ],
                 ['Content-Type'   , 'text/html'                               ],
                 ['Expires'        , d.toUTCString()                           ],
                 ['Set-Cookie'     , `${ CONF.usercookie }=_; Expires=${d}; Path=/`],
@@ -1318,8 +1317,12 @@ async function render(state) { /////////////////////////////////////////
                              [ current_user_id, post_id, state.post.postview_want_email ], state)
             }
 
-            if (!state.post.post_prev_in_topic || !state.post.post_next_in_topic) {
-                [state.post.post_prev_in_topic,    state.post.post_next_in_topic] =
+            // if we never set prev|next (null) or did set it to 0 AND are here from a new post referer, then update
+            if ((null === state.post.post_prev_in_topic || null === state.post.post_next_in_topic) ||
+                ((0   === state.post.post_prev_in_topic || 0    === state.post.post_next_in_topic) &&
+                    state.req.headers.referer.match(/post/))
+               ) {
+                [state.post.post_prev_in_topic, state.post.post_next_in_topic] =
                     await update_prev_next(state.post.post_topic, state.post.post_id)
             }
 
@@ -1581,6 +1584,7 @@ async function render(state) { /////////////////////////////////////////
 
                     let addendum = ''
                     let dims     = await getimagesize(`${abs_path}/${clean_name}`).catch(error => { addendum = `"${error}"` })
+                    if (!dims) return die('failed to find image dimensions')
 
                     if (state.req.headers.referer.match(/edit_profile/)) { // uploading user icon
 
@@ -3006,7 +3010,6 @@ async function render(state) { /////////////////////////////////////////
 
         var headers =    {
             'Content-Type'   : 'text/html',
-            'Content-Length' : html.length,
             'Expires'        : new Date().toUTCString()
         }
 
@@ -3097,7 +3100,7 @@ async function render(state) { /////////////////////////////////////////
         let prev_link = state.post.post_prev_in_topic ? `&laquo; <a href='/post/${state.post.post_prev_in_topic}'>prev</a>  &nbsp;` : ''
         let next_link = state.post.post_next_in_topic ? `&nbsp;  <a href='/post/${state.post.post_next_in_topic}'>next</a> &raquo;` : ''
 
-        return `<b>${prev_link} ${next_link}</b>`
+        return `<b>${prev_link} ${state.post.post_topic} ${next_link}</b>`
     }
 
     function unread_comments_icon(post, last_view) { // return the blinky icon if there are unread comments in a post
