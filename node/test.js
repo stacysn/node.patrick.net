@@ -6,11 +6,16 @@ test_user = {
     user_name : 'badraig',
 }
 
-assert  = require('assert')
-request = require('request')
-j       = request.jar()
-request = request.defaults({jar:j})
-cookie  = null
+JSDOM     = require('jsdom').JSDOM
+assert    = require('assert')
+request   = require('request')
+j         = request.jar()
+request   = request.defaults({jar:j})
+cookie    = null
+rand      = null
+post_id   = null
+matches   = null
+post_html = null
 
 it('about page should return 200 and contain "about"', function (done) {
     request.get(base_url + '/about', function (err, res, body) {
@@ -59,18 +64,52 @@ it('should get logged in page', function (done) {
 
 it('should create a post', function (done) {
 
+    rand = `test post ${Math.random()}`
+
     var options = {
         method  : 'POST',
         url     : base_url + '/accept_post',
         form    : {
-            post_title   : 'test post ' + Math.random(),
-            post_content : Math.random() 
+            post_title   : rand,
+            post_content : rand,
         },
     }
 
     request.post(options, function (err, resp, body) {
+        assert.ok(matches = resp.headers['location'].match(/\/post\/(\d+)/), 'new post proof')
+        post_id = matches[1]
         assert.ok(!err, 'no error')
         done()
     })
 })
+it('post page should show the right title', function (done) {
+    request.get(`${base_url}/post/${post_id}`, function (err, res, body) {
+        assert.equal(res.statusCode, 200, 'status code 200')
+        assert.ok(body.match(rand), 'post proof')
+        post_html = body // needed for delete test below
+        done()
+    })
+})
+
+it('home page should show the new test post', function (done) {
+    request.get(base_url + '/', function (err, res, body) {
+        assert.equal(res.statusCode, 200, 'status code 200')
+        assert.ok(body.match(rand), 'post proof')
+        done()
+    })
+})
+
+it('should delete test post', function (done) {
+
+    const dom = new JSDOM(post_html) // post_html from previous test
+
+    let href = base_url + dom.window.document.getElementById('delete_post').href
+
+    request.get(href, function (err, res, body) {
+        assert.equal(res.statusCode, 200, 'status code 200')
+        assert.ok(body.match(/post deleted/), 'post deleted')
+        done()
+    })
+})
+
 

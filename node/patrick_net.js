@@ -1320,6 +1320,7 @@ async function render(state) { /////////////////////////////////////////
             // if we never set prev|next (null) or did set it to 0 AND are here from a new post referer, then update
             if ((null === state.post.post_prev_in_topic || null === state.post.post_next_in_topic) ||
                 ((0   === state.post.post_prev_in_topic || 0    === state.post.post_next_in_topic) &&
+                    state.req.headers.referer &&
                     state.req.headers.referer.match(/post/))
                ) {
                 [state.post.post_prev_in_topic, state.post.post_next_in_topic] =
@@ -2730,8 +2731,8 @@ async function render(state) { /////////////////////////////////////////
 
         let delete_link = ''
         if (state.current_user && ((state.current_user.user_id === state.post.post_author && !state.post.post_comments) || (state.current_user.user_level >= 4))) {
-            let confirm_del = `onClick="javascript:return confirm('Really delete?')"`
-            delete_link = ` &nbsp; <a href='/delete_post?post_id=${state.post.post_id}&${nonce_parms}' ${confirm_del} >delete</a> &nbsp;` 
+            delete_link = ` &nbsp; <a href='/delete_post?post_id=${state.post.post_id}&${nonce_parms}' 
+                           onClick="javascript:return confirm('Really delete?')" id='delete_post' >delete</a> &nbsp;` 
         }
 
         state.post.user_name = state.post.user_name || 'anonymous' // so we don't display 'null' in case the post is anonymous
@@ -3286,6 +3287,7 @@ async function render(state) { /////////////////////////////////////////
             await pages[state.page](state)
         }
         catch(e) {
+            console.log(e)
             console.log(`${Date()} ${state.req.url} failed with error message: ${e.message}`)
             return send_html(intval(e.code) || 500, `node server says: ${e.message}`)
         }
