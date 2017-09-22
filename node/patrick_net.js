@@ -1969,13 +1969,14 @@ async function render(state) { /////////////////////////////////////////
     }
 
     function comment_box() { // add new comment, just updates page without reload
+        let url = `/accept_comment?${create_nonce_parms()}`
         return `
         ${state.current_user ? upload_form() : ''}
         <form id='commentform' >
             <textarea id='ta' name='comment_content' class='form-control' rows='10' placeholder='write a comment...' ></textarea><p>
             <input type='hidden' name='comment_post_id' value='${state.post.post_id}' />
-            <button class='btn btn-success btn-sm'
-                onclick="$.post('/accept_comment?${create_nonce_parms()}', $('#commentform').serialize()).done(function(data) {
+            <button class='btn btn-success btn-sm' id='accept_comment' href='${url}'
+                onclick="$.post('${url}', $('#commentform').serialize()).done(function(data) {
                     $('#comment_list').append(data)
                     document.getElementById('commentform').reset() // clear the textbox
                 })

@@ -6,29 +6,24 @@ test_user = {
     user_name : 'badraig',
 }
 
-JSDOM     = require('jsdom').JSDOM
-assert    = require('assert')
-request   = require('request')
-j         = request.jar()
-request   = request.defaults({jar:j})
-cookie    = null
-rand      = null
-post_id   = null
-matches   = null
-post_html = null
+JSDOM          = require('jsdom').JSDOM
+assert         = require('assert')
+request        = require('request')
+j              = request.jar()
+request        = request.defaults({jar:j})
+cookie         = null
+delete_link    = null
+dom            = null
+matches        = null
+post_html      = null
+post_id        = null
+random_post    = `test post:    ${Math.random()}` // has to be unique because of constraint on post titles
+random_comment = `test comment: ${Math.random()}`
 
 it('about page should return 200 and contain "about"', function (done) {
     request.get(base_url + '/about', function (err, res, body) {
         assert.equal(res.statusCode, 200)
         assert.ok(body.match(/about/), 'about page proof')
-        done()
-    })
-})
-
-it('home page should return 200 and contain "patrick.net"', function (done) {
-    request.get(base_url + '/', function (err, res, body) {
-        assert.equal(res.statusCode, 200, 'status code 200')
-        assert.ok(body.match(/patrick.net/), 'site proof')
         done()
     })
 })
@@ -64,14 +59,12 @@ it('should get logged in page', function (done) {
 
 it('should create a post', function (done) {
 
-    rand = `test post ${Math.random()}`
-
     var options = {
         method  : 'POST',
         url     : base_url + '/accept_post',
         form    : {
-            post_title   : rand,
-            post_content : rand,
+            post_title   : random_post,
+            post_content : random_post,
         },
     }
 
@@ -82,11 +75,13 @@ it('should create a post', function (done) {
         done()
     })
 })
-it('post page should show the right title', function (done) {
+
+it('post page should show the right content', function (done) {
     request.get(`${base_url}/post/${post_id}`, function (err, res, body) {
         assert.equal(res.statusCode, 200, 'status code 200')
-        assert.ok(body.match(rand), 'post proof')
-        post_html = body // needed for delete test below
+        assert.ok(body.match(random_post), 'post proof')
+        post_html = body
+        dom = new JSDOM(post_html) // needed for comment and delete tests below
         done()
     })
 })
@@ -94,14 +89,63 @@ it('post page should show the right title', function (done) {
 it('home page should show the new test post', function (done) {
     request.get(base_url + '/', function (err, res, body) {
         assert.equal(res.statusCode, 200, 'status code 200')
-        assert.ok(body.match(rand), 'post proof')
+        assert.ok(body.match(/patrick.net/), 'site proof')
+        assert.ok(body.match(random_post), 'post on home page proof')
+        done()
+    })
+})
+
+it('should create a comment', function (done) {
+
+    var item = dom.window.document.getElementById('accept_comment')
+
+    for(var j = 0; j < item.attributes.length; j++) {
+        if ('href' === item.attributes[j].name) var href = base_url + item.attributes[j].value
+    }
+
+    var options = {
+        method  : 'POST',
+        url     : href,
+        form    : {
+            comment_content : random_comment,
+            comment_post_id : post_id,
+        },
+    }
+
+    request.post(options, function (err, resp, body) {
+        assert.ok(body.match(random_comment), 'new comment proof')
+        assert.ok(!err, 'no error')
+        var a = require('cheerio').load(body)("a:contains(delete)")[0].attribs.onclick
+        matches = a.match(/'(.delete_comment.*?)'/) // grab the delete link for a test below
+        delete_link = matches[1]
+        done()
+    })
+})
+
+it('post should show the new comment', function (done) {
+    request.get(base_url + `/post/${post_id}`, function (err, res, body) {
+        assert.equal(res.statusCode, 200, 'status code 200')
+        assert.ok(body.match(random_comment), 'comment proof')
+        done()
+    })
+})
+
+it('should delete the comment', function (done) {
+    request.get(base_url + delete_link, function (err, res, body) {
+        assert.equal(res.statusCode, 200, 'status code 200')
+        done()
+    })
+})
+
+it('post should no longer show the new comment', function (done) {
+    request.get(base_url + `/post/${post_id}`, function (err, res, body) {
+        assert.equal(res.statusCode, 200, 'status code 200')
+        assert.ok(!body.match(random_comment), 'comment proof')
         done()
     })
 })
 
 it('should delete test post', function (done) {
-
-    const dom = new JSDOM(post_html) // post_html from previous test
 
     let href = base_url + dom.window.document.getElementById('delete_post').href
 
@@ -111,5 +155,3 @@ it('should delete test post', function (done) {
         done()
     })
 })
-
-
