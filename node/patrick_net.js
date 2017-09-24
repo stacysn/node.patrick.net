@@ -88,13 +88,13 @@ async function block_countries(state) { // block entire countries like Russia be
     var evil = await get_var('select country_evil from countries where inet_aton(?) >= country_start and inet_aton(?) <= country_end',
                                 [state.ip, state.ip], state)
 
-    if (evil) throw { code : 403, message : 'permission denied' }
+    if (evil) throw { code : 403, message : 'permission denied to evil country' }
 }
 
 async function block_nuked(state) { // block nuked users, usually spammers
 
     if (await get_var('select count(*) as c from nukes where nuke_ip = ?', [state.ip], state))
-    throw { code : 403, message : 'permission denied' }
+    throw { code : 403, message : 'permission denied to nuked user' }
 }
 
 async function header_data(state) { // data that the page header needs to render
@@ -1269,7 +1269,7 @@ async function render(state) { /////////////////////////////////////////
             let u = await get_userrow(nuke_id)
 
             if (!valid_nonce())                   return die(invalid_nonce_message())
-            if (1 !== state.current_user.user_id) return die('permission denied')
+            if (1 !== state.current_user.user_id) return die('non-admin may not nuke')
             if (1 === nuke_id)                    return die('admin cannot nuke himself')
             if (u.user_comments > 3)              return die('cannot nuke user with more than 3 comments')
 
@@ -3359,9 +3359,10 @@ async function render(state) { /////////////////////////////////////////
             await pages[state.page](state)
         }
         catch(e) {
-            console.log(e)
-            console.log(`${Date()} ${state.req.url} failed with error message: ${e.message}`)
-            return send_html(intval(e.code) || 500, `node server says: ${e.message}`)
+            var message = e.message || e // sometimes e dn have a message
+            console.log(message)
+            console.log(`${Date()} ${state.req.url} failed with error message: ${message}`)
+            return send_html(intval(e.code) || 500, `node server says: ${message}`)
         }
     }
     else return send_html(404, `${state.page} was not found`)
