@@ -478,6 +478,12 @@ Array.prototype.sortByProp = function(p){
 }
 
 function segments(path) { // return url path split up as array of cleaned \w strings
+
+    if (!path) {
+        console.log('segments() was passed falsey path')
+        return
+    }
+
     return URL.parse(path).path.replace(/\?.*/,'').split('/').map(segment => segment.replace(/[^\w%]/g,''))
 }
 
@@ -1949,6 +1955,11 @@ async function render(state) { /////////////////////////////////////////
         }
         else var last = ''
 
+        if (!state.req.url) {
+            console.log('format_comment() was passed falsey state.req.url')
+            return
+        }
+
         c.comment_content = (c.comment_adhom_when && !URL.parse(state.req.url).pathname.match(/jail/)) ?
                     `<a href='/comment_jail#comment-${c.comment_id}'>this comment has been jailed for incivility</a>` : c.comment_content
 
@@ -2016,6 +2027,10 @@ async function render(state) { /////////////////////////////////////////
 
         let total    = state.comments.found_rows
         let ret      = `<p id='comments'>`
+        if (!state.req.url) {
+            console.log('comment_pagination() was passed falsey state.req.url')
+            return
+        }
         let pathname = URL.parse(state.req.url).pathname // "pathNAME" is url path without the ? parms, unlike "path"
         let query    = URL.parse(state.req.url).query
 
@@ -2082,6 +2097,11 @@ async function render(state) { /////////////////////////////////////////
     function contextual_link(c) { // a link in the comment header that varies by comment context, jail, moderation, etc
 
         if (!state.current_user) return ''
+
+        if (!state.req.url) {
+            console.log('contextual_link() was passed falsey state.req.url')
+            return
+        }
 
         if (URL.parse(state.req.url).pathname.match(/jail/) && (state.current_user.user_level === 4)) {
              return `<a href='/liberate?comment_id=${c.comment_id}' >liberate</a>`
@@ -2216,6 +2236,12 @@ async function render(state) { /////////////////////////////////////////
     }
 
     function _GET(parm) { // given a string, return the GET parameter by that name
+
+        if (!state.req.url) {
+            console.log('_GET() was passed falsey parm')
+            return
+        }
+
         return URL.parse(state.req.url, true).query[parm]
     }
 
@@ -2277,6 +2303,12 @@ async function render(state) { /////////////////////////////////////////
         if (!c('a').length) return ''
 
         let extlink = c('a').attr('href')
+
+        if (!extlink) {
+            console.log('get_external_link() was passed falsey extlink')
+            return
+        }
+
         let host = URL.parse(extlink).host
 
         if (!(['http:', 'https:'].indexOf(URL.parse(extlink).protocol) > -1)) return '' // ignore invalid protocols
@@ -2306,6 +2338,11 @@ async function render(state) { /////////////////////////////////////////
     function get_nuke_link(c) {
 
         if (!state.current_user) return ''
+
+        if (!state.req.url) {
+            console.log('get_nuke_link() was passed falsey state.req.url')
+            return
+        }
 
         return (URL.parse(state.req.url).pathname.match(/comment_moderation/) && (state.current_user.user_level === 4)) ?
             `<a href='/nuke?nuke_id=${c.comment_author}&${create_nonce_parms()}' onClick='javascript:return confirm("Really?")' >nuke</a>`
@@ -2692,6 +2729,12 @@ async function render(state) { /////////////////////////////////////////
         let links    = ''
         let nextpage = curpage + 1
         let pages    = Math.floor( (post_count + 20) / 20)
+
+        if (!state.req.url) {
+            console.log('post_pagination() was passed falsey state.req.url')
+            return
+        }
+
         let path     = URL.parse(state.req.url).pathname
         let prevpage = curpage - 1
 
@@ -2809,6 +2852,12 @@ async function render(state) { /////////////////////////////////////////
         if (state.posts) {
             let nonce_parms = create_nonce_parms()
             let moderation = 0
+
+            if (!state.req.url) {
+                console.log('post_list() was passed falsey state.req.url')
+                return
+            }
+
             if (URL.parse(state.req.url).pathname.match(/post_moderation/) && (state.current_user.user_level === 4)) moderation = 1
             
             var formatted = state.posts.map(post => {
@@ -2951,6 +3000,8 @@ async function render(state) { /////////////////////////////////////////
 
     async function repair_referer() { // look at referer to a bad post; if it exist, call update_prev_next() on that
 
+        if (!state.req.headers.referer) return
+
         if (matches = state.req.headers.referer.match(/\/post\/(\d+)/m)) {
             var referring_post_id = intval(matches[1])
 
@@ -3063,6 +3114,11 @@ async function render(state) { /////////////////////////////////////////
         selected_tab['likes']    = ''
         selected_tab['new']      = ''
         selected_tab[order]      = `class='active'` // default is active
+
+        if (!state.req.url) {
+            console.log('tabs() was passed falsey state.req.url')
+            return
+        }
 
         let path = URL.parse(state.req.url).pathname // "pathNAME" is url path without ? parms, unlike "path"
 
