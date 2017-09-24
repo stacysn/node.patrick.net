@@ -1656,8 +1656,8 @@ async function render(state) { /////////////////////////////////////////
 
         users : async function() {
 
-            let d  = _GET('d')  ? _GET('d').replace(/[^adesc]/, '').substring(0,4)  : 'desc' // asc or desc
-            let ob = _GET('ob') ? _GET('ob').replace(/[^a-z_]/, '').substring(0,32) : 'user_comments' // order by
+            let d  = _GET('d')  ? _GET('d').replace(/[^adesc]/g, '').substring(0,4)  : 'desc' // asc or desc
+            let ob = _GET('ob') ? _GET('ob').replace(/[^a-z_]/g, '').substring(0,32) : 'user_comments' // order by
 
             if ( _GET('unrequited') ) {
                 state.message = `Unrequited Friendship Requests For ${state.current_user.user_name}`
