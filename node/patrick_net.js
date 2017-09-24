@@ -641,6 +641,7 @@ async function render(state) { /////////////////////////////////////////
 
         accept_post : async function() { // insert new post or update old post
 
+            let matches = null
             let post_data           = await collect_post_data_and_trim(state)
             post_data.post_content  = strip_tags(post_data.post_content.linkify()) // remove all but a small set of allowed html tags
             post_data.post_approved = state.current_user ? 1 : 0 // not logged in posts go into moderation
