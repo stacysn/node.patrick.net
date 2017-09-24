@@ -101,8 +101,6 @@ async function header_data(state) { // data that the page header needs to render
     state.header_data = {
         comments : await get_var(`select count(*) as c from comments`,                                     null, state), // int
         onlines  : await query(`select * from onlines order by online_username`,                           null, state), // obj
-        //top3     : await query(`select post_topic, count(*) as c from posts
-        //                        where length(post_topic) > 0 group by post_topic order by c desc limit 3`, null, state), // obj
         tot      : await get_var(`select count(*) as c from users`,                                        null, state), // int
     }
 }
@@ -873,8 +871,10 @@ async function render(state) { /////////////////////////////////////////
 
                     let results = await query(`delete from posts where post_id = ?`, [post_id], state)
 
-                    await update_prev_next(post.post_topic, post.post_prev_in_topic)
-                    await update_prev_next(post.post_topic, post.post_next_in_topic)
+                    if (post.post_topic) {
+                        await update_prev_next(post.post_topic, post.post_prev_in_topic)
+                        await update_prev_next(post.post_topic, post.post_next_in_topic)
+                    }
 
                     return die(`${results.affectedRows} post deleted`)
                 }
@@ -1326,6 +1326,7 @@ async function render(state) { /////////////////////////////////////////
             // if we never set prev|next (null) or did set it to 0 AND are here from a new post referer, then update
             if ((null === state.post.post_prev_in_topic || null === state.post.post_next_in_topic) ||
                 ((0   === state.post.post_prev_in_topic || 0    === state.post.post_next_in_topic) &&
+                    state.post.post_topic     &&
                     state.req.headers.referer &&
                     state.req.headers.referer.match(/post/))
                ) {
@@ -1478,6 +1479,8 @@ async function render(state) { /////////////////////////////////////////
 
             var topic = segments(state.req.url)[2] // like /topics/housing
 
+            if (!topic) return die('no topic given')
+            
             let [curpage, slimit, order, order_by] = page()
 
             let sql = `select sql_calc_found_rows * from posts
@@ -2703,24 +2706,26 @@ async function render(state) { /////////////////////////////////////////
         }
 
         // now do topic follower emails
-        if (rows = await query(`select distinct topicwatch_user_id from topicwatches where topicwatch_name = ?`, [p.post_topic], state)) {
-            rows.forEach(async function(row) {
+        if (p.post_topic) {
+            if (rows = await query(`select distinct topicwatch_user_id from topicwatches where topicwatch_name = ?`, [p.post_topic], state)) {
+                rows.forEach(async function(row) {
 
-                if (already_mailed[row.topicwatch_user_id]) return
+                    if (already_mailed[row.topicwatch_user_id]) return
 
-                let u = await get_userrow(row.topicwatch_user_id)
+                    let u = await get_userrow(row.topicwatch_user_id)
 
-                let subject = `New ${CONF.domain} post in ${p.post_topic}`
+                    let subject = `New ${CONF.domain} post in ${p.post_topic}`
 
-                let notify_message  = `<html><body><head><base href="${BASEURL}" ></head>
-                New post in ${p.post_topic}, <a href='${BASEURL}${post2path(p)}'>${p.post_title}</a>:<p>
-                <p>${p.post_content}<p>\r\n\r\n
-                <p><a href='${BASEURL}${post2path(p)}?offset=${offset}#post-${p.post_id}'>Reply</a><p>
-                <font size='-1'>Stop following <a href='${BASEURL}/topic/${p.post_topic}'>${p.post_topic}</a></font><br>`
+                    let notify_message  = `<html><body><head><base href="${BASEURL}" ></head>
+                    New post in ${p.post_topic}, <a href='${BASEURL}${post2path(p)}'>${p.post_title}</a>:<p>
+                    <p>${p.post_content}<p>\r\n\r\n
+                    <p><a href='${BASEURL}${post2path(p)}?offset=${offset}#post-${p.post_id}'>Reply</a><p>
+                    <font size='-1'>Stop following <a href='${BASEURL}/topic/${p.post_topic}'>${p.post_topic}</a></font><br>`
 
-                mail(u.user_email, subject, notify_message)
-                already_mailed[u.user_id] ? already_mailed[u.user_id]++ : already_mailed[u.user_id] = 1
-            })
+                    mail(u.user_email, subject, notify_message)
+                    already_mailed[u.user_id] ? already_mailed[u.user_id]++ : already_mailed[u.user_id] = 1
+                })
+            }
         }
     }
 
@@ -2878,7 +2883,12 @@ async function render(state) { /////////////////////////////////////////
                 else var unread = ''
 
                 let ago           = MOMENT(post.post_modified).fromNow();
-                let hashlink      = `in <a href='/topic/${post.post_topic}'>#${post.post_topic}</a>`
+
+                if (post.post_topic)
+                    var hashlink      = `in <a href='/topic/${post.post_topic}'>#${post.post_topic}</a>`
+                else
+                    var hashlink      = ``
+
                 let imgdiv        = (state.current_user && state.current_user.user_hide_post_list_photos) ? '' : get_first_image(post)
                 let arrowbox_html = arrowbox(post)
                 let extlink       = get_external_link(post)
@@ -3007,7 +3017,7 @@ async function render(state) { /////////////////////////////////////////
 
             var post = await get_row(`select * from posts where post_id=?`, [referring_post_id], state)
 
-            if (post) await update_prev_next(post.post_topic, post.post_id)
+            if (post && post.post_topic) await update_prev_next(post.post_topic, post.post_id)
         }
     }
 
@@ -3155,10 +3165,14 @@ async function render(state) { /////////////////////////////////////////
     }
 
     function topic_nav() {
-        let prev_link = state.post.post_prev_in_topic ? `&laquo; <a href='/post/${state.post.post_prev_in_topic}'>prev</a>  &nbsp;` : ''
-        let next_link = state.post.post_next_in_topic ? `&nbsp;  <a href='/post/${state.post.post_next_in_topic}'>next</a> &raquo;` : ''
 
-        return `<b>${prev_link} ${state.post.post_topic} ${next_link}</b>`
+        if (state.post && state.post.post_topic) {
+            let prev_link = state.post.post_prev_in_topic ? `&laquo; <a href='/post/${state.post.post_prev_in_topic}'>prev</a>  &nbsp;` : ''
+            let next_link = state.post.post_next_in_topic ? `&nbsp;  <a href='/post/${state.post.post_next_in_topic}'>next</a> &raquo;` : ''
+
+            return `<b>${prev_link} ${state.post.post_topic} ${next_link}</b>`
+        }
+        else return ``
     }
 
     function unread_comments_icon(post, last_view) { // return the blinky icon if there are unread comments in a post
