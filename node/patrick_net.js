@@ -64,8 +64,8 @@ function get_connection_from_pool(state) {
 
         if (LOCKS[state.ip]) {
             console.log(`Rate limit exceeded by ${ state.ip } by asking for ${state.req.url}, threadId is ${LOCKS[state.ip].threadId}`)
-            reject(false)
-            throw { code : 403, message : 'rate limit exceeded' }
+            var message = 'rate limit exceeded'
+            reject(message)
         }
 
         POOL.getConnection(function(err, db) {
@@ -76,7 +76,6 @@ function get_connection_from_pool(state) {
                 threadId : db.threadId,
                 ts       : Date.now()
             }
-            //console.log(`dblock for ${state.ip} when asking for ${state.req.url}`)
 
             fulfill(true)
         })
@@ -1275,10 +1274,6 @@ async function render(state) { /////////////////////////////////////////
 
             let country = await ip2country(u.user_last_comment_ip)
 
-            await query(`insert into nukes (nuke_date, nuke_email, nuke_username, nuke_ip,  nuke_country) values
-                                           (    now(),          ?,             ?,       ?,             ?)`,
-                        [u.user_email, u.user_name, u.user_last_comment_ip, country], state)
-
             let rows = await query('select distinct comment_post_id from comments where comment_author=?', [nuke_id], state)
 
             for (var i=0; i<rows.length; i++) {
@@ -1289,6 +1284,12 @@ async function render(state) { /////////////////////////////////////////
             await query('delete from posts     where post_author=?',      [nuke_id], state)
             await query('delete from postviews where postview_user_id=?', [nuke_id], state)
             await query('delete from users     where user_id=?',          [nuke_id], state)
+
+            try {
+                await query(`insert into nukes (nuke_date, nuke_email, nuke_username,                nuke_ip,  nuke_country) values
+                           (now(), ?, ?, ?, ?)`, [u.user_email, u.user_name, u.user_last_comment_ip, country], state)
+            }
+            catch(e) { console.log(e) } // try-catch for case where ip is already in nukes table somehow
 
             redirect(state.req.headers.referer) 
         },
@@ -1637,7 +1638,7 @@ async function render(state) { /////////////////////////////////////////
             let user_name = decodeURIComponent(segments(state.req.url)[2]).replace(/[^\w._ -]/g, '') // like /user/Patrick
             let u = await get_row(`select * from users where user_name=?`, [user_name], state)
 
-            if (!u) return die(`no such user: ${user_name} url is ${state.req.url}`)
+            if (!u) return die(`no such user: ${user_name}`)
 
             // left joins to also get each post's viewing and voting data for the current user if there is one
             let sql = `select sql_calc_found_rows * from posts
