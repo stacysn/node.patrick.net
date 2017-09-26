@@ -592,7 +592,9 @@ async function render(state) { /////////////////////////////////////////
                                  values (?, ?, now()) on duplicate key update postview_last_view=now()`,
                                  [state.current_user.user_id, post_data.comment_post_id], state)
 
-                    await query(`update users set user_last_comment_ip = ? where user_id = ?`, [state.ip, state.current_user.user_id], state)
+                    await query(`update users set user_last_comment_ip = ?,
+                                 user_comments=(select count(*) from comments where comment_author = ?)
+                                 where user_id = ?`, [state.ip, state.current_user.user_id, state.current_user.user_id], state)
                 }
 
                 if (!post_data.comment_approved) { // email moderator if comment not approved
