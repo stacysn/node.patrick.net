@@ -1,7 +1,7 @@
 // copyright 2017 by Patrick Killelea under the GPLv2 license
 
 // globals are capitalized
-try { CONF = require('./conf.json') } catch(e) { console.log(e.message); process.exit(1) } // conf.json is required
+try { CONF = require('./_conf.json') } catch(e) { console.log(e.message); process.exit(1) } // _conf.json is required
 
 CHEERIO     = require('cheerio')         // via npm to parse html
 CLUSTER     = require('cluster')

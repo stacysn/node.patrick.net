@@ -1,0 +1,29 @@
+{
+    "about_post_id" : 1277846,
+    "admin_email"   : "p@patrick.net",
+    "baseurl"       : "https://patrick.net",
+    "baseurl_dev"   : "http://dev.patrick.net",
+    "usercookie"    : "patricknetuser",
+    "pwcookie"      : "patricknetpass",
+    "db" : {
+        "charset"            : "UTF8MB4",
+        "connectionLimit"    : 40,
+        "multipleStatements" : true,
+        "database"           : "redacted",
+        "password"           : "redacted",
+        "user"               : "redacted"
+    },
+    "description"   : "free form forum",
+    "domain"        : "patrick.net",
+    "email" : {
+        "host"     : "patrick.net",
+        "port"     : 587,
+        "user"     : "p",
+        "password" : "redacted"
+    },
+    "http_port"     : 8083,
+    "nonce_secret"  : "redacted",
+    "stylesheet"    : "style_20170830.css",
+    "doc_root"      : "/home/patrick/node.patrick.net/html/",
+    "upload_dir"    : "content/uploads"
+}

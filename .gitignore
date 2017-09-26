@@ -1,5 +1,4 @@
 *.swp
-/node/conf.json*
-!/node/conf.json.dist
+_*
 html/*
 node/node_modules/
