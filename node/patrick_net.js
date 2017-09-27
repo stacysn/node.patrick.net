@@ -90,6 +90,16 @@ async function block_countries(state) { // block entire countries like Russia be
     if (evil) throw { code : 403, message : 'permission denied to evil country' }
 }
 
+async function is_foreign(state) {
+
+    var country_name = await get_var(`select country_name from countries
+                                      where inet_aton(?) >= country_start and inet_aton(?) <= country_end`,
+                                      [state.ip, state.ip], state)
+
+    if (country_name !== 'United States') return true
+    else                                  return false
+}
+
 async function block_nuked(state) { // block nuked users, usually spammers
     if (await get_var('select count(*) as c from nukes where nuke_ip = ?', [state.ip], state))
     throw { code : 403, message : 'permission denied to spammy user' }
@@ -654,7 +664,8 @@ async function render(state) { /////////////////////////////////////////
                 var p = intval(post_data.post_id)
             }
             else { // new post
-                //if (dirty_post()) return die(`spam rejected`) // new, foreign, posting link
+                if (dirty_post()) return die(`spam rejected`)
+
                 post_data.post_author = state.current_user ? state.current_user.user_id : 0
                 try {
                     var results = await query('insert into posts set ?, post_modified=now()', post_data, state)
@@ -674,6 +685,16 @@ async function render(state) { /////////////////////////////////////////
             else await update_prev_next(post_data.post_topic, p)
 
             redirect(`/post/${p}`)
+
+            function dirty_post() { // new or anon, foreign, and posting link
+                if ((!state.current_user || state.current_user.user_comments < 3) &&
+                     is_foreign(state.ip)                                         &&
+                     CHEERIO.load(post_data.post_content)('a').length)
+
+                    return true
+                else
+                    return false
+            }
         },
 
         approve_comment : async function() {
