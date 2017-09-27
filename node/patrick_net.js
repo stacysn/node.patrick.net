@@ -91,16 +91,15 @@ async function block_countries(state) { // block entire countries like Russia be
 }
 
 async function block_nuked(state) { // block nuked users, usually spammers
-
     if (await get_var('select count(*) as c from nukes where nuke_ip = ?', [state.ip], state))
-    throw { code : 403, message : 'permission denied to nuked user' }
+    throw { code : 403, message : 'permission denied to spammy user' }
 }
 
 async function header_data(state) { // data that the page header needs to render
     state.header_data = {
-        comments : await get_var(`select count(*) as c from comments`,                                     null, state), // int
-        onlines  : await query(`select * from onlines order by online_username`,                           null, state), // obj
-        tot      : await get_var(`select count(*) as c from users`,                                        null, state), // int
+        comments : await get_var(`select count(*) as c from comments`,           null, state), // int
+        onlines  : await query(`select * from onlines order by online_username`, null, state), // obj
+        tot      : await get_var(`select count(*) as c from users`,              null, state), // int
     }
 }
 
@@ -289,7 +288,6 @@ function mail(email, subject, message) {
 
     get_transporter().sendMail(mailOptions, (error, info) => {
         if (error) console.log('error in mail: ' + error)
-        else       console.log('%s sent: %s', info.messageId, info.response)
     })
 }
 
@@ -656,6 +654,7 @@ async function render(state) { /////////////////////////////////////////
                 var p = intval(post_data.post_id)
             }
             else { // new post
+                //if (dirty_post()) return die(`spam rejected`) // new, foreign, posting link
                 post_data.post_author = state.current_user ? state.current_user.user_id : 0
                 try {
                     var results = await query('insert into posts set ?, post_modified=now()', post_data, state)
@@ -1146,6 +1145,11 @@ async function render(state) { /////////////////////////////////////////
 
             if (intval(_GET('comment_id'))) {
                 let comment_id = intval(_GET('comment_id'))
+
+                let comment_row = await get_row(`select * from comments where comment_id=?`, [comment_id], state)
+
+                if (!comment_row) return send_html(200, ``)
+
                 let vote = await get_row(`select commentvote_up, count(*) as c from commentvotes
                                           where commentvote_user_id=? and commentvote_comment_id=?`,
                                           [state.current_user.user_id, comment_id], state)
@@ -1160,8 +1164,6 @@ async function render(state) { /////////////////////////////////////////
 
                 await query(`insert into commentvotes (commentvote_user_id, commentvote_comment_id, commentvote_up) values (?, ?, 1)
                              on duplicate key update commentvote_up=1`, [state.current_user.user_id, comment_id], state)
-
-                let comment_row = await get_row(`select * from comments where comment_id=?`, [comment_id], state)
 
                 await query(`update users set user_likes=user_likes+1 where user_id=?`, [comment_row.comment_author], state)
 
@@ -1328,14 +1330,15 @@ async function render(state) { /////////////////////////////////////////
             }
 
             // if we never set prev|next (null) or did set it to 0 AND are here from a new post referer, then update
-            if ((null === state.post.post_prev_in_topic || null === state.post.post_next_in_topic) ||
-                ((0   === state.post.post_prev_in_topic || 0    === state.post.post_next_in_topic) &&
-                    state.post.post_topic     &&
-                    state.req.headers.referer &&
-                    state.req.headers.referer.match(/post/))
-               ) {
-                [state.post.post_prev_in_topic, state.post.post_next_in_topic] =
-                    await update_prev_next(state.post.post_topic, state.post.post_id)
+            if (state.post.post_topic) {
+                if ((null === state.post.post_prev_in_topic || null === state.post.post_next_in_topic) ||
+                    ((0   === state.post.post_prev_in_topic || 0    === state.post.post_next_in_topic) &&
+                        state.req.headers.referer &&
+                        state.req.headers.referer.match(/post/))
+                   ) {
+                    [state.post.post_prev_in_topic, state.post.post_next_in_topic] =
+                        await update_prev_next(state.post.post_topic, state.post.post_id)
+                }
             }
 
             let content = html(
