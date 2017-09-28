@@ -2924,8 +2924,14 @@ async function render(state) { /////////////////////////////////////////
 
                 if (moderation) {
                     var approval_link = `<a href='#' onclick="$.get('/approve_post?post_id=${ post.post_id }&${nonce_parms}', function() { $('#post-${ post.post_id }').remove() }); return false">approve</a>`
+                    var delete_link = ` &nbsp; <a href='/delete_post?post_id=${post.post_id}&${nonce_parms}' onClick="javascript:return confirm('Really delete?')" id='delete_post' >delete</a> &nbsp;`
+                    var nuke_link = `<a href='/nuke?nuke_id=${post.post_author}&${create_nonce_parms()}' onClick='javascript:return confirm("Really?")' >nuke</a>`
                 }
-                else var approval_link = ''
+                else {
+                    var approval_link = ''
+                    var delete_link = ''
+                    var nuke_link = ''
+                }
 
                 if (post.post_comments) {
                     let s = (post.post_comments === 1) ? '' : 's';
@@ -2942,7 +2948,7 @@ async function render(state) { /////////////////////////////////////////
 
                 return `<div class='post' id='post-${post.post_id}' ${hide} >${arrowbox_html}${imgdiv}<b><font size='+1'>${link}</font></b>
                        ${extlink}<br>by <a href='/user/${ post.user_name }'>${ post.user_name }</a> ${hashlink} &nbsp;
-                       ${latest} ${unread} ${approval_link} <br>${firstwords}</div>`
+                       ${latest} ${unread} ${approval_link} ${delete_link} ${nuke_link}<br>${firstwords}</div>`
             })
         }
         else formatted = []
