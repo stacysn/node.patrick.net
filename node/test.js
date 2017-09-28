@@ -1,4 +1,4 @@
-//base_url  = 'http://dev.patrick.net'
+base_url  = 'http://dev.patrick.net'
 //base_url  = 'http://node.patrick.net'
 //base_url  = 'https://patrick.net'
 

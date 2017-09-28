@@ -63,8 +63,8 @@ function get_connection_from_pool(state) {
         state.ip = state.req.headers['x-forwarded-for']
 
         if (LOCKS[state.ip]) {
-            console.log(`Rate limit exceeded by ${ state.ip } by asking for ${state.req.url}, threadId is ${LOCKS[state.ip].threadId}`)
-            var message = 'rate limit exceeded'
+            console.log(`${Date()} Rate limit exceeded by ${ state.ip } by asking for ${state.req.url}, threadId is ${LOCKS[state.ip].threadId}`)
+            var message = `${Date()} rate limit exceeded`
             reject(message)
         }
 
@@ -131,7 +131,7 @@ function collect_post_data(state) { // if there is any POST data, accumulate it 
 
             state.req.on('end', function () { fulfill( QUERYSTRING.parse(body) ) })
         }
-        else reject()
+        else reject(`${Date()} attempt to collect_post_data from non-POST by ${state.ip}`)
     })
 }
 
@@ -650,12 +650,12 @@ async function render(state) { /////////////////////////////////////////
 
         accept_post : async function() { // insert new post or update old post
 
-            let matches = null
             let post_data           = await collect_post_data_and_trim(state)
             post_data.post_content  = strip_tags(post_data.post_content.linkify()) // remove all but a small set of allowed html tags
             post_data.post_approved = state.current_user ? 1 : 0 // not logged in posts go into moderation
             delete post_data.submit
 
+            let matches = null
             if (matches = post_data.post_content.match(/#(\w+)/)) post_data.post_topic = matches[1] // first tag in the post becomes topic
             else                                                  post_data.post_topic = 'misc'
 
@@ -688,7 +688,7 @@ async function render(state) { /////////////////////////////////////////
 
             function dirty_post() { // new or anon, foreign, and posting link
                 if ((!state.current_user || state.current_user.user_comments < 3) &&
-                     is_foreign(state.ip)                                         &&
+                     is_foreign(state)                                            &&
                      CHEERIO.load(post_data.post_content)('a').length)
 
                     return true
@@ -1563,8 +1563,8 @@ async function render(state) { /////////////////////////////////////////
 
         update_profile : async function() { // accept data from profile_form
 
-            if (!valid_nonce())      return die(invalid_nonce_message())
-            if (!state.current_user) return die('must be logged in to update profile')
+            if (!valid_nonce())              return die(invalid_nonce_message())
+            if (!state.current_user)         return die('must be logged in to update profile')
 
             let post_data = await collect_post_data_and_trim(state)
 
