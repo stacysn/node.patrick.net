@@ -919,26 +919,24 @@ async function render(state) { /////////////////////////////////////////
 
             if (intval(_GET('comment_id'))) {
                 let comment_id = intval(_GET('comment_id'))
+                let comment_row = await get_row(`select * from comments where comment_id=?`, [comment_id], state)
+
                 let vote = await get_row(`select commentvote_up, count(*) as c from commentvotes
                                           where commentvote_user_id=? and commentvote_comment_id=?`,
                                           [state.current_user.user_id, comment_id], state)
 
                 if (vote.c) { // already voted on this comment
-
-                    let row = await get_row(`select * from comments where comment_id=?`, [comment_id], state)
-
-                    return send_html(200, `&#8595;&nbsp; you dislike this (${row.comment_dislikes})`)
+                    return send_html(200, `&#8595;&nbsp; you dislike this (${comment_row.comment_dislikes})`)
                 }
+
                 await query(`update comments set comment_dislikes=comment_dislikes+1 where comment_id=?`, [comment_id], state)
 
                 await query(`insert into commentvotes (commentvote_user_id, commentvote_comment_id, commentvote_down) values (?, ?, 1)
                              on duplicate key update commentvote_up=1`, [state.current_user.user_id, comment_id], state)
 
-                let comment_row = await get_row(`select * from comments where comment_id=?`, [comment_id], state)
-
                 await query(`update users set user_dislikes=user_dislikes+1 where user_id=?`, [comment_row.comment_author], state)
 
-                send_html(200, `&#8595;&nbsp;you dislike this (${comment_row.comment_dislikes})`)
+                send_html(200, `&#8595;&nbsp;you dislike this (${comment_row.comment_dislikes + 1})`)
 
                 // no emailing done of dislikes
 
@@ -1183,19 +1181,18 @@ async function render(state) { /////////////////////////////////////////
                                           [state.current_user.user_id, comment_id], state)
 
                 if (vote && vote.c) { // already voted on this
-
-                    let row = await get_row(`select * from comments where comment_id=?`, [comment_id], state)
-
-                    return send_html(200, `&#8593;&nbsp; you like this (${row.comment_likes})`)
+                    return send_html(200, `&#8593;&nbsp; you like this (${comment_row.comment_likes})`) // return so we don't send mails
                 }
-                await query(`update comments set comment_likes=comment_likes+1 where comment_id=?`, [comment_id], state)
+                else {
+                    await query(`update comments set comment_likes=comment_likes+1 where comment_id=?`, [comment_id], state)
 
-                await query(`insert into commentvotes (commentvote_user_id, commentvote_comment_id, commentvote_up) values (?, ?, 1)
-                             on duplicate key update commentvote_up=1`, [state.current_user.user_id, comment_id], state)
+                    await query(`insert into commentvotes (commentvote_user_id, commentvote_comment_id, commentvote_up) values (?, ?, 1)
+                                 on duplicate key update commentvote_up=1`, [state.current_user.user_id, comment_id], state)
 
-                await query(`update users set user_likes=user_likes+1 where user_id=?`, [comment_row.comment_author], state)
+                    await query(`update users set user_likes=user_likes+1 where user_id=?`, [comment_row.comment_author], state)
 
-                send_html(200, `&#8593;&nbsp;you like this (${comment_row.comment_likes})`)
+                    send_html(200, `&#8593;&nbsp;you like this (${comment_row.comment_likes + 1})`) // don't return, send mails
+                }
 
                 // Now mail the comment author that his comment was liked, iff he has user_summonable set
                 // todo: AND if current user has no record of voting on this comment! (to prevent clicking like over and over to annoy author with email)
