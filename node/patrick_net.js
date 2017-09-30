@@ -1331,6 +1331,12 @@ async function render(state) { /////////////////////////////////////////
             let current_user_id = state.current_user ? state.current_user.user_id : 0
             let post_id         = intval(segments(state.req.url)[2]) // get post's db row number from url, eg 47 from /post/47/slug-goes-here
 
+            var c
+            if (c = _GET('c')) { // permalink to a comment
+                let offset = await cid2offset(post_id, c)
+                return redirect(`/post/${post_id}?offset=${offset}#comment-${c}`)
+            }
+
             state.post = await get_row(`select * from posts
                                         left join postvotes on (postvote_post_id=post_id and postvote_user_id=?)
                                         left join postviews on (postview_post_id=post_id and postview_user_id=?)
@@ -2388,13 +2394,7 @@ async function render(state) { /////////////////////////////////////////
     }
 
     function get_permalink(c) {
-
-        let parm = '' // default is no offset parm, ie last page of comments
-
-        if (_GET('offset') === 0) parm = `?offset=0`
-        else if (_GET('offset'))  parm = `?offset=${_GET('offset')}`
-
-        return `<a href='/post/${c.comment_post_id}/${parm}#comment-${c.comment_id}' title='permalink' >${format_date(c.comment_date)}</a>`
+        return `<a href='/post/${c.comment_post_id}/?c=${c.comment_id}' title='permalink' >${format_date(c.comment_date)}</a>`
     }
 
     async function get_userrow(user_id) {
