@@ -62,9 +62,7 @@ function get_connection_from_pool(state) {
         // query or set a database lock for this ip; each ip is allowed only one outstanding connection at a time
         state.ip = state.req.headers['x-forwarded-for']
 
-        if (LOCKS[state.ip]) {
-            reject(`rate limit exceeded`)
-        }
+        if (LOCKS[state.ip]) return reject(new Error(`rate limit exceeded`))
 
         POOL.getConnection(function(err, db) {
 
@@ -129,7 +127,7 @@ function collect_post_data(state) { // if there is any POST data, accumulate it 
 
             state.req.on('end', function () { fulfill( QUERYSTRING.parse(body) ) })
         }
-        else reject(`${Date()} attempt to collect_post_data from non-POST by ${state.ip}`)
+        else reject(new Error(`${Date()} attempt to collect_post_data from non-POST by ${state.ip}`))
     })
 }
 
@@ -458,7 +456,7 @@ function query(sql, sql_parms, state) {
 
             if (error) {
                 console.log(error)
-                reject(error)
+                reject(new Error(error))
             }
 
             state.queries.push({
@@ -505,18 +503,18 @@ function getimagesize(file) {
             identify.stderr.on('data', data => { // remove the file because something is wrong with it
                 FS.unlinkSync(file)
                 console.log(`stderr from 'identify': ${data}`)
-                reject('invalid image')
+                reject(new Error('invalid image'))
             })
 
             identify.on('close', code => {
                 if (code > 0) { // if code is non-zero, remove the file because something is wrong with it
                     console.log(`code from 'identify': ${code}`)
                     FS.unlinkSync(file)
-                    reject('invalid image')
+                    reject(new Error('invalid image'))
                 }
             })
 
-        } else reject(`image not found: ${file}`)
+        } else reject(new Error(`image not found: ${file}`))
     })
 }
 
@@ -527,13 +525,10 @@ function resize_image(file, max_dim = 600) { // max_dim is maximum dimension in 
             let mogrify   = spawn('mogrify', ['-resize', max_dim, file]) // /usr/bin/mogrify -resize $max_dim $file
 
             mogrify.on('close', code => {
-                if (code > 0) reject([null,null]) // todo: if code is non-zero, remove the file because something is wrong with it
+                if (code > 0) reject(new Error(`mogrify error: ${code}`)) // todo: if code is non-zero, remove the file because something is wrong with it
                 else          fulfill()
             })
-        } else {
-            console.log(`image not found: ${file}`)
-            reject()
-        }
+        } else reject(new Error(`image not found: ${file}`))
     })
 }
 
@@ -3394,9 +3389,8 @@ async function render(state) { /////////////////////////////////////////
             await pages[state.page](state)
         }
         catch(e) {
-            var message = e.message || e // sometimes e dn have a message
-            console.log(`${Date()} ${state.ip} ${state.req.url} failed with error message: ${message}`)
-            return send_html(intval(e.code) || 500, `node server says: ${message}`)
+            console.log(`${Date()} ${state.ip} ${state.req.url} failed with error: ${e.stack}`)
+            return send_html(intval(e.code) || 500, `node server says: ${e.message}`)
         }
     }
     else return send_html(404, `${state.page} was not found`)
