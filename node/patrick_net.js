@@ -63,9 +63,7 @@ function get_connection_from_pool(state) {
         state.ip = state.req.headers['x-forwarded-for']
 
         if (LOCKS[state.ip]) {
-            console.log(`${Date()} Rate limit exceeded by ${ state.ip } by asking for ${state.req.url}, threadId is ${LOCKS[state.ip].threadId}`)
-            var message = `${Date()} rate limit exceeded`
-            reject(message)
+            reject(`rate limit exceeded`)
         }
 
         POOL.getConnection(function(err, db) {
@@ -3397,7 +3395,7 @@ async function render(state) { /////////////////////////////////////////
         }
         catch(e) {
             var message = e.message || e // sometimes e dn have a message
-            console.log(`${Date()} ${state.req.url} failed with error message: ${message}`)
+            console.log(`${Date()} ${state.ip} ${state.req.url} failed with error message: ${message}`)
             return send_html(intval(e.code) || 500, `node server says: ${message}`)
         }
     }
