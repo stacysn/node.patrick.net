@@ -576,7 +576,14 @@ async function render(state) { /////////////////////////////////////////
                 post_data.comment_date     = new Date().toISOString().slice(0, 19).replace('T', ' ') // mysql datetime format
                 post_data.comment_approved = state.current_user ? 1 : no_links(post_data.comment_content) // approve anon content if no links
  
-                let insert_result = await query('insert into comments set ?', post_data, state)
+                try {
+                    var insert_result = await query('insert into comments set ?', post_data, state)
+                }
+                catch(e) {
+                    console.log(`${e} at accept_comment`)
+                    state.message = 'database failed to accept some part of the content'
+                    return send_html(200, popup())
+                }
                 let comment_id = insert_result.insertId
 
                 // now select the inserted row so that we pick up the comment_date time and user data for displaying the comment
@@ -3393,7 +3400,6 @@ async function render(state) { /////////////////////////////////////////
         }
         catch(e) {
             var message = e.message || e // sometimes e dn have a message
-            console.log(message)
             console.log(`${Date()} ${state.req.url} failed with error message: ${message}`)
             return send_html(intval(e.code) || 500, `node server says: ${message}`)
         }
