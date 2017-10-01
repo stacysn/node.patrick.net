@@ -57,7 +57,7 @@ function run(req, res) { // handle a single http request
 
 function get_connection_from_pool(state) {
 
-    return new Promise(function(fulfill, reject) {
+    return new Promise(function(resolve, reject) {
 
         // query or set a database lock for this ip; each ip is allowed only one outstanding connection at a time
         state.ip = state.req.headers['x-forwarded-for']
@@ -73,7 +73,7 @@ function get_connection_from_pool(state) {
                 ts       : Date.now()
             }
 
-            fulfill(true)
+            resolve(true)
         })
     })
 }
@@ -109,9 +109,9 @@ async function header_data(state) { // data that the page header needs to render
     }
 }
 
-function collect_post_data(state) { // if there is any POST data, accumulate it and return it in fulfill()
+function collect_post_data(state) { // if there is any POST data, accumulate it and return it in resolve()
 
-    return new Promise(function(fulfill, reject) {
+    return new Promise(function(resolve, reject) {
 
         if (state.req.method === 'POST') {
             var body = ''
@@ -125,7 +125,7 @@ function collect_post_data(state) { // if there is any POST data, accumulate it 
                 }
             })
 
-            state.req.on('end', function () { fulfill( QUERYSTRING.parse(body) ) })
+            state.req.on('end', function () { resolve( QUERYSTRING.parse(body) ) })
         }
         else reject(new Error(`${Date()} attempt to collect_post_data from non-POST by ${state.ip}`))
     })
@@ -447,7 +447,7 @@ async function get_var(sql, sql_parms, state) {
 
 function query(sql, sql_parms, state) {
 
-    return new Promise(function(fulfill, reject) {
+    return new Promise(function(resolve, reject) {
         var query
 
         var get_results = function (error, results, fields, timing) { // callback to give to state.db.query()
@@ -464,7 +464,7 @@ function query(sql, sql_parms, state) {
                 ms  : timing
             })
 
-            fulfill(results)
+            resolve(results)
         }
 
         query = sql_parms ? state.db.query(sql, sql_parms, get_results)
@@ -489,7 +489,7 @@ function segments(path) { // return url path split up as array of cleaned \w str
 }
 
 function getimagesize(file) {
-    return new Promise(function(fulfill, reject) {
+    return new Promise(function(resolve, reject) {
         if (FS.existsSync(file)) {
 
             let { spawn } = require('child_process')
@@ -497,7 +497,7 @@ function getimagesize(file) {
 
             identify.stdout.on('data', data => {
                 let dims = data.toString('utf8').replace(/\n/,'').split(' ') // data is returned as string like '600 328\n'
-                fulfill([dims[0], dims[1]]) // width and height
+                resolve([dims[0], dims[1]]) // width and height
             })
 
             identify.stderr.on('data', data => { // remove the file because something is wrong with it
@@ -519,14 +519,14 @@ function getimagesize(file) {
 }
 
 function resize_image(file, max_dim = 600) { // max_dim is maximum dimension in either direction
-    return new Promise(function(fulfill, reject) {
+    return new Promise(function(resolve, reject) {
         if (FS.existsSync(file)) {
             let { spawn } = require('child_process')
             let mogrify   = spawn('mogrify', ['-resize', max_dim, file]) // /usr/bin/mogrify -resize $max_dim $file
 
             mogrify.on('close', code => {
                 if (code > 0) reject(new Error(`mogrify error: ${code}`)) // todo: if code is non-zero, remove the file because something is wrong with it
-                else          fulfill()
+                else          resolve()
             })
         } else reject(new Error(`image not found: ${file}`))
     })
