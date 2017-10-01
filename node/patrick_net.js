@@ -21,14 +21,6 @@ BASEURL     = (/^dev\./.test(OS.hostname())) ? CONF.baseurl_dev : CONF.baseurl /
 LOCKS       = {}                         // db locks to allow only one db connection per ip; helps mitigate dos attacks
 
 POOL = MYSQL.createPool(CONF.db)
-POOL.on('release', db => { // delete the lock for the released db.threadId, and any locks that are older than 2000 milliseconds
-    Object.keys(LOCKS).map(ip => {
-        if (LOCKS[ip].threadId === db.threadId || LOCKS[ip].ts < (Date.now() - 2000)) {
-            delete LOCKS[ip]
-            //console.log(`unlock for ${ ip }`)
-        }
-    })
-})
 // end of globals
 
 if (CLUSTER.isMaster) {
@@ -45,6 +37,7 @@ if (CLUSTER.isMaster) {
 function run(req, res) { // handle a single http request
 
     var state = { // start accumulation of state for this request
+        ip      : req.headers['x-forwarded-for'],
         page    : segments(req.url)[1] || 'home',
         queries : [],
         req     : req,
@@ -59,23 +52,24 @@ function get_connection_from_pool(state) {
 
     return new Promise(function(resolve, reject) {
 
-        // query or set a database lock for this ip; each ip is allowed only one outstanding connection at a time
-        state.ip = state.req.headers['x-forwarded-for']
+        if (LOCKS[state.ip]) {
+            setTimeout(() => { release_connection_to_pool(state) }, 2000) // don't let lock last for more than two seconds
+            return reject(new Error('rate limit exceeded'))
+        }
 
-        if (LOCKS[state.ip]) return reject(new Error(`rate limit exceeded`))
+        LOCKS[state.ip] = Date.now() // set a database lock for this ip; each ip is allowed only one outstanding connection at a time
 
         POOL.getConnection(function(err, db) {
-
+            err && reject(err)
             state.db = db
-
-            LOCKS[state.ip] = { // set the lock
-                threadId : db.threadId,
-                ts       : Date.now()
-            }
-
-            resolve(true)
+            resolve()
         })
     })
+}
+
+function release_connection_to_pool(state) {
+    state.db && state.db.release()
+    delete LOCKS[state.ip]
 }
 
 async function block_countries(state) { // block entire countries like Russia because all comments from there are inevitably spam
@@ -1203,7 +1197,8 @@ async function render(state) { /////////////////////////////////////////
                         liked the comment you made here:<p>\r\n\r\n
                     <a href='${comment_url}' >${comment_url}</a><p>${comment_row.comment_content}<p>\r\n\r\n
                     <font size='-1'>Stop getting <a href='https://${CONF.domain}/edit_profile#user_summonable'>notified of likes</a>
-                    </font></body></html>`
+                    </font></body></html>
+                    ` // nice to have a newline at the end when getting pages on terminal
 
                     mail(u.user_email, subject, message)
                 }
@@ -3093,8 +3088,6 @@ async function render(state) { /////////////////////////////////////////
     function send(code, headers, content) {
         state.res.writeHead(code, headers)
         state.res.end(content)
-        if (state.db) try { state.db.release() }
-                      catch (e) { console.log(`${e.message} when releasing ${state.db.threadId} for ${state.req.url}`) }
     }
 
     function send_html(code, html) {
@@ -3380,6 +3373,7 @@ async function render(state) { /////////////////////////////////////////
     // end of render() functions
 
     if (typeof pages[state.page] === 'function') { // hit the db iff the request is for a valid url
+
         try {
             await get_connection_from_pool(state)
             await block_nuked(state)
@@ -3387,6 +3381,7 @@ async function render(state) { /////////////////////////////////////////
             await set_user(state)
             await header_data(state)
             await pages[state.page](state)
+                  release_connection_to_pool(state)
         }
         catch(e) {
             console.log(`${Date()} ${state.ip} ${state.req.url} failed with error: ${e.stack}`)
