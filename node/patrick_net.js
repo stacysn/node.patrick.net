@@ -644,6 +644,7 @@ async function render(state) { /////////////////////////////////////////
 
         accept_post : async function() { // insert new post or update old post
 
+
             let post_data           = await collect_post_data_and_trim(state)
             post_data.post_content  = strip_tags(post_data.post_content.linkify()) // remove all but a small set of allowed html tags
             post_data.post_approved = state.current_user ? 1 : 0 // not logged in posts go into moderation
@@ -679,6 +680,8 @@ async function render(state) { /////////////////////////////////////////
             else await update_prev_next(post_data.post_topic, p)
 
             redirect(`/post/${p}`)
+
+            post_mail(p) // reasons to send out post emails: @user, user following post author, user following post topic
 
             function dirty_post() { // new or anon, foreign, and posting link
                 if ((!state.current_user || state.current_user.user_comments < 3) &&
@@ -2140,10 +2143,10 @@ async function render(state) { /////////////////////////////////////////
             return `<a href='#' onclick="$.get('/approve_comment?comment_id=${ c.comment_id }&${create_nonce_parms()}', function() { $('#comment-${ c.comment_id }').remove() }); return false">approve</a>`
         }
 
-        if (state.current_user.user_pbias >= 3) {
-            return (state.current_user.user_id === c.comment_author || state.current_user.user_id === 1) ?
-                `<a href='#' onclick="if (confirm('Really mark as uncivil?')) { $.get('/uncivil?c=${ c.comment_id }&${create_nonce_parms()}', function() { $('#comment-${ c.comment_id }').remove() }); return false}" title='attacks person, not point' >uncivil</a>` : ''
+        if (state.current_user.user_pbias >= 3 || state.current_user.user_id === 1) {
+            return `<a href='#' onclick="if (confirm('Really mark as uncivil?')) { $.get('/uncivil?c=${ c.comment_id }&${create_nonce_parms()}', function() { $('#comment-${ c.comment_id }').remove() }); return false}" title='attacks person, not point' >uncivil</a>`
         }
+        else return ''
     }
 
     function create_nonce_parms() {
@@ -2678,21 +2681,23 @@ async function render(state) { /////////////////////////////////////////
 
     async function post_mail(p) { // reasons to send out post emails: @user, user following post author, user following post topic
 
+        var post = await get_row(`select * from posts where post_id=?`, [p], state) // p is just the post_id
+
         var already_mailed = []
 
         // if post_content contains a summons like @user, and user is user_summonable, then email user the post
-        if (matches = p.post_content.match(/@(\w+)/m)) { // just use the first @user in the post, not multiple
+        if (matches = post.post_content.match(/@(\w+)/m)) { // just use the first @user in the post, not multiple
             var summoned_user_username = matches[1]
             var u
             if (u = await get_row(`select * from users where user_name=? and user_id != ? and user_summonable=1`,
-                                       [summoned_user_username, p.post_author], state)) {
+                                       [summoned_user_username, post.post_author], state)) {
 
-                let subject  = `New ${CONF.domain} post by ${p.user_name} directed at ${summoned_user_username}`
+                let subject  = `New ${CONF.domain} post by ${post.user_name} directed at ${summoned_user_username}`
 
                 let notify_message  = `<html><body><head><base href="${BASEURL}" ></head>
-                New post by ${p.user_name}:  <a href='${BASEURL}${post2path(p)}'>${p.post_title}</a><p>
-                <p>${p.post_content}<p>
-                <p><a href='${BASEURL}${post2path(p)}'>Reply</a><p>
+                New post by ${post.user_name}:  <a href='${BASEURL}${post2path(post)}'>${post.post_title}</a><p>
+                <p>${post.post_content}<p>
+                <p><a href='${BASEURL}${post2path(post)}'>Reply</a><p>
                 <font size='-1'>Stop allowing <a href='${BASEURL}/profile'>@user summons</a></font></body></html>`
 
                 if (u.user_email) mail(u.user_email, subject, notify_message) // user_email could be null in db
@@ -2705,20 +2710,20 @@ async function render(state) { /////////////////////////////////////////
         // now do user follower emails
         var rows = []
         if (rows = await query(`select distinct rel_self_id as user_id from relationships where rel_other_id = ? and rel_i_follow > 0`,
-                               [p.post_author], state)) {
+                               [post.post_author], state)) {
             rows.forEach(async function(row) {
 
                 if (already_mailed[row.rel_self_id]) return
 
                 let u = await get_userrow(row.rel_self_id)
 
-                let subject = `New ${CONF.domain} post by ${p.user_name}`
+                let subject = `New ${CONF.domain} post by ${post.user_name}`
 
                 let notify_message  = `<html><body><head><base href="${BASEURL}" ></head>
-                New post by ${p.user_name}, <a href='${BASEURL}${post2path(p)}'>${p.post_title}</a>:<p>
-                <p>${p.post_content}<p>\r\n\r\n
-                <p><a href='${BASEURL}${post2path(p)}?offset=${offset}#post-${p.post_id}'>Reply</a><p>
-                <font size='-1'>Stop following <a href='${BASEURL}/user/${p.user_name}'>${p.user_name}</a></font><br>`
+                New post by ${post.user_name}, <a href='${BASEURL}${post2path(post)}'>${post.post_title}</a>:<p>
+                <p>${post.post_content}<p>\r\n\r\n
+                <p><a href='${BASEURL}${post2path(post)}?offset=${offset}#post-${post.post_id}'>Reply</a><p>
+                <font size='-1'>Stop following <a href='${BASEURL}/user/${post.user_name}'>${post.user_name}</a></font><br>`
 
                 mail(u.user_email, subject, notify_message)
                 already_mailed[u.user_id] ? already_mailed[u.user_id]++ : already_mailed[u.user_id] = 1
@@ -2726,21 +2731,21 @@ async function render(state) { /////////////////////////////////////////
         }
 
         // now do topic follower emails
-        if (p.post_topic) {
-            if (rows = await query(`select distinct topicwatch_user_id from topicwatches where topicwatch_name = ?`, [p.post_topic], state)) {
+        if (post.post_topic) {
+            if (rows = await query(`select distinct topicwatch_user_id from topicwatches where topicwatch_name = ?`, [post.post_topic], state)) {
                 rows.forEach(async function(row) {
 
                     if (already_mailed[row.topicwatch_user_id]) return
 
                     let u = await get_userrow(row.topicwatch_user_id)
 
-                    let subject = `New ${CONF.domain} post in ${p.post_topic}`
+                    let subject = `New ${CONF.domain} post in ${post.post_topic}`
 
                     let notify_message  = `<html><body><head><base href="${BASEURL}" ></head>
-                    New post in ${p.post_topic}, <a href='${BASEURL}${post2path(p)}'>${p.post_title}</a>:<p>
-                    <p>${p.post_content}<p>\r\n\r\n
-                    <p><a href='${BASEURL}${post2path(p)}?offset=${offset}#post-${p.post_id}'>Reply</a><p>
-                    <font size='-1'>Stop following <a href='${BASEURL}/topic/${p.post_topic}'>${p.post_topic}</a></font><br>`
+                    New post in ${post.post_topic}, <a href='${BASEURL}${post2path(post)}'>${post.post_title}</a>:<p>
+                    <p>${post.post_content}<p>\r\n\r\n
+                    <p><a href='${BASEURL}${post2path(post)}?offset=${offset}#post-${post.post_id}'>Reply</a><p>
+                    <font size='-1'>Stop following <a href='${BASEURL}/topic/${post.post_topic}'>${post.post_topic}</a></font><br>`
 
                     mail(u.user_email, subject, notify_message)
                     already_mailed[u.user_id] ? already_mailed[u.user_id]++ : already_mailed[u.user_id] = 1
@@ -3384,8 +3389,8 @@ async function render(state) { /////////////////////////////////////////
                   release_connection_to_pool(state)
         }
         catch(e) {
-            console.log(`${Date()} ${state.ip} ${state.req.url} failed with error: ${e.stack}`)
-            return send_html(intval(e.code) || 500, `node server says: ${e.message}`)
+            console.log(`${Date()} ${state.ip} ${state.req.url} failed with error: ${e.stack || e}`)
+            return send_html(intval(e.code) || 500, `node server says: ${e.message || e}`)
         }
     }
     else return send_html(404, `${state.page} was not found`)

@@ -1,5 +1,5 @@
-# patrick.net
-The code for the http://patrick.net forum
+# whatdidyoubid.com
+The code for the http://whatdidyoubid.com forum
 
 You'll need mysql and node.
 
