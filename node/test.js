@@ -2,6 +2,8 @@ base_url  = 'http://dev.patrick.net'
 //base_url  = 'http://node.patrick.net'
 //base_url  = 'https://patrick.net'
 
+console.log(base_url)
+
 test_user = {
     email     : 'badraig@yahoo.com',
     password  : process.env.test_password,

@@ -2722,7 +2722,7 @@ async function render(state) { /////////////////////////////////////////
                 let notify_message  = `<html><body><head><base href="${BASEURL}" ></head>
                 New post by ${post.user_name}, <a href='${BASEURL}${post2path(post)}'>${post.post_title}</a>:<p>
                 <p>${post.post_content}<p>\r\n\r\n
-                <p><a href='${BASEURL}${post2path(post)}?offset=${offset}#post-${post.post_id}'>Reply</a><p>
+                <p><a href='${BASEURL}${post2path(post)}'>Reply</a><p>
                 <font size='-1'>Stop following <a href='${BASEURL}/user/${post.user_name}'>${post.user_name}</a></font><br>`
 
                 mail(u.user_email, subject, notify_message)
@@ -2744,7 +2744,7 @@ async function render(state) { /////////////////////////////////////////
                     let notify_message  = `<html><body><head><base href="${BASEURL}" ></head>
                     New post in ${post.post_topic}, <a href='${BASEURL}${post2path(post)}'>${post.post_title}</a>:<p>
                     <p>${post.post_content}<p>\r\n\r\n
-                    <p><a href='${BASEURL}${post2path(post)}?offset=${offset}#post-${post.post_id}'>Reply</a><p>
+                    <p><a href='${BASEURL}${post2path(post)}'>Reply</a><p>
                     <font size='-1'>Stop following <a href='${BASEURL}/topic/${post.post_topic}'>${post.post_topic}</a></font><br>`
 
                     mail(u.user_email, subject, notify_message)
