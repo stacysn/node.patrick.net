@@ -119,7 +119,9 @@ function collect_post_data(state) { // if there is any POST data, accumulate it 
                 }
             })
 
-            state.req.on('end', function () { resolve( QUERYSTRING.parse(body) ) })
+            state.req.on('end', function () {
+                resolve( QUERYSTRING.parse(body) )
+            })
         }
         else reject(new Error(`${Date()} attempt to collect_post_data from non-POST by ${state.ip}`))
     })
@@ -1409,7 +1411,9 @@ async function render(state) { /////////////////////////////////////////
 
         recoveryemail : async function() {
 
-            state.message = await send_login_link(state)
+            let post_data = await collect_post_data_and_trim(state)
+
+            state.message = await send_login_link(state, post_data)
 
             let content = html(
                 midpage(
@@ -1439,7 +1443,7 @@ async function render(state) { /////////////////////////////////////////
                     }
                     else {
                         await query('insert into users set user_registered=now(), ?', post_data, state)
-                        state.message = await send_login_link(state)
+                        state.message = await send_login_link(state, post_data)
                     }
                 }
             }
@@ -3108,9 +3112,7 @@ async function render(state) { /////////////////////////////////////////
         send(code, headers, html)
     }
 
-    async function send_login_link(state) {
-
-        let post_data = await collect_post_data_and_trim(state)
+    async function send_login_link(state, post_data) {
 
         if (!valid_email(post_data.user_email)) return `Please go back and enter a valid email`
 

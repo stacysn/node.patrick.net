@@ -63,7 +63,7 @@ it('should get logged in page', function (done) {
 
     request(base_url + '/user/' + test_user.user_name, function (err, resp, body) {
         assert.ok(!err, 'no error')
-        assert.ok(body.match(/logout/), 'login proof')
+        assert.ok(body.match(/logout/), 'login proof (has test user password been changed?)')
         assert.ok(!body.match(/login/), 'more login proof')
         done()
     })
