@@ -300,9 +300,9 @@ Number.prototype.number_format = function() {
 String.prototype.linkify = function(ref) {
 
     let hashtagPattern   = /^#(\w+)/gim
-    let boldPattern      = / \*(.+)\*/gim
-    let italicPattern    = / _(.+)_/gim
-    let blockquotePattern= /""(.+)""/gim
+    let boldPattern      = / \*(.+?)\*/gim
+    let italicPattern    = / _(.+?)_/gim
+    let blockquotePattern= /""(.+?)""/gim
     let imagePattern     = /((https?:\/\/[\w$%&~\/.\-;:=,?@\[\]+]*?)\.(jpg|jpeg|gif|gifv|png|bmp))(\s|$)/gim
     let urlPattern       = /\b(https?:\/\/[a-z0-9-+&@#\/%?=~_|!:,.;]*[a-z0-9-+&@#\/%=~_|])(\s|$)/gim // http://, https://
     let pseudoUrlPattern = /(^|[^\/])(www\.[\S]+(\b|$))(\s|$)/gim                                    // www. sans http:// or https://
@@ -1193,7 +1193,7 @@ async function render(state) { /////////////////////////////////////////
 
                 let u = await get_row(`select * from users where user_id=?`, [comment_row.comment_author], state)
 
-                if (intval(u.user_summonable)) {
+                if (intval(u && u.user_summonable)) {
 
                     let subject  = `${state.current_user.user_name} liked your comment`
 
@@ -1239,7 +1239,7 @@ async function render(state) { /////////////////////////////////////////
 
                 let u = await get_row(`select * from users where user_id=?`, [post_row.post_author], state)
 
-                if (intval(u.user_summonable)) {
+                if (intval(u && u.user_summonable)) {
 
                     let subject  = `${state.current_user.user_name} liked your post`
 
