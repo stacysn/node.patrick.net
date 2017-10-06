@@ -2345,12 +2345,12 @@ async function render(state) { /////////////////////////////////////////
             return
         }
 
+        if (!(['http:', 'https:'].indexOf(URL.parse(extlink).protocol) > -1)) return // ignore invalid protocols
+
         let host = URL.parse(extlink).host
+        if (new RegExp(CONF.domain).test(host)) return // ignore links back to own domain
 
-        if (!(['http:', 'https:'].indexOf(URL.parse(extlink).protocol) > -1)) return '' // ignore invalid protocols
-        if (new RegExp(CONF.domain).test(host))                               return '' // ignore links back to own domain
-
-        return `<a href='${brandit(extlink)}' target='_blank' title='original story at ${host}' ><img src='/images/ext_link.png'></a>`
+        return extlink
     }
 
     function get_first_image(post) {
@@ -2896,8 +2896,6 @@ async function render(state) { /////////////////////////////////////////
             
             var formatted = state.posts.map(post => {
 
-                var link = post_link(post)
-
                 if (!state.current_user && post.post_title.match(/thunderdome/gi)) return '' // hide thunderdome posts if not logged in
                 if (!state.current_user && post.post_nsfw)                         return '' // hide porn posts if not logged in
 
@@ -2920,7 +2918,6 @@ async function render(state) { /////////////////////////////////////////
 
                 let imgdiv        = (state.current_user && state.current_user.user_hide_post_list_photos) ? '' : get_first_image(post)
                 let arrowbox_html = arrowbox(post)
-                let extlink       = get_external_link(post)
                 let firstwords    = `<font size='-1'>${first_words(post.post_content, 30)}</font>`
 
                 if (moderation) {
@@ -2940,16 +2937,25 @@ async function render(state) { /////////////////////////////////////////
                     // should add commas to post_comments here
                     var latest = `<a href='${path}'>${post.post_comments}&nbsp;comment${s}</a>, latest <a href='${path}#comment-${post.post_latest_comment_id}' >${ago}</a>`
                 }
-                else var latest = `Posted ${ago}`
+                else var latest = `<a href='${post2path(post)}'>Posted ${ago}</a>`
 
                 if (state.current_user                                 &&
                     state.current_user.relationships[post.post_author] &&
                     state.current_user.relationships[post.post_author].rel_i_ban) var hide = `style='display: none'`
                 else var hide = ''
 
-                return `<div class='post' id='post-${post.post_id}' ${hide} >${arrowbox_html}${imgdiv}<b><font size='+1'>${link}</font></b>
-                       ${extlink}<br>by <a href='/user/${ post.user_name }'>${ post.user_name }</a> ${hashlink} &nbsp;
-                       ${latest} ${unread} ${approval_link} ${delete_link} ${nuke_link}<br>${firstwords}</div>`
+                let extlink = get_external_link(post)
+                if (extlink) {
+                    let host = URL.parse(extlink).host.replace(/www./, '').substring(0, 31)
+                    var link = `<b><font size='+1'><a href='${brandit(extlink)}' target='_blank' >${post.post_title}</font></b></a> (${host})`
+                }
+                else {
+                    var link = `<b><font size='+1'>${post_link(post)}</font></b>` // internal link
+                }
+
+                return `<div class='post' id='post-${post.post_id}' ${hide} >${arrowbox_html}${imgdiv}${link}
+                <br>by <a href='/user/${ post.user_name }'>${ post.user_name }</a> ${hashlink} &nbsp;
+                ${latest} ${unread} ${approval_link} ${delete_link} ${nuke_link}<br>${firstwords}</div>`
             })
         }
         else formatted = []
