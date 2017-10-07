@@ -646,15 +646,16 @@ async function render(state) { /////////////////////////////////////////
 
         accept_post : async function() { // insert new post or update old post
 
+            let post_data = await collect_post_data_and_trim(state)
 
-            let post_data           = await collect_post_data_and_trim(state)
+            // look for hashtag as first item on a line before linkify(), which will make it a link and thus not starting with # anymore
+            let matches = null
+            if (matches = post_data.post_content.match(/^#(\w+)/m)) post_data.post_topic = matches[1] // first tag in the post becomes topic
+            else                                                   post_data.post_topic = 'misc'
+
             post_data.post_content  = strip_tags(post_data.post_content.linkify()) // remove all but a small set of allowed html tags
             post_data.post_approved = state.current_user ? 1 : 0 // not logged in posts go into moderation
             delete post_data.submit
-
-            let matches = null
-            if (matches = post_data.post_content.match(/#(\w+)/)) post_data.post_topic = matches[1] // first tag in the post becomes topic
-            else                                                  post_data.post_topic = 'misc'
 
             if (intval(post_data.post_id)) { // editing old post, do not update post_modified time because it confuses users
                 await query('update posts set ? where post_id=?', [post_data, intval(post_data.post_id)], state)
