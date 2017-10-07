@@ -650,8 +650,9 @@ async function render(state) { /////////////////////////////////////////
 
             // look for hashtag as first item on a line before linkify(), which will make it a link and thus not starting with # anymore
             let matches = null
-            if (matches = post_data.post_content.match(/^#(\w+)/m)) post_data.post_topic = matches[1] // first tag in the post becomes topic
-            else                                                   post_data.post_topic = 'misc'
+            if      (matches = post_data.post_content.match(/^#(\w+)/m)) post_data.post_topic = matches[1] // first tag starting a line becomes topic
+            else if (matches = post_data.post_content.match(/>#(\w+)/m)) post_data.post_topic = matches[1] // else existing, linked topic
+            else                                                         post_data.post_topic = 'misc'
 
             post_data.post_content  = strip_tags(post_data.post_content.linkify()) // remove all but a small set of allowed html tags
             post_data.post_approved = state.current_user ? 1 : 0 // not logged in posts go into moderation
