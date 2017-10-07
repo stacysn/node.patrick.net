@@ -541,12 +541,12 @@ async function render(state) { /////////////////////////////////////////
             if (!valid_nonce()) { // do not die, because that will return a whole html page to be appended into the #comment_list slot
                 // show values for debugging nonce problems
                 state.message = invalid_nonce_message()
-                return send_html(200, popup())
+                return send_html(200, { err: true, content: popup() })
             }
 
             let post_data = await collect_post_data_and_trim(state)
 
-            if (!post_data.comment_content) return send_html(200, '') // empty comment
+            if (!post_data.comment_content) return send_html(200, JSON.stringify({ err: false, content: '' })) // empty comment
 
             // rate limit comment insertion by user's ip address
             var ago = await get_var(`select (unix_timestamp(now()) - unix_timestamp(user_last_comment_time)) as ago from users
@@ -555,7 +555,7 @@ async function render(state) { /////////////////////////////////////////
 
             if (ago && ago < 2) { // this ip already commented less than two seconds ago
                 state.message = 'You are posting comments too quickly! Please slow down'
-                return send_html(200, popup())
+                return send_html(200, JSON.stringify({ err: true, content: popup() }))
             }
             else {
                 post_data.comment_author   = state.current_user ? state.current_user.user_id : 0
@@ -570,8 +570,8 @@ async function render(state) { /////////////////////////////////////////
                 }
                 catch(e) {
                     console.log(`${e} at accept_comment`)
-                    state.message = 'database failed to accept some part of the content'
-                    return send_html(200, popup())
+                    state.message = 'database failed to accept some part of the content, maybe an emoticon'
+                    return send_html(200, JSON.stringify({ err: true, content: popup() }))
                 }
                 let comment_id = insert_result.insertId
 
@@ -579,7 +579,7 @@ async function render(state) { /////////////////////////////////////////
                 state.comment = await get_row('select * from comments left join users on comment_author=user_id where comment_id = ?',
                                               [comment_id], state)
 
-                send_html(200, format_comment(state.comment)) // send html fragment
+                send_html(200, JSON.stringify({ err: false, content: format_comment(state.comment) })) // send html fragment
 
                 comment_mail(state.comment)
 
@@ -2016,16 +2016,17 @@ async function render(state) { /////////////////////////////////////////
     }
 
     function comment_box() { // add new comment, just updates page without reload
-        let url = `/accept_comment?${create_nonce_parms()}`
+        let url = `/accept_comment?${create_nonce_parms()}` // first href on button below is needed for mocha test
         return `
         ${state.current_user ? upload_form() : ''}
         <form id='commentform' >
             <textarea id='ta' name='comment_content' class='form-control' rows='10' placeholder='write a comment...' ></textarea><p>
             <input type='hidden' name='comment_post_id' value='${state.post.post_id}' />
-            <button class='btn btn-success btn-sm' id='accept_comment' href='${url}'
-                onclick="$.post('${url}', $('#commentform').serialize()).done(function(data) {
-                    $('#comment_list').append(data)
-                    document.getElementById('commentform').reset() // clear the textbox
+            <button class='btn btn-success btn-sm' id='accept_comment' href=${url} 
+                onclick="$.post('${url}', $('#commentform').serialize()).done(function(response) {
+                    response = JSON.parse(response) // was a string, now is an object
+                    $('#comment_list').append(response.content)
+                    if (!response.err) document.getElementById('commentform').reset() // don't clear the textbox if error
                 })
                 return false" >submit</button>
         </form>`
@@ -2341,7 +2342,7 @@ async function render(state) { /////////////////////////////////////////
         let extlink = c('a').attr('href')
 
         if (!extlink) {
-            console.log('get_external_link() was passed falsey extlink')
+            console.log('get_external_link() was passed falsey extlink in ' + post.post_content)
             return
         }
 
@@ -2721,6 +2722,8 @@ async function render(state) { /////////////////////////////////////////
 
                 let u = await get_userrow(row.rel_self_id)
 
+                if (!u) return
+
                 let subject = `New ${CONF.domain} post by ${post.user_name}`
 
                 let notify_message  = `<html><body><head><base href="${BASEURL}" ></head>
@@ -2742,6 +2745,8 @@ async function render(state) { /////////////////////////////////////////
                     if (already_mailed[row.topicwatch_user_id]) return
 
                     let u = await get_userrow(row.topicwatch_user_id)
+
+                    if (!u) return
 
                     let subject = `New ${CONF.domain} post in ${post.post_topic}`
 

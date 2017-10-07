@@ -109,7 +109,7 @@ it('home page should show the new test post', function (done) {
 
 it('should create a comment', function (done) {
 
-    var item = dom.window.document.getElementById('accept_comment')
+    var item = dom.window.document.getElementById('accept_comment') // find the accept_comment url, with nonce
 
     for(var j = 0; j < item.attributes.length; j++) {
         if ('href' === item.attributes[j].name) var href = base_url + item.attributes[j].value
@@ -127,7 +127,7 @@ it('should create a comment', function (done) {
     request.post(options, function (err, resp, body) {
         assert.ok(body.match(random_comment), 'new comment proof')
         assert.ok(!err, 'no error')
-        var a = require('cheerio').load(body)("a:contains(delete)")[0].attribs.onclick
+        var a = require('cheerio').load(JSON.parse(body).content)("a:contains(delete)")[0].attribs.onclick
         matches = a.match(/'(.delete_comment.*?)'/) // grab the delete link for a test below
         delete_link = matches[1]
         done()
