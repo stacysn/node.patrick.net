@@ -1335,8 +1335,9 @@ async function render(state) { /////////////////////////////////////////
                                         left join users on user_id=post_author
                                         where post_id=?`, [current_user_id, current_user_id, post_id], state)
 
-            if (!state.post)               { await repair_referer(); return die(`No post with id "${post_id}"`) }
-            if (!state.post.post_approved) { await repair_referer(); return die(`That post is waiting for moderation`) }
+            if (!state.post) { await repair_referer(); return die(`No post with id "${post_id}"`) }
+
+            if (!state.post.post_approved && current_user_id !== 1) { await repair_referer(); return die(`That post is waiting for moderation`) }
 
             state.comments            = await post_comment_list(state.post) // pick up the comment list for this post
             state.comments.found_rows = await sql_calc_found_rows()
