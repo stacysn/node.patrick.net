@@ -1508,7 +1508,9 @@ async function render(state) { /////////////////////////////////////////
 
             let offset = await cid2offset(p, c)
 
-            redirect(`/post/${p}?offset=${offset}#comment-${c}`)
+            let post = await get_row(`select * from posts where post_id=?`, [p], state)
+
+            redirect(`${post2path(post)}?offset=${offset}#comment-${c}`)
         },
 
         topic : async function() {
