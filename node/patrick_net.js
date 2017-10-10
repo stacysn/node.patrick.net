@@ -3407,7 +3407,7 @@ async function render(state) { /////////////////////////////////////////
                   release_connection_to_pool(state)
         }
         catch(e) {
-            console.log(`${Date()} ${state.ip} ${state.req.url} failed with error: ${e.stack || e}`)
+            console.log(`${Date()} ${state.ip} ${state.req.url} failed with error: ${JSON.stringify(e)}`)
             return send_html(intval(e.code) || 500, `node server says: ${e.message || e}`)
         }
     }
