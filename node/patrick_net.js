@@ -2420,7 +2420,7 @@ async function render(state) { /////////////////////////////////////////
             <div style='float:right' >${ icon_or_loginprompt(state) }</div>
             <a href='/' ><h1 class='sitename' title='back to home page' >${ CONF.domain }</h1></a> &nbsp; ${hashtag}
             <br>
-            <font size='-1'>${ top_topics() + '<br>' + brag() + '</font><br>' + new_post_button() }
+            ${ top_topics() + '<br>' + brag() + '</font><br>' + new_post_button() }
             </div>`
     }
 
