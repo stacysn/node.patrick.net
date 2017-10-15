@@ -1617,6 +1617,8 @@ async function render(state) { /////////////////////////////////////////
             //form.on('progress', function(bytesReceived, bytesExpected) { console.log(`${bytesReceived}, ${bytesExpected}`) })
 
             form.parse(state.req, async function (err, fields, files) {
+                if (err) throw err
+
                 let d        = new Date()
                 let mm       = ('0' + (d.getMonth() + 1)).slice(-2)
                 let url_path = `/${CONF.upload_dir}/${d.getFullYear()}/${mm}`
@@ -1834,8 +1836,8 @@ async function render(state) { /////////////////////////////////////////
         let net = post.post_likes - post.post_dislikes
 
         if (state.current_user) { // user is logged in
-            var upgrey   = post.postvote_up   ? `style='color: grey; pointer-events: none;' title='you liked this'    ` : ``
-            var downgrey = post.postvote_down ? `style='color: grey; pointer-events: none;' title='you disliked this' ` : ``
+            var upgrey   = post.postvote_up   ? `style='color: grey; pointer-events: none;'` : ``
+            var downgrey = post.postvote_down ? `style='color: grey; pointer-events: none;'` : ``
 
             var likelink    = `href='#' ${upgrey}   onclick="postlike('post_${post.post_id}');   return false;"`
             var dislikelink = `href='#' ${downgrey} onclick="postdislike('post_${post.post_id}');return false;"`
@@ -1846,7 +1848,8 @@ async function render(state) { /////////////////////////////////////////
         }
 
         return `<div class='arrowbox' >
-                <a ${likelink} >&#9650;</a><br><span id='post_${post.post_id}' />${net}</span><br><a ${dislikelink} >&#9660;</a>
+                <a ${likelink}    title='${post.post_likes} upvotes'      >&#9650;</a><br><span id='post_${post.post_id}' />${net}</span><br>
+                <a ${dislikelink} title='${post.post_dislikes} downvotes' >&#9660;</a>
                 </div>`
     }
 
