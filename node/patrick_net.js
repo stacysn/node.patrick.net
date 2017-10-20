@@ -673,6 +673,8 @@ async function render(state) { /////////////////////////////////////////
                     return die(e)
                 }
                 var p = results.insertId
+
+                post_mail(p) // reasons to send out post emails: @user, user following post author, user following post topic
             }
 
             if (!post_data.post_approved) {
@@ -685,13 +687,10 @@ async function render(state) { /////////////////////////////////////////
 
             redirect(`/post/${p}`)
 
-            post_mail(p) // reasons to send out post emails: @user, user following post author, user following post topic
-
             function dirty_post() { // new or anon, foreign, and posting link
                 if ((!state.current_user || state.current_user.user_comments < 3) &&
                      is_foreign(state)                                            &&
                      CHEERIO.load(post_data.post_content)('a').length)
-
                     return true
                 else
                     return false
@@ -1277,11 +1276,27 @@ async function render(state) { /////////////////////////////////////////
 
         new_post : async function() {
 
-            let content = html(
-                midpage(
-                    post_form()
+            var posts_today
+
+            if (state.current_user) { // if the user is logged in and has posted 7 times today, don't let them post more
+                posts_today = await get_var('select count(*) as c from posts where post_author=? and post_date >= curdate()',
+                                                [state.current_user.user_id], state)
+            }
+
+            if (posts_today >= 7) {
+                var content = html(
+                    midpage(
+                        'You hit your posting limit of 7 for today. Please post more tomorrow!'
+                    )
                 )
-            )
+            }
+            else {
+                var content = html(
+                    midpage(
+                        post_form()
+                    )
+                )
+            }
 
             send_html(200, content)
         },
@@ -1940,6 +1955,7 @@ async function render(state) { /////////////////////////////////////////
                 if (already_mailed[row.postview_user_id]) return
 
                 let u = await get_userrow(row.postview_user_id)
+                if (!u) return
 
                 let subject = `New ${CONF.domain} comment in '${p.post_title}'`
 
