@@ -1,26 +1,26 @@
 // copyright 2017 by Patrick Killelea under the GPLv2 license
 
 // globals are capitalized
-try { CONF = require('./_conf.json') } catch(e) { console.log(e.message); process.exit(1) } // _conf.json is required
+const CHEERIO     = require('cheerio')         // via npm to parse html
+const CLUSTER     = require('cluster')
+const CONF        = require('./_conf.json')    // _conf.json is required
+const CRYPTO      = require('crypto')
+const FORMIDABLE  = require('formidable')      // via npm for image uploading
+const FS          = require('fs')
+const HTTP        = require('http')
+const JSDOM       = require('jsdom').JSDOM
+const MOMENT      = require('moment-timezone') // via npm for time parsing
+const MYSQL       = require('mysql')           // via npm to interface to mysql
+const NODEMAILER  = require('nodemailer')      // via npm to send emails
+const OS          = require('os')
+const QUERYSTRING = require('querystring')
+const URL         = require('url')
 
-CHEERIO     = require('cheerio')         // via npm to parse html
-CLUSTER     = require('cluster')
-CRYPTO      = require('crypto')
-FORMIDABLE  = require('formidable')      // via npm for image uploading
-FS          = require('fs')
-HTTP        = require('http')
-JSDOM       = require('jsdom').JSDOM
-MOMENT      = require('moment-timezone') // via npm for time parsing
-MYSQL       = require('mysql')           // via npm to interface to mysql
-NODEMAILER  = require('nodemailer')      // via npm to send emails
-OS          = require('os')
-QUERYSTRING = require('querystring')
-URL         = require('url')
+const BASEURL     = (/^dev\./.test(OS.hostname())) ? CONF.baseurl_dev : CONF.baseurl // CONF.baseurl_dev is for testing, 'like http://dev' locally
+const LOCKS       = {}                         // db locks to allow only one db connection per ip; helps mitigate dos attacks
 
-BASEURL     = (/^dev\./.test(OS.hostname())) ? CONF.baseurl_dev : CONF.baseurl // CONF.baseurl_dev is for testing, 'like http://dev' locally
-LOCKS       = {}                         // db locks to allow only one db connection per ip; helps mitigate dos attacks
-
-POOL = MYSQL.createPool(CONF.db)
+const POOL = MYSQL.createPool(CONF.db)
+const MAX_POSTS = 7                            // max new thread posts per user per day
 // end of globals
 
 if (CLUSTER.isMaster) {
@@ -666,6 +666,11 @@ async function render(state) { /////////////////////////////////////////
                 if (dirty_post()) return die(`spam rejected`)
 
                 post_data.post_author = state.current_user ? state.current_user.user_id : 0
+
+                // if any user, even anonymous, has posted 7 times today, don't let them post more
+                posts_today = await get_var('select count(*) as c from posts where post_author=? and post_date >= curdate()', [post_data.post_author], state)
+                if (posts_today >= 7) return die('only 7 new thread posts allowed per user per day')
+
                 try {
                     var results = await query('insert into posts set ?, post_modified=now()', post_data, state)
                 }
@@ -1102,11 +1107,10 @@ async function render(state) { /////////////////////////////////////////
             send_html(200, content)
         },
 
-        ignore : async function() { // stop ignoring a user
+        ignore : async function() { // ignore a user
 
             let other_id = intval(_GET('other_id'))
 
-            if (!other_id)           return send_html(200, '')
             if (!state.current_user) return send_html(200, '')
             if (!valid_nonce())      return send_html(200, '')
 
