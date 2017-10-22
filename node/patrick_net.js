@@ -3424,7 +3424,7 @@ async function render(state) { /////////////////////////////////////////
 
         await get_connection_from_pool(state)  .catch(e => { logit([e, 'get_connection_from_pool']) })
         await block_nuked(state)               .catch(e => { logit([e, 'block_nuked']) })
-        //await block_countries(state) // comment this out to save the 50ms and see if we get extra spam
+        await block_countries(state)           .catch(e => { logit([e, 'block_countries']) })
         await set_user(state)                  .catch(e => { logit([e, 'set_user']) })
         await header_data(state)               .catch(e => { logit([e, 'header_data']) })
         await pages[state.page](state)         .catch(e => { logit([e, `pages[${state.page}]`]) })
