@@ -1985,7 +1985,7 @@ async function render(state) { /////////////////////////////////////////
         var nuke             = get_nuke_link(c)
         var icon             = user_icon(c, 0.4, `'align='left' hspace='5' vspace='2'`) // scale image down
         var u                = c.user_name ? `<a href='/user/${c.user_name}'>${c.user_name}</a>` : 'anonymous'
-        var mute             = `<a href='#' onclick="if (confirm('Really ignore ${c.user_name}?')) { $.get('/ignore?other_id=${ c.user_id }&${create_nonce_parms()}', function() { $('#comment-${ c.comment_id }').remove() }); return false}" title='ignore ${c.user_name}' >${c.user_bannedby} <img src='/images/mute.png'></a>`
+        var mute             = `<a href='#' onclick="if (confirm('Really ignore ${c.user_name}?')) { $.get('/ignore?other_id=${ c.user_id }&${create_nonce_parms()}', function() { $('#comment-${ c.comment_id }').remove() }); return false}; return false" title='ignore ${c.user_name}' >ignore (${c.user_bannedby})</a>`
         var clink            = contextual_link(c)
 
         if (state.current_user) {
