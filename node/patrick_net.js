@@ -455,7 +455,7 @@ function query(sql, sql_parms, state) {
             //debug(query.sql)
 
             if (error) {
-                console.log(error)
+                console.log(`mysql error: ${JSON.stringify(error)}`)
                 reject(new Error(error))
             }
 
@@ -568,7 +568,7 @@ async function render(state) { /////////////////////////////////////////
                 post_data.comment_likes    = 0
                 post_data.comment_date     = new Date().toISOString().slice(0, 19).replace('T', ' ') // mysql datetime format
                 post_data.comment_approved = state.current_user ? 1 : no_links(post_data.comment_content) // approve anon content if no links
- 
+
                 try {
                     var insert_result = await query('insert into comments set ?', post_data, state)
                 }
@@ -662,11 +662,11 @@ async function render(state) { /////////////////////////////////////////
             else                                                         post_data.post_topic = 'misc'
 
             post_data.post_content  = strip_tags(post_data.post_content.linkify()) // remove all but a small set of allowed html tags
-            post_data.post_approved = 1 // we may need to be more restrictive if spammers start getting through
+            post_data.post_approved = 1 // may need to be more restrictive if spammers start getting through
 
             if (intval(post_data.post_id)) { // editing old post, do not update post_modified time because it confuses users
-                await query('update posts set ? where post_id=?', [post_data, intval(post_data.post_id)], state)
                 var p = intval(post_data.post_id)
+                await query('update posts set ? where post_id=?', [post_data, p], state)
             }
             else { // new post
                 post_data.post_author = state.current_user.user_id
@@ -688,6 +688,7 @@ async function render(state) { /////////////////////////////////////////
                 catch (e) { return die(e) }
 
                 var p = results.insertId
+                if (!p) return die(`failed to insert ${post_data} into posts`)
 
                 post_mail(p) // reasons to send out post emails: @user, user following post author, user following post topic
             }
@@ -3421,20 +3422,22 @@ async function render(state) { /////////////////////////////////////////
 
     if (typeof pages[state.page] === 'function') { // hit the db iff the request is for a valid url
 
-        try {
-            await get_connection_from_pool(state)
-            await block_nuked(state)
-            //await block_countries(state) // comment this out to save the 50ms and see if we get extra spam
-            await set_user(state)
-            await header_data(state)
-            await pages[state.page](state)
-                  release_connection_to_pool(state)
-        }
-        catch(e) {
-            console.log(`${Date()} ${state.ip} ${state.req.url} failed with error: ${JSON.stringify(e)}`)
-            return send_html(intval(e.code) || 500, `node server says: ${e.message || e}`)
-        }
+        await get_connection_from_pool(state)  .catch(e => { logit([e, 'get_connection_from_pool']) })
+        await block_nuked(state)               .catch(e => { logit([e, 'block_nuked']) })
+        //await block_countries(state) // comment this out to save the 50ms and see if we get extra spam
+        await set_user(state)                  .catch(e => { logit([e, 'set_user']) })
+        await header_data(state)               .catch(e => { logit([e, 'header_data']) })
+        await pages[state.page](state)         .catch(e => { logit([e, `pages[${state.page}]`]) })
+        release_connection_to_pool(state)
+
     }
     else return send_html(404, `${state.page} was not found`)
+
+    function logit(arr) {
+        var e       = arr[0]
+        var message = arr[1]
+        console.log(`${Date()} ${state.ip} ${state.req.url} failed in ${message} with error: ${JSON.stringify(e)}`)
+        return send_html(intval(e.code) || 500, `node server says: ${e.message || e}`)
+    }
 
 } // end of render()
