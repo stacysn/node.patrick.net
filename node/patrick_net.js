@@ -1,6 +1,7 @@
 // copyright 2017 by Patrick Killelea under the GPLv2 license
 
 // globals are capitalized
+
 const CHEERIO     = require('cheerio')         // via npm to parse html
 const CLUSTER     = require('cluster')
 const CONF        = require('./_conf.json')    // _conf.json is required
@@ -9,6 +10,8 @@ const FORMIDABLE  = require('formidable')      // via npm for image uploading
 const FS          = require('fs')
 const HTTP        = require('http')
 const JSDOM       = require('jsdom').JSDOM
+const LOCKS       = {}                         // db locks to allow only one db connection per ip; helps mitigate dos attacks
+const MAX_POSTS   = 7                          // max new thread posts per user per day
 const MOMENT      = require('moment-timezone') // via npm for time parsing
 const MYSQL       = require('mysql')           // via npm to interface to mysql
 const NODEMAILER  = require('nodemailer')      // via npm to send emails
@@ -16,11 +19,10 @@ const OS          = require('os')
 const QUERYSTRING = require('querystring')
 const URL         = require('url')
 
+// dependent on requires above
 const BASEURL     = (/^dev\./.test(OS.hostname())) ? CONF.baseurl_dev : CONF.baseurl // CONF.baseurl_dev is for testing, 'like http://dev' locally
-const LOCKS       = {}                         // db locks to allow only one db connection per ip; helps mitigate dos attacks
+const POOL        = MYSQL.createPool(CONF.db)
 
-const POOL = MYSQL.createPool(CONF.db)
-const MAX_POSTS = 7                            // max new thread posts per user per day
 // end of globals
 
 if (CLUSTER.isMaster) {
@@ -299,21 +301,23 @@ Number.prototype.number_format = function() {
 
 String.prototype.linkify = function(ref) {
 
-    let hashtagPattern   = /^#(\w+)/gim
-    let boldPattern      = / \*(.+?)\*/gim
-    let italicPattern    = / _(.+?)_/gim
-    let blockquotePattern= /""(.+?)""/gim
-    let imagePattern     = /((https?:\/\/[\w$%&~\/.\-;:=,?@\[\]+]*?)\.(jpg|jpeg|gif|gifv|png|bmp))(\s|$)/gim
-    let urlPattern       = /\b(https?:\/\/[a-z0-9-+&@#\/%?=~_|!:,.;]*[a-z0-9-+&@#\/%=~_|])(\s|$)/gim // http://, https://
-    let pseudoUrlPattern = /(^|[^\/])(www\.[\S]+(\b|$))(\s|$)/gim                                    // www. sans http:// or https://
-    let emailpostPattern = /([\w.]+@[a-zA-Z_-]+?(?:\.[a-zA-Z]{2,6})+)\b(?!["<])/gim
-    let linebreakPattern = /\n/gim
-    let youtubePattern   = /(?:^|\s)[a-zA-Z\/\/:\.]*youtu(be.com\/watch\?v=|.be\/|be.com\/v\/|be.com\/embed\/)([a-zA-Z0-9\-_]+)([a-zA-Z0-9\/\*\-\_\?\&\;\%\=\.]*)/i
-    let vimeoPattern     = /(?:^|\s)[a-zA-Z\/\/:\.]*(player.)?vimeo.com\/(video\/)?([a-zA-Z0-9]+)/i
+    let blockquotePattern = /""(.+?)""/gim
+    let boldPattern       = / \*(.+?)\*/gim
+    let emailpostPattern  = /([\w.]+@[a-zA-Z_-]+?(?:\.[a-zA-Z]{2,6})+)\b(?!["<])/gim
+    let hashtagPattern    = /^#(\w+)/gim
+    let imagePattern      = /((https?:\/\/[\w$%&~\/.\-;:=,?@\[\]+]*?)\.(jpg|jpeg|gif|gifv|png|bmp))(\s|$)/gim
+    let ipadPattern       = /Sent from my iPad/gim
+    let italicPattern     = / _(.+?)_/gim
+    let linebreakPattern  = /\n/gim
+    let pseudoUrlPattern  = /(^|[^\/])(www\.[\S]+(\b|$))(\s|$)/gim                                    // www. sans http:// or https://
+    let urlPattern        = /\b(https?:\/\/[a-z0-9-+&@#\/%?=~_|!:,.;]*[a-z0-9-+&@#\/%=~_|])(\s|$)/gim // http://, https://
+    let vimeoPattern      = /(?:^|\s)[a-zA-Z\/\/:\.]*(player.)?vimeo.com\/(video\/)?([a-zA-Z0-9]+)/i
+    let youtubePattern    = /(?:^|\s)[a-zA-Z\/\/:\.]*youtu(be.com\/watch\?v=|.be\/|be.com\/v\/|be.com\/embed\/)([a-zA-Z0-9\-_]+)([a-zA-Z0-9\/\*\-\_\?\&\;\%\=\.]*)/i
 
     let result = this
         .trim()
         .replace(/\r/gim,          '')
+        .replace(ipadPattern,      '')
         .replace(vimeoPattern,     '<iframe src="//player.vimeo.com/video/$3" width="500" height="375" frameborder="0" webkitallowfullscreen mozallowfullscreen allowfullscreen></iframe>')
         .replace(youtubePattern,   '<iframe width="500" height="375" src="//www.youtube.com/embed/$2$3" allowfullscreen></iframe>')
         .replace(hashtagPattern,   '<a href="/topic/$1">#$1</a>')
@@ -646,7 +650,10 @@ async function render(state) { /////////////////////////////////////////
 
         accept_post : async function() { // insert new post or update old post
 
+            if (!state.current_user) return die(`anonymous posts are not allowed`)
+
             let post_data = await collect_post_data_and_trim(state)
+            delete post_data.submit
 
             // look for hashtag as first item on a line before linkify(), which will make it a link and thus not starting with # anymore
             let matches = null
@@ -655,51 +662,38 @@ async function render(state) { /////////////////////////////////////////
             else                                                         post_data.post_topic = 'misc'
 
             post_data.post_content  = strip_tags(post_data.post_content.linkify()) // remove all but a small set of allowed html tags
-            post_data.post_approved = state.current_user ? 1 : 0 // not logged in posts go into moderation
-            delete post_data.submit
+            post_data.post_approved = 1 // we may need to be more restrictive if spammers start getting through
 
             if (intval(post_data.post_id)) { // editing old post, do not update post_modified time because it confuses users
                 await query('update posts set ? where post_id=?', [post_data, intval(post_data.post_id)], state)
                 var p = intval(post_data.post_id)
             }
             else { // new post
-                if (dirty_post()) return die(`spam rejected`)
+                post_data.post_author = state.current_user.user_id
 
-                post_data.post_author = state.current_user ? state.current_user.user_id : 0
+                if ((state.current_user.user_comments < 3) && is_foreign(state) && CHEERIO.load(post_data.post_content)('a').length)
+                    return die(`spam rejected`) // new, foreign, and posting link
 
-                // if any user, even anonymous, has posted 7 times today, don't let them post more
-                posts_today = await get_var('select count(*) as c from posts where post_author=? and post_date >= curdate()', [post_data.post_author], state)
-                if (posts_today >= 7) return die('only 7 new thread posts allowed per user per day')
+                var posts_today = await get_var('select count(*) as c from posts where post_author=? and post_date >= curdate()',
+                    [state.current_user.user_id], state)
+
+                var whole_weeks_registered = await get_var('select floor(datediff(curdate(), user_registered)/7) from users where user_id=?',
+                    [state.current_user.user_id], state)
+
+                if (posts_today >= MAX_POSTS || posts_today > whole_weeks_registered) return die(`you hit your new post limit for today`)
 
                 try {
                     var results = await query('insert into posts set ?, post_modified=now()', post_data, state)
                 }
-                catch (e) {
-                    return die(e)
-                }
+                catch (e) { return die(e) }
+
                 var p = results.insertId
 
                 post_mail(p) // reasons to send out post emails: @user, user following post author, user following post topic
             }
 
-            if (!post_data.post_approved) {
-                mail(CONF.admin_email, 'new post needs review',
-                    `${post_data.post_content}<p><a href='https://${CONF.domain}/post_moderation'>post moderation page</a>`)
-
-                return die(`The moderator will approve your post soon`)
-            }
-            else await update_prev_next(post_data.post_topic, p)
-
+            await update_prev_next(post_data.post_topic, p)
             redirect(`/post/${p}`)
-
-            function dirty_post() { // new or anon, foreign, and posting link
-                if ((!state.current_user || state.current_user.user_comments < 3) &&
-                     is_foreign(state)                                            &&
-                     CHEERIO.load(post_data.post_content)('a').length)
-                    return true
-                else
-                    return false
-            }
         },
 
         approve_comment : async function() {
@@ -953,7 +947,7 @@ async function render(state) { /////////////////////////////////////////
 
                     let post_row = await get_row(`select * from posts where post_id=?`, [post_id], state)
 
-                    return send_html(200, String(post_row.post_likes - post_row.post_dislikes))
+                    return send_html(200, String(post_row.post_dislikes))
                 }
 
                 await query(`update posts set post_dislikes=post_dislikes+1 where post_id=?`, [post_id], state)
@@ -965,7 +959,7 @@ async function render(state) { /////////////////////////////////////////
 
                 await query(`update users set user_dislikes=user_dislikes+1 where user_id=?`, [post_row.post_author], state)
 
-                return send_html(200, String(post_row.post_likes - post_row.post_dislikes))
+                return send_html(200, String(post_row.post_dislikes))
 
                 // no email done of post dislikes
             }
@@ -1226,7 +1220,7 @@ async function render(state) { /////////////////////////////////////////
 
                 if (vote && vote.c) { // if they have voted before on this, just return
                     let post_row = await get_row(`select * from posts where post_id=?`, [post_id], state)
-                    return send_html(200, String(post_row.post_likes - post_row.post_dislikes))
+                    return send_html(200, String(post_row.post_likes))
                 }
 
                 await query(`update posts set post_likes=post_likes+1 where post_id=?`, [post_id], state)
@@ -1238,7 +1232,7 @@ async function render(state) { /////////////////////////////////////////
 
                 await query(`update users set user_likes=user_likes+1 where user_id=?`, [post_row.post_author], state)
 
-                send_html(200, String(post_row.post_likes - post_row.post_dislikes)) // don't return until we send email
+                send_html(200, String(post_row.post_likes)) // don't return until we send email
 
                 let post_url = 'https://' + CONF.domain +  post2path(post_row)
 
@@ -1282,15 +1276,16 @@ async function render(state) { /////////////////////////////////////////
 
             var posts_today
 
-            if (state.current_user) { // if the user is logged in and has posted 7 times today, don't let them post more
-                posts_today = await get_var('select count(*) as c from posts where post_author=? and post_date >= curdate()',
-                                                [state.current_user.user_id], state)
-            }
+            if (!state.current_user && state.current_user.user_id) return die('anonymous users may not create posts')
 
-            if (posts_today >= 7) {
+            // if the user is logged in and has posted MAX_POSTS times today, don't let them post more
+            posts_today = await get_var('select count(*) as c from posts where post_author=? and post_date >= curdate()',
+                                            [state.current_user.user_id], state)
+
+            if (posts_today >= MAX_POSTS || posts_today > state.current_user.user_comments) {
                 var content = html(
                     midpage(
-                        'You hit your posting limit of 7 for today. Please post more tomorrow!'
+                        `You hit your posting limit for today. Please post more tomorrow!`
                     )
                 )
             }
@@ -1537,14 +1532,18 @@ async function render(state) { /////////////////////////////////////////
             var topic = segments(state.req.url)[2] // like /topics/housing
 
             if (!topic) return die('no topic given')
+
+            let user_id = state.current_user ? state.current_user.user_id : 0
             
             let [curpage, slimit, order, order_by] = page()
 
             let sql = `select sql_calc_found_rows * from posts
+                       left join postviews on postview_post_id=post_id and postview_user_id= ?
+                       left join postvotes on postvote_post_id=post_id and postvote_user_id= ?
                        left join users on user_id=post_author
                        where post_topic = ? and post_approved=1 ${order_by} limit ${slimit}`
 
-            state.posts = await query(sql, [topic], state)
+            state.posts = await query(sql, [user_id, user_id, topic], state)
             state.message = '#' + topic
 
             let content = html(
@@ -1852,14 +1851,12 @@ async function render(state) { /////////////////////////////////////////
 
     function arrowbox(post) { // output html for vote up/down arrows; takes a post left joined on user's votes for that post
 
-        let net = post.post_likes - post.post_dislikes
-
         if (state.current_user) { // user is logged in
             var upgrey   = post.postvote_up   ? `style='color: grey; pointer-events: none;'` : ``
             var downgrey = post.postvote_down ? `style='color: grey; pointer-events: none;'` : ``
 
-            var likelink    = `href='#' ${upgrey}   onclick="postlike('post_${post.post_id}');   return false;"`
-            var dislikelink = `href='#' ${downgrey} onclick="postdislike('post_${post.post_id}');return false;"`
+            var likelink    = `href='#' ${upgrey}   onclick="postlike('post_${post.post_id}_up'); return false;"`
+            var dislikelink = `href='#' ${downgrey} onclick="postdislike('post_${post.post_id}_down');return false;"`
         }
         else {
             var likelink    = `href='#' onclick="midpage.innerHTML = registerform.innerHTML; return false;"`
@@ -1867,7 +1864,9 @@ async function render(state) { /////////////////////////////////////////
         }
 
         return `<div class='arrowbox' >
-                <a ${likelink}    title='${post.post_likes} upvotes'      >&#9650;</a><br><span id='post_${post.post_id}' />${net}</span><br>
+                <a ${likelink}    title='${post.post_likes} upvotes'      >&#9650;</a><br>
+                <span id='post_${post.post_id}_up' />${post.post_likes}</span><br>
+                <span id='post_${post.post_id}_down' />${post.post_dislikes}</span><br>
                 <a ${dislikelink} title='${post.post_dislikes} downvotes' >&#9660;</a>
                 </div>`
     }
@@ -1986,6 +1985,7 @@ async function render(state) { /////////////////////////////////////////
         var nuke             = get_nuke_link(c)
         var icon             = user_icon(c, 0.4, `'align='left' hspace='5' vspace='2'`) // scale image down
         var u                = c.user_name ? `<a href='/user/${c.user_name}'>${c.user_name}</a>` : 'anonymous'
+        var mute             = `<a href='#' onclick="if (confirm('Really ignore ${c.user_name}?')) { $.get('/ignore?other_id=${ c.user_id }&${create_nonce_parms()}', function() { $('#comment-${ c.comment_id }').remove() }); return false}" title='ignore ${c.user_name}' >${c.user_bannedby} <img src='/images/mute.png'></a>`
         var clink            = contextual_link(c)
 
         if (state.current_user) {
@@ -2032,6 +2032,7 @@ async function render(state) { /////////////////////////////////////////
             ${c.row_number || ''}
             ${icon}
             ${u} &nbsp;
+            ${mute} &nbsp;
             ${date_link} &nbsp;
             ${like} &nbsp;
             ${dislike} &nbsp;
@@ -2287,10 +2288,10 @@ async function render(state) { /////////////////////////////////////////
             $.get( "/dislike?comment_id="+content.split("_")[1], function(data) { document.getElementById(content).innerHTML = data; });
         }
         function postlike(content) { // For whole post instead of just one comment.
-            $.get( "/like?post_id="+content.split("_")[1], function(data) { document.getElementById(content).innerHTML = data; });
+            $.get( "/like?post_id="+content.split("_")[1]+"_up", function(data) { document.getElementById(content).innerHTML = data; });
         }
         function postdislike(content) { // For whole post instead of just one comment.
-            $.get( "/dislike?post_id="+content.split("_")[1], function(data) { document.getElementById(content).innerHTML = data; });
+            $.get( "/dislike?post_id="+content.split("_")[1]+"_down", function(data) { document.getElementById(content).innerHTML = data; });
         }
         </script>`
     }
