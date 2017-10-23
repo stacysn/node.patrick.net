@@ -16,6 +16,7 @@ const MOMENT      = require('moment-timezone') // via npm for time parsing
 const MYSQL       = require('mysql')           // via npm to interface to mysql
 const NODEMAILER  = require('nodemailer')      // via npm to send emails
 const OS          = require('os')
+const PROCESS     = require('process')
 const QUERYSTRING = require('querystring')
 const URL         = require('url')
 
@@ -24,7 +25,6 @@ const BASEURL     = (/^dev\./.test(OS.hostname())) ? CONF.baseurl_dev : CONF.bas
 const POOL        = MYSQL.createPool(CONF.db)
 
 // end of globals
-
 if (CLUSTER.isMaster) {
     for (var i = 0; i < OS.cpus().length; i++) CLUSTER.fork()
 
@@ -56,15 +56,20 @@ function get_connection_from_pool(state) {
 
         if (LOCKS[state.ip]) {
             setTimeout(() => { release_connection_to_pool(state) }, 2000) // don't let lock last for more than two seconds
-            return reject(new Error('rate limit exceeded'))
+            console.trace()
+            return reject('rate limit exceeded')
         }
 
         LOCKS[state.ip] = Date.now() // set a database lock for this ip; each ip is allowed only one outstanding connection at a time
 
         POOL.getConnection(function(err, db) {
-            err && reject(err)
-            state.db = db
-            resolve()
+            if (err) {
+                console.trace()
+                reject(err)
+            }
+            else {
+                resolve(db)
+            }
         })
     })
 }
@@ -125,7 +130,10 @@ function collect_post_data(state) { // if there is any POST data, accumulate it 
                 resolve( QUERYSTRING.parse(body) )
             })
         }
-        else reject(new Error(`${Date()} attempt to collect_post_data from non-POST by ${state.ip}`))
+        else {
+            console.trace()
+            reject(`${Date()} attempt to collect_post_data from non-POST by ${state.ip}`)
+        }
     })
 }
 
@@ -450,21 +458,26 @@ function query(sql, sql_parms, state) {
     return new Promise(function(resolve, reject) {
         var query
 
+        if (!state.db) {
+            console.trace()
+            return reject('attempt to use db without connection')
+        }
+
         var get_results = function (error, results, fields, timing) { // callback to give to state.db.query()
 
             //debug(query.sql)
 
             if (error) {
-                console.log(`mysql error: ${JSON.stringify(error)}`)
-                reject(new Error(error))
+                console.trace()
+                return reject(error)
             }
 
-            state.queries.push({
+            state.queries.push({ // for logging within the html footer
                 sql : query.sql,
                 ms  : timing
             })
 
-            resolve(results)
+            return resolve(results)
         }
 
         query = sql_parms ? state.db.query(sql, sql_parms, get_results)
@@ -502,19 +515,22 @@ function getimagesize(file) {
 
             identify.stderr.on('data', data => { // remove the file because something is wrong with it
                 FS.unlinkSync(file)
-                console.log(`stderr from 'identify': ${data}`)
-                reject(new Error('invalid image'))
+                console.trace()
+                reject('identify failed on image')
             })
 
             identify.on('close', code => {
                 if (code > 0) { // if code is non-zero, remove the file because something is wrong with it
-                    console.log(`code from 'identify': ${code}`)
                     FS.unlinkSync(file)
-                    reject(new Error('invalid image'))
+                    console.trace()
+                    reject(`non-zero code from identify: ${code}`)
                 }
             })
 
-        } else reject(new Error(`image not found: ${file}`))
+        } else {
+            console.trace()
+            reject(`image not found: ${file}`)
+        }
     })
 }
 
@@ -525,10 +541,16 @@ function resize_image(file, max_dim = 600) { // max_dim is maximum dimension in 
             let mogrify   = spawn('mogrify', ['-resize', max_dim, file]) // /usr/bin/mogrify -resize $max_dim $file
 
             mogrify.on('close', code => {
-                if (code > 0) reject(new Error(`mogrify error: ${code}`)) // todo: if code is non-zero, remove the file because something is wrong with it
-                else          resolve()
+                if (code > 0) {
+                    console.trace()
+                    reject(`mogrify error: ${code}`) // todo: if code is non-zero, remove the file because something is wrong with it
+                }
+                else          resolve(true)
             })
-        } else reject(new Error(`image not found: ${file}`))
+        } else {
+            console.trace()
+            reject(`image not found: ${file}`)
+        }
     })
 }
 
@@ -2781,7 +2803,7 @@ async function render(state) { /////////////////////////////////////////
                     let subject = `New ${CONF.domain} post in ${post.post_topic}`
 
                     let notify_message  = `<html><body><head><base href="${BASEURL}" ></head>
-                    New post in ${post.post_topic}, <a href='${BASEURL}${post2path(post)}'>${post.post_title}</a>:<p>
+                    New post in ${post.post_topic} by ${post.user_name}, <a href='${BASEURL}${post2path(post)}'>${post.post_title}</a>:<p>
                     <p>${post.post_content}<p>\r\n\r\n
                     <p><a href='${BASEURL}${post2path(post)}'>Reply</a><p>
                     <font size='-1'>Stop following <a href='${BASEURL}/topic/${post.post_topic}'>${post.post_topic}</a></font><br>`
@@ -3138,6 +3160,7 @@ async function render(state) { /////////////////////////////////////////
     function send(code, headers, content) {
         state.res.writeHead(code, headers)
         state.res.end(content)
+        release_connection_to_pool(state)
     }
 
     function send_html(code, html) {
@@ -3418,26 +3441,21 @@ async function render(state) { /////////////////////////////////////////
         return want_email ? `<img src='/content/openeye.png'> unwatch` : `<img src='/content/closedeye.png'> watch`
     }
 
-    // end of render() functions
-
     if (typeof pages[state.page] === 'function') { // hit the db iff the request is for a valid url
-
-        await get_connection_from_pool(state)  .catch(e => { logit([e, 'get_connection_from_pool']) })
-        await block_nuked(state)               .catch(e => { logit([e, 'block_nuked']) })
-        await block_countries(state)           .catch(e => { logit([e, 'block_countries']) })
-        await set_user(state)                  .catch(e => { logit([e, 'set_user']) })
-        await header_data(state)               .catch(e => { logit([e, 'header_data']) })
-        await pages[state.page](state)         .catch(e => { logit([e, `pages[${state.page}]`]) })
-        release_connection_to_pool(state)
-
+        try {
+            if (state.db = await get_connection_from_pool(state)) {
+                await block_nuked(state)
+                await block_countries(state)
+                await set_user(state)
+                await header_data(state)
+                await pages[state.page](state)
+            }
+        }
+        catch(e) {
+            console.log(`${Date()} pid:${PROCESS.pid} ${state.ip} ${state.req.url} failed in render with error: ${JSON.stringify(e)}`)
+            return send_html(intval(e.code) || 500, `node server says: ${e.message || e}`)
+        }
     }
     else return send_html(404, `${state.page} was not found`)
-
-    function logit(arr) {
-        var e       = arr[0]
-        var message = arr[1]
-        console.log(`${Date()} ${state.ip} ${state.req.url} failed in ${message} with error: ${JSON.stringify(e)}`)
-        return send_html(intval(e.code) || 500, `node server says: ${e.message || e}`)
-    }
 
 } // end of render()
