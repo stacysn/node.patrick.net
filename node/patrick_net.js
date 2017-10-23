@@ -3451,7 +3451,7 @@ async function render(state) { /////////////////////////////////////////
         }
         catch(e) {
             var message = e.message || e.toString()
-            console.log(`${Date()} pid:${PROCESS.pid} ${state.ip} ${state.req.url} failed in render with error: ${message}`)
+            console.error(`${Date()} pid:${PROCESS.pid} ${state.ip} ${state.req.url} failed in render with error: ${message}`)
             return send_html(intval(e.code) || 500, `node server says: ${message}`)
         }
     }
