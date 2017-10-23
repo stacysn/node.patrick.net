@@ -127,12 +127,12 @@ function collect_post_data(state) { // if there is any POST data, accumulate it 
             })
 
             state.req.on('end', function () {
-                resolve( QUERYSTRING.parse(body) )
+                resolve(QUERYSTRING.parse(body))
             })
         }
         else {
             console.trace()
-            reject(`${Date()} attempt to collect_post_data from non-POST by ${state.ip}`)
+            reject(`attempt to collect_post_data from non-POST by ${state.ip}`)
         }
     })
 }
@@ -716,7 +716,9 @@ async function render(state) { /////////////////////////////////////////
             }
 
             await update_prev_next(post_data.post_topic, p)
-            redirect(`/post/${p}`)
+            var post_row = await get_row(`select * from posts where post_id=?`, [p], state) 
+
+            redirect(post2path(post_row))
         },
 
         approve_comment : async function() {
@@ -1542,9 +1544,7 @@ async function render(state) { /////////////////////////////////////////
                                        order by comment_date limit 1`, [p, when], state)
 
             let offset = await cid2offset(p, c)
-
             let post = await get_row(`select * from posts where post_id=?`, [p], state)
-
             redirect(`${post2path(post)}?offset=${offset}#comment-${c}`)
         },
 
@@ -3019,7 +3019,7 @@ async function render(state) { /////////////////////////////////////////
     }
 
     function post2path(post) {
-        let slug = slugify(`${post.post_title}`)
+        let slug = JSON.stringify(post.post_date).replace(/"/g, '').substring(0, 10) + '-' + slugify(`${post.post_title}`)
         return `/post/${post.post_id}/${slug}`
     }
 
@@ -3450,8 +3450,9 @@ async function render(state) { /////////////////////////////////////////
             }
         }
         catch(e) {
-            console.log(`${Date()} pid:${PROCESS.pid} ${state.ip} ${state.req.url} failed in render with error: ${JSON.stringify(e)}`)
-            return send_html(intval(e.code) || 500, `node server says: ${e.message || e}`)
+            var message = e.message || e.toString()
+            console.log(`${Date()} pid:${PROCESS.pid} ${state.ip} ${state.req.url} failed in render with error: ${message}`)
+            return send_html(intval(e.code) || 500, `node server says: ${message}`)
         }
     }
     else return send_html(404, `${state.page} was not found`)
