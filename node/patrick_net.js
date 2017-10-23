@@ -1297,12 +1297,10 @@ async function render(state) { /////////////////////////////////////////
 
         new_post : async function() {
 
-            var posts_today
-
-            if (!state.current_user && state.current_user.user_id) return die('anonymous users may not create posts')
+            if (!state.current_user || !state.current_user.user_id) return die('anonymous users may not create posts')
 
             // if the user is logged in and has posted MAX_POSTS times today, don't let them post more
-            posts_today = await get_var('select count(*) as c from posts where post_author=? and post_date >= curdate()',
+            var posts_today = await get_var('select count(*) as c from posts where post_author=? and post_date >= curdate()',
                                             [state.current_user.user_id], state)
 
             if (posts_today >= MAX_POSTS || posts_today > state.current_user.user_comments) {
