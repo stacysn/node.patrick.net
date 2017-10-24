@@ -2062,7 +2062,7 @@ async function render(state) { /////////////////////////////////////////
             ${edit} &nbsp;
             ${del} &nbsp;
             ${nuke} &nbsp;
-        </font><br><span id='comment-${c.comment_id}-text'>${ c.comment_content }</span></div>`
+        </font><p><div id='comment-${c.comment_id}-text'>${ c.comment_content }</div></div>`
     }
 
     function comment_box() { // add new comment, just updates page without reload
@@ -2877,7 +2877,7 @@ async function render(state) { /////////////////////////////////////////
                 <a href="#commentform" onclick="addquote( '${state.post.post_id}', '0', '0', '${state.post.user_name}' ); return false;"
                    title="Select some text then click this to quote" >quote</a> &nbsp;
                 &nbsp; ${share_post(state.post)} &nbsp; ${edit_link} ${delete_link}
-                <p><div class="entry" class="alt" id="comment-0" >${ state.post.post_content }</div></div>`
+                <p><hr><div class="entry" class="alt" id="comment-0" >${ state.post.post_content }</div></div>`
     }
 
     async function post_comment_list(post) {
