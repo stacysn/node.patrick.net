@@ -894,8 +894,13 @@ async function render(state) { /////////////////////////////////////////
             if (!valid_nonce())           return send_html(200, '')
             if (!(comment_id && post_id)) return send_html(200, '')
 
+            var comment_author = await get_var('select comment_author from comments where comment_id=?', [comment_id], state)
+
             await query('delete from comments where comment_id = ? and (comment_author = ? or 1 = ?)',
                         [comment_id, state.current_user.user_id, state.current_user.user_id], state)
+
+            await query(`update users set user_comments=(select count(*) from comments where comment_author = ?) where user_id = ?`,
+                        [comment_author, comment_author], state)
 
             await reset_latest_comment(post_id)
 
