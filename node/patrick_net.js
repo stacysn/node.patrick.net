@@ -215,6 +215,10 @@ function md5(str) {
     return hash.digest('hex')
 }
 
+function ip2anon(ip) {
+    return 'anon_' + md5(ip).substring(0, 5)
+}
+
 function debug(s) { console.log(s) } // so that we can grep and remove lines from the source more easily
 
 function intval(s) { // return integer from a string or float
@@ -468,6 +472,7 @@ function query(sql, sql_parms, state) {
             //debug(query.sql)
 
             if (error) {
+                console.error('db error when attempting to run: ' + query.sql)
                 console.trace()
                 return reject(error)
             }
@@ -584,7 +589,7 @@ async function render(state) { /////////////////////////////////////////
                 return send_html(200, JSON.stringify({ err: true, content: popup() }))
             }
             else {
-                post_data.comment_author   = state.current_user ? state.current_user.user_id : 0
+                post_data.comment_author   = state.current_user ? state.current_user.user_id : await find_or_create_anon()
                 post_data.comment_content  = strip_tags(post_data.comment_content.linkify())
                 post_data.comment_dislikes = 0
                 post_data.comment_likes    = 0
@@ -615,17 +620,16 @@ async function render(state) { /////////////////////////////////////////
                             [post_data.comment_date, comment_id, post_data.comment_post_id, post_data.comment_post_id], state)
                             // we select the count(*) from comments to make the comment counts self-correcting in case they get off somehow
 
-                if (state.current_user) {
-
-                    // update postviews so that user does not see his own comment as unread
+                if (state.current_user) { // update postviews so that user does not see his own comment as unread
                     await query(`insert into postviews (postview_user_id, postview_post_id, postview_last_view)
                                  values (?, ?, now()) on duplicate key update postview_last_view=now()`,
                                  [state.current_user.user_id, post_data.comment_post_id], state)
-
-                    await query(`update users set user_last_comment_ip = ?,
-                                 user_comments=(select count(*) from comments where comment_author = ?)
-                                 where user_id = ?`, [state.ip, state.current_user.user_id, state.current_user.user_id], state)
                 }
+
+                // update comment count whether logged in or anon user
+                await query(`update users set user_last_comment_ip = ?,
+                             user_comments=(select count(*) from comments where comment_author = ?)
+                             where user_id = ?`, [state.ip, post_data.comment_author, post_data.comment_author], state)
 
                 if (!post_data.comment_approved) { // email moderator if comment not approved
                     mail(CONF.admin_email, 'new comment needs review',
@@ -1417,7 +1421,7 @@ async function render(state) { /////////////////////////////////////////
                     comment_pagination(),
                     comment_list(), // mysql offset is greatest item number to ignore, next item is first returned
                     comment_pagination(),
-                    comment_box()
+                    await comment_box()
                 )
             )
 
@@ -2001,6 +2005,20 @@ async function render(state) { /////////////////////////////////////////
         }
     }
 
+    async function find_or_create_anon() { // find the user_id derived from this anonymous ip address; if dne, create
+
+        var user_id
+        user_id = await get_var('select user_id from users where user_name = ?', [ip2anon(state.ip)], state)
+
+        if (!user_id) {
+            var results = await query('insert into users (user_name, user_registered) values (?, now())', [ip2anon(state.ip)], state)
+            var user_id = results.insertId
+            if (!user_id) throw { code : 500, message : `failed to create anon user ${ip2anon(state.ip)}`, }
+        }
+
+        return user_id
+    }
+
     function format_comment(c) {
 
         var comment_dislikes = intval(c.comment_dislikes)
@@ -2070,10 +2088,11 @@ async function render(state) { /////////////////////////////////////////
         </font><p><div id='comment-${c.comment_id}-text'>${ c.comment_content }</div></div>`
     }
 
-    function comment_box() { // add new comment, just updates page without reload
+    async function comment_box() { // add new comment, just updates page without reload
+
         let url = `/accept_comment?${create_nonce_parms()}` // first href on button below is needed for mocha test
         return `
-        ${state.current_user ? upload_form() : ''}
+        Comment as ${state.current_user ? state.current_user.user_name : ip2anon(state.ip) }:
         <form id='commentform' >
             <textarea id='ta' name='comment_content' class='form-control' rows='10' placeholder='write a comment...' ></textarea><p>
             <input type='hidden' name='comment_post_id' value='${state.post.post_id}' />
@@ -2082,6 +2101,8 @@ async function render(state) { /////////////////////////////////////////
                     response = JSON.parse(response) // was a string, now is an object
                     $('#comment_list').append(response.content)
                     if (!response.err) document.getElementById('commentform').reset() // don't clear the textbox if error
+                }).fail(function() {
+                    $('#comment_list').append('something went wrong on the server ')
                 })
                 return false" >submit</button>
         </form>`
