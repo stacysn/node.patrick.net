@@ -940,16 +940,14 @@ async function render(state) { /////////////////////////////////////////
 
         dislike : async function() { // given a comment or post, downvote it
 
-            if (!state.current_user)
-                return send_html(200, `<a href='#' onclick="midpage.innerHTML = registerform.innerHTML; return false" >Please register</a>`)
+            var user_id = state.current_user ? state.current_user.user_id : await find_or_create_anon()
 
             if (intval(_GET('comment_id'))) {
                 let comment_id = intval(_GET('comment_id'))
                 let comment_row = await get_row(`select * from comments where comment_id=?`, [comment_id], state)
 
-                let vote = await get_row(`select commentvote_up, count(*) as c from commentvotes
-                                          where commentvote_user_id=? and commentvote_comment_id=?`,
-                                          [state.current_user.user_id, comment_id], state)
+                let vote = await get_row(`select commentvote_up, count(*) as c from commentvotes where commentvote_user_id=? and commentvote_comment_id=?`,
+                                          [user_id, comment_id], state)
 
                 if (vote.c) { // already voted on this comment
                     return send_html(200, `&#8595;&nbsp; you dislike this (${comment_row.comment_dislikes})`)
@@ -958,7 +956,7 @@ async function render(state) { /////////////////////////////////////////
                 await query(`update comments set comment_dislikes=comment_dislikes+1 where comment_id=?`, [comment_id], state)
 
                 await query(`insert into commentvotes (commentvote_user_id, commentvote_comment_id, commentvote_down) values (?, ?, 1)
-                             on duplicate key update commentvote_up=1`, [state.current_user.user_id, comment_id], state)
+                             on duplicate key update commentvote_up=1`, [user_id, comment_id], state)
 
                 await query(`update users set user_dislikes=user_dislikes+1 where user_id=?`, [comment_row.comment_author], state)
 
@@ -967,15 +965,15 @@ async function render(state) { /////////////////////////////////////////
                 // no emailing done of dislikes
 
                 // Now if Patrick was the disliker, then the user gets a bias bump down.
-                if (1 === state.current_user.user_id) {
+                if (1 === user_id) {
                     await query(`update users set user_pbias=user_pbias-1 where user_id=?`, [comment_row.comment_author], state)
                 }
             }
             else if (intval(_GET('post_id'))) {
                 let post_id = intval(_GET('post_id'))
 
-                let vote = await get_row(`select postvote_down, count(*) as c from postvotes
-                                          where postvote_user_id=? and postvote_post_id=?`, [state.current_user.user_id, post_id], state)
+                let vote = await get_row(`select postvote_down, count(*) as c from postvotes where postvote_user_id=? and postvote_post_id=?`,
+                                          [user_id, post_id], state)
 
                 if (vote.c) { // if they have voted before on this, just return
 
@@ -987,7 +985,7 @@ async function render(state) { /////////////////////////////////////////
                 await query(`update posts set post_dislikes=post_dislikes+1 where post_id=?`, [post_id], state)
 
                 await query(`insert into postvotes (postvote_user_id, postvote_post_id, postvote_down) values (?, ?, 1)
-                             on duplicate key update postvote_down=0`, [state.current_user.user_id, post_id], state)
+                             on duplicate key update postvote_down=0`, [user_id, post_id], state)
 
                 let post_row = await get_row(`select * from posts where post_id=?`, [post_id], state)
 
@@ -1191,8 +1189,8 @@ async function render(state) { /////////////////////////////////////////
 
         like : async function() { // given a comment or post, upvote it
 
-            if (!state.current_user)
-                return send_html(200, `<a href='#' onclick="midpage.innerHTML = registerform.innerHTML; return false" >Please register</a>`)
+            var user_id   = state.current_user ? state.current_user.user_id   : await find_or_create_anon()
+            var user_name = state.current_user ? state.current_user.user_name : ip2anon(state.ip)
 
             if (intval(_GET('comment_id'))) {
                 let comment_id = intval(_GET('comment_id'))
@@ -1201,9 +1199,8 @@ async function render(state) { /////////////////////////////////////////
 
                 if (!comment_row) return send_html(200, ``)
 
-                let vote = await get_row(`select commentvote_up, count(*) as c from commentvotes
-                                          where commentvote_user_id=? and commentvote_comment_id=?`,
-                                          [state.current_user.user_id, comment_id], state)
+                let vote = await get_row(`select commentvote_up, count(*) as c from commentvotes where commentvote_user_id=? and commentvote_comment_id=?`,
+                                          [user_id, comment_id], state)
 
                 if (vote && vote.c) { // already voted on this
                     return send_html(200, `&#8593;&nbsp; you like this (${comment_row.comment_likes})`) // return so we don't send mails
@@ -1212,7 +1209,7 @@ async function render(state) { /////////////////////////////////////////
                     await query(`update comments set comment_likes=comment_likes+1 where comment_id=?`, [comment_id], state)
 
                     await query(`insert into commentvotes (commentvote_user_id, commentvote_comment_id, commentvote_up) values (?, ?, 1)
-                                 on duplicate key update commentvote_up=1`, [state.current_user.user_id, comment_id], state)
+                                 on duplicate key update commentvote_up=1`, [user_id, comment_id], state)
 
                     await query(`update users set user_likes=user_likes+1 where user_id=?`, [comment_row.comment_author], state)
 
@@ -1228,10 +1225,10 @@ async function render(state) { /////////////////////////////////////////
 
                 if (intval(u && u.user_summonable)) {
 
-                    let subject  = `${state.current_user.user_name} liked your comment`
+                    let subject  = `${user_name} liked your comment`
 
                     let message = `<html><body><head><base href='https://${CONF.domain}/' ></head>
-                    <a href='https://${CONF.domain}/user/${state.current_user.user_name}' >${state.current_user.user_name}</a>
+                    <a href='https://${CONF.domain}/user/${user_name}' >${user_name}</a>
                         liked the comment you made here:<p>\r\n\r\n
                     <a href='${comment_url}' >${comment_url}</a><p>${comment_row.comment_content}<p>\r\n\r\n
                     <font size='-1'>Stop getting <a href='https://${CONF.domain}/edit_profile#user_summonable'>notified of likes</a>
@@ -1242,7 +1239,7 @@ async function render(state) { /////////////////////////////////////////
                 }
 
                 // Now if Patrick was the liker, then the user gets a bias bump up.
-                if (1 === state.current_user.user_id) {
+                if (1 === user_id) {
                     await query(`update users set user_pbias=user_pbias+1 where user_id=?`, [comment_row.comment_author], state)
                 }
             }
@@ -1250,7 +1247,7 @@ async function render(state) { /////////////////////////////////////////
                 let post_id = intval(_GET('post_id'))
 
                 let vote = await get_row(`select postvote_up, count(*) as c from postvotes where postvote_user_id=? and postvote_post_id=?`,
-                                      [state.current_user.user_id, post_id], state)
+                                      [user_id, post_id], state)
 
                 if (vote && vote.c) { // if they have voted before on this, just return
                     let post_row = await get_row(`select * from posts where post_id=?`, [post_id], state)
@@ -1260,7 +1257,7 @@ async function render(state) { /////////////////////////////////////////
                 await query(`update posts set post_likes=post_likes+1 where post_id=?`, [post_id], state)
 
                 await query(`insert into postvotes (postvote_user_id, postvote_post_id, postvote_up) values (?, ?, 1)
-                             on duplicate key update postvote_up=0`, [state.current_user.user_id, post_id], state)
+                             on duplicate key update postvote_up=0`, [user_id, post_id], state)
 
                 let post_row = await get_row(`select * from posts where post_id=?`, [post_id], state)
 
@@ -1274,10 +1271,10 @@ async function render(state) { /////////////////////////////////////////
 
                 if (intval(u && u.user_summonable)) {
 
-                    let subject  = `${state.current_user.user_name} liked your post`
+                    let subject  = `${user_name} liked your post`
 
                     let message = `<html><body><head><base href='https://${CONF.domain}/' ></head>
-                    <a href='https://${CONF.domain}/user/${state.current_user.user_name}' >${state.current_user.user_name}</a>
+                    <a href='https://${CONF.domain}/user/${user_name}' >${user_name}</a>
                         liked the post you made here:<p>\r\n\r\n
                     <a href='${post_url}' >${post_url}</a><p>${post_row.post_content}<p>\r\n\r\n
                     <font size='-1'>Stop getting <a href='https://${CONF.domain}/edit_profile#user_summonable'>notified of likes</a>
@@ -1881,17 +1878,11 @@ async function render(state) { /////////////////////////////////////////
 
     function arrowbox(post) { // output html for vote up/down arrows; takes a post left joined on user's votes for that post
 
-        if (state.current_user) { // user is logged in
-            var upgrey   = post.postvote_up   ? `style='color: grey; pointer-events: none;'` : ``
-            var downgrey = post.postvote_down ? `style='color: grey; pointer-events: none;'` : ``
+        var upgrey   = post.postvote_up   ? `style='color: grey; pointer-events: none;'` : ``
+        var downgrey = post.postvote_down ? `style='color: grey; pointer-events: none;'` : ``
 
-            var likelink    = `href='#' ${upgrey}   onclick="postlike('post_${post.post_id}_up'); return false;"`
-            var dislikelink = `href='#' ${downgrey} onclick="postdislike('post_${post.post_id}_down');return false;"`
-        }
-        else {
-            var likelink    = `href='#' onclick="midpage.innerHTML = registerform.innerHTML; return false;"`
-            var dislikelink = `href='#' onclick="midpage.innerHTML = registerform.innerHTML; return false;"`
-        }
+        var likelink    = `href='#' ${upgrey}   onclick="postlike('post_${post.post_id}_up'); return false;"`
+        var dislikelink = `href='#' ${downgrey} onclick="postdislike('post_${post.post_id}_down');return false;"`
 
         return `<div class='arrowbox' >
                 <a ${likelink}    title='${post.post_likes} upvotes'      >&#9650;</a><br>
@@ -2032,21 +2023,16 @@ async function render(state) { /////////////////////////////////////////
         var mute             = `<a href='#' onclick="if (confirm('Really ignore ${c.user_name}?')) { $.get('/ignore?other_id=${ c.user_id }&${create_nonce_parms()}', function() { $('#comment-${ c.comment_id }').remove() }); return false}; return false" title='ignore ${c.user_name}' >ignore (${c.user_bannedby})</a>`
         var clink            = contextual_link(c)
 
+        var liketext    = c.commentvote_up   ? 'you like this'    : '&#8593;&nbsp;like';
+        var disliketext = c.commentvote_down ? 'you dislike this' : '&#8595;&nbsp;dislike';
+
+        var like    = `<a href='#' id='like_${c.comment_id}' onclick="like('like_${c.comment_id}');return false">${liketext} (${c.comment_likes})</a>`
+        var dislike = `<a href='#' id='dislike_${c.comment_id}' onclick="dislike('dislike_${c.comment_id}');return false">${disliketext} (${c.comment_dislikes})</a>`
+
         if (state.current_user) {
-            var liketext    = c.commentvote_up   ? 'you like this'    : '&#8593;&nbsp;like';
-            var disliketext = c.commentvote_down ? 'you dislike this' : '&#8595;&nbsp;dislike';
-
-            var like    = `<a href='#' id='like_${c.comment_id}' onclick="like('like_${c.comment_id}');return false">${liketext} (${c.comment_likes})</a>`
-            var dislike = `<a href='#' id='dislike_${c.comment_id}' onclick="dislike('dislike_${c.comment_id}');return false">${disliketext} (${c.comment_dislikes})</a>`
-
             if (state.current_user.relationships[c.user_id] &&
                 state.current_user.relationships[c.user_id].rel_i_ban) var hide = `style='display: none'`
             else var hide = ''
-
-        }
-        else { // not logged in. assume not registered, put link to reg page
-            var like    = `<a href='#' onclick="midpage.innerHTML = registerform.innerHTML; return false" >&#8593;&nbsp;like (${comment_likes})</a>`
-            var dislike = `<a href='#' onclick="midpage.innerHTML = registerform.innerHTML; return false" >&#8593;&nbsp;dislike (${comment_likes})</a>`
         }
 
         var offset = intval(_GET('offset'))
@@ -2091,10 +2077,11 @@ async function render(state) { /////////////////////////////////////////
     async function comment_box() { // add new comment, just updates page without reload
 
         let url = `/accept_comment?${create_nonce_parms()}` // first href on button below is needed for mocha test
-        return `
-        Comment as ${state.current_user ? state.current_user.user_name : ip2anon(state.ip) }:
+        return `<hr>Comment as
+        ${state.current_user ? state.current_user.user_name : ip2anon(state.ip) }
+        ${state.current_user ? '' : ' or <a href="#">log in</a>'}:
         <form id='commentform' >
-            <textarea id='ta' name='comment_content' class='form-control' rows='10' placeholder='write a comment...' ></textarea><p>
+            <textarea id='ta' name='comment_content' class='form-control' rows='10' ></textarea><p>
             <input type='hidden' name='comment_post_id' value='${state.post.post_id}' />
             <button class='btn btn-success btn-sm' id='accept_comment' href=${url} 
                 onclick="$.post('${url}', $('#commentform').serialize()).done(function(response) {
