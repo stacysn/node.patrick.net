@@ -1897,7 +1897,7 @@ async function render(state) { /////////////////////////////////////////
         var online_list = state.header_data.onlines.map(u => `<a href='/user/${u.online_username}'>${u.online_username}</a>`).join(', ')
 
         return `${ state.header_data.comments.number_format() } comments by
-                <a href='/users'>${ state.header_data.tot.number_format() } registered users</a>,
+                <a href='/users'>${ state.header_data.tot.number_format() } users</a>,
                 ${ state.header_data.onlines.length } online now: ${ online_list }`
     }
 
@@ -2079,7 +2079,8 @@ async function render(state) { /////////////////////////////////////////
         let url = `/accept_comment?${create_nonce_parms()}` // first href on button below is needed for mocha test
         return `<hr>Comment as
         ${state.current_user ? state.current_user.user_name : ip2anon(state.ip) }
-        ${state.current_user ? '' : ' or <a href="#">log in</a>'}:
+        ${state.current_user ? '' : ' or <a href="#">log in</a> at top of page'}:
+        ${upload_form()}
         <form id='commentform' >
             <textarea id='ta' name='comment_content' class='form-control' rows='10' ></textarea><p>
             <input type='hidden' name='comment_post_id' value='${state.post.post_id}' />
