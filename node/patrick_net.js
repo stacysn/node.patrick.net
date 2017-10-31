@@ -2935,13 +2935,27 @@ async function render(state) { /////////////////////////////////////////
 
         return `
         <h1>${fn}</h1>
-        <form action='/accept_post' method='post' >
+        <form action='/accept_post' method='post' name='postform' onsubmit='return checkforhash()' >
             <div class='form-group'><input name='post_title' type='text' class='form-control' placeholder='title' id='title' value='${title}' ></div>
-            <textarea class='form-control' name='post_content' rows='12' id='ta' placeholder='write something...' >${content}</textarea><p>
+            <textarea class='form-control' name='post_content' rows='12' id='ta' name='ta'
+                placeholder='please include a topic hashtag like #investing or #politics at the beginning of a line' >${content}</textarea><p>
             ${post_id}
-            <button type='submit' id='submit' class='btn btn-success btn-sm'>submit</button>
+            <button type='submit' id='submit' class='btn btn-success btn-sm' >submit</button>
         </form>
-        <script type="text/javascript">document.getElementById('title').focus();</script>
+        <script type='text/javascript'>
+
+        document.getElementById('title').focus();
+
+        function checkforhash() {
+            let text = document.forms['postform']['ta'].value;
+
+            if (!text.match(/#\\w+/gm)) {
+                alert('Please include a topic hashtag like #investing or #politics at the beginning of a line.');
+                return false;
+            }
+            else return true;
+        }
+        </script>
         ${upload_form()}`
     }
 
