@@ -1,4 +1,6 @@
 // copyright 2017 by Patrick Killelea under the GPLv2 license
+'use strict'
+// p
 
 // globals are capitalized
 
@@ -229,14 +231,6 @@ function valid_email(e) {
     return /^\w.*@.+\.\w+$/.test(e)
 }
 
-function no_links(content) {
-
-    let c = CHEERIO.load(content)
-
-    if (!c('a').length) return 1
-    else                return 0
-}
-
 function strip_tags(s) { // use like this: str = strip_tags('<p>There is some <u>text</u> here</p>', '<b><i><u><p><ol><ul>')
 
     // these are the only allowed tags that users can enter in posts or comments; they will not be stripped
@@ -378,6 +372,7 @@ function sanitize_html(s) {
 
     const dom = new JSDOM(s)
 
+    var tag
     for (tag in allowed) {
         let selection = dom.window.document.getElementsByTagName(tag)
 
@@ -594,7 +589,9 @@ async function render(state) { /////////////////////////////////////////
                 post_data.comment_dislikes = 0
                 post_data.comment_likes    = 0
                 post_data.comment_date     = new Date().toISOString().slice(0, 19).replace('T', ' ') // mysql datetime format
-                post_data.comment_approved = state.current_user ? 1 : no_links(post_data.comment_content) // approve anon content if no links
+
+                var extlink_count = get_external_links(post_data.comment_content).length // appr anon comment if no external links
+                if (state.current_user || (extlink_count == 0)) post_data.comment_approved = 1
 
                 try {
                     var insert_result = await query('insert into comments set ?', post_data, state)
@@ -916,6 +913,7 @@ async function render(state) { /////////////////////////////////////////
             if (!state.current_user) return die('you must be logged in to delete a post')
             if (!valid_nonce())      return die(invalid_nonce_message())
 
+            var post_id
             if (post_id = intval(_GET('post_id'))) {
 
                 let post = await get_row(`select * from posts where post_id = ?`, [post_id], state)
@@ -1105,6 +1103,8 @@ async function render(state) { /////////////////////////////////////////
         },
 
         home : async function () {
+
+            var p
 
             if (p = intval(_GET('p'))) return redirect(`/post/${p}`, 301) // legacy redirect for cases like /?p=1216301
 
@@ -1337,7 +1337,7 @@ async function render(state) { /////////////////////////////////////////
             if (!valid_nonce())                   return die(invalid_nonce_message())
             if (1 !== state.current_user.user_id) return die('non-admin may not nuke')
             if (1 === nuke_id)                    return die('admin cannot nuke himself')
-            if (u.user_comments > 3)              return die('cannot nuke user with more than 3 comments')
+            if (u.user_comments > 100)            return die('cannot nuke user with more than 100 comments')
 
             let country = await ip2country(u.user_last_comment_ip)
 
@@ -2397,25 +2397,25 @@ async function render(state) { /////////////////////////////////////////
         return ''
     }
 
-    function get_external_link(post) {
+    function get_external_links(content) {
 
-        let c = CHEERIO.load(post.post_content)
+        let c = CHEERIO.load(content)
 
-        if (!c('a').length) return ''
+        let extlinks = [];
 
-        let extlink = c('a').attr('href')
+        c('a').each(function(i, elem) {
 
-        if (!extlink) {
-            console.log('get_external_link() was passed falsey extlink in ' + post.post_content)
-            return
-        }
+            if (!c(this).attr('href')) return // sometimes we get an a tag without an href, not sure how, but ignore them
 
-        if (!(['http:', 'https:'].indexOf(URL.parse(extlink).protocol) > -1)) return // ignore invalid protocols
+            if (!(['http:', 'https:'].indexOf(URL.parse(c(this).attr('href')).protocol) > -1)) return // ignore invalid protocols
 
-        let host = URL.parse(extlink).host
-        if (new RegExp(CONF.domain).test(host)) return // ignore links back to own domain
+            let host = URL.parse(c(this).attr('href')).host
+            if (new RegExp(CONF.domain).test(host)) return // ignore links back to own domain
 
-        return extlink
+            extlinks.push(c(this).attr('href'))
+        });
+
+        return extlinks
     }
 
     function get_first_image(post) {
@@ -2750,7 +2750,7 @@ async function render(state) { /////////////////////////////////////////
 
     async function post_mail(p) { // reasons to send out post emails: @user, user following post author, user following post topic
 
-        var post = await get_row(`select * from posts where post_id=?`, [p], state) // p is just the post_id
+        var post = await get_row(`select * from posts, users where post_id=? and post_author=user_id`, [p], state) // p is just the post_id
 
         var already_mailed = []
 
@@ -2891,7 +2891,7 @@ async function render(state) { /////////////////////////////////////////
                 <a href="#commentform" onclick="addquote( '${state.post.post_id}', '0', '0', '${state.post.user_name}' ); return false;"
                    title="Select some text then click this to quote" >quote</a> &nbsp;
                 &nbsp; ${share_post(state.post)} &nbsp; ${edit_link} ${delete_link}
-                <p><hr><div class="entry" class="alt" id="comment-0" >${ state.post.post_content }</div></div>`
+                <p><hr><div class="entry" class="alt" id="comment-0-text" >${ state.post.post_content }</div></div>`
     }
 
     async function post_comment_list(post) {
@@ -3027,10 +3027,10 @@ async function render(state) { /////////////////////////////////////////
                     state.current_user.relationships[post.post_author].rel_i_ban) var hide = `style='display: none'`
                 else var hide = ''
 
-                let extlink = get_external_link(post)
-                if (extlink) {
-                    let host = URL.parse(extlink).host.replace(/www./, '').substring(0, 31)
-                    var link = `<b><font size='+1'><a href='${brandit(extlink)}' target='_blank' >${post.post_title}</font></b></a> (${host})`
+                let extlinks = get_external_links(post.post_content)
+                if (extlinks && extlinks.length) {
+                    let host = URL.parse(extlinks[0]).host.replace(/www./, '').substring(0, 31)
+                    var link = `<b><font size='+1'><a href='${brandit(extlinks[0])}' target='_blank' >${post.post_title}</font></b></a> (${host})`
                 }
                 else {
                     var link = `<b><font size='+1'>${post_link(post)}</font></b>` // internal link
@@ -3224,7 +3224,7 @@ async function render(state) { /////////////////////////////////////////
 
     function share_post(post) {
         let share_title = encodeURI(post.post_title).replace(/%20/g,' ')
-        share_link  = encodeURI('https://' + CONF.domain +  post2path(post) )
+        let share_link  = encodeURI('https://' + CONF.domain +  post2path(post) )
         return `<a href='mailto:?subject=${share_title}&body=${share_link}' title='email this' >share
                 <img src='/images/mailicon.jpg' width=15 height=12 ></a>`
     }
@@ -3345,8 +3345,8 @@ async function render(state) { /////////////////////////////////////////
 
     function user_icon(u, scale=1, img_parms='') { // clickable icon for this user if they have icon
 
-        user_icon_width  = Math.round(u.user_icon_width  * scale)
-        user_icon_height = Math.round(u.user_icon_height * scale)
+        var user_icon_width  = Math.round(u.user_icon_width  * scale)
+        var user_icon_height = Math.round(u.user_icon_height * scale)
 
         return u.user_icon ?
                 `<a href='/user/${ u.user_name }'><img src='${u.user_icon}' width='${user_icon_width}' height='${user_icon_height}' ${img_parms} ></a>`
@@ -3428,7 +3428,7 @@ async function render(state) { /////////////////////////////////////////
         </tr>`
 
         if (state.users.length) {
-            formatted = state.users.map( (u) => {
+            var formatted = state.users.map( (u) => {
                 return `<tr id='this_user' >
                     <td >${user_icon(u)}</td>
                     <td align=left >${user_link(u)}</td>
@@ -3479,6 +3479,7 @@ async function render(state) { /////////////////////////////////////////
         }
         catch(e) {
             var message = e.message || e.toString()
+            console.trace()
             console.error(`${Date()} pid:${PROCESS.pid} ${state.ip} ${state.req.url} failed in render with error: ${message}`)
             return send_html(intval(e.code) || 500, `node server says: ${message}`)
         }
