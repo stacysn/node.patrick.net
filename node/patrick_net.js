@@ -1,6 +1,6 @@
 // copyright 2017 by Patrick Killelea under the GPLv2 license
+
 'use strict'
-// p
 
 // globals are capitalized
 
@@ -400,8 +400,7 @@ function block_unknown_iframes(s) { // special case: iframes are allowed, but on
 
     if ($('iframe').length > 1) return 'please edit this and post just one video at a time, thanks'
 
-    let matches = null
-
+    var matches
     if (matches = $('iframe').attr('src').match(/(https?:)?\/\/([\w\.]+)/)) {
         var host = matches[2]
     }
@@ -417,8 +416,7 @@ function brandit(url) { // add ref=[domain name] to a url
 
     if (!new RegExp(CONF.domain).test(url)) { // brand it iff url does not already have CONF.domain in it somewhere
 
-        let matches = null
-
+        var matches
         if (matches = url.match(/(.*)\?(.*)/)) { // if E parms, add in ref=CONF.domain as first one to make it visible and harder to remove
             let loc         = matches[1]
             let querystring = matches[2]
@@ -679,7 +677,7 @@ async function render(state) { /////////////////////////////////////////
             delete post_data.submit
 
             // look for hashtag as first item on a line before linkify(), which will make it a link and thus not starting with # anymore
-            let matches = null
+            var matches
             if      (matches = post_data.post_content.match(/^#(\w+)/m)) post_data.post_topic = matches[1] // first tag starting a line becomes topic
             else if (matches = post_data.post_content.match(/>#(\w+)/m)) post_data.post_topic = matches[1] // else existing, linked topic
             else                                                         post_data.post_topic = 'misc'
@@ -1915,8 +1913,8 @@ async function render(state) { /////////////////////////////////////////
         // lowercase upload names so we don't get collisions on stupid case-insensitive Mac fs between eg "This.jpg" and "this.jpg"
         filename = filename.replace(/[^\w\.-]/gi, '').toLowerCase()
 
-        let ext     = null
-        let matches = null
+        var ext
+        var matches
         if (matches = filename.match(/(\.\w{3,4})$/)) ext = matches[1] // include the dot, like .png
 
         if (filename.length > 128 ) filename = md5(filename) + ext // filename was too long to be backed up, so hash it to shorten it
@@ -1945,6 +1943,7 @@ async function render(state) { /////////////////////////////////////////
         let offset         = await cid2offset(p.post_id, c.comment_id)
 
         // if comment_content contains a summons like @user, and user is user_summonable, then email user the comment
+        var matches
         if (matches = c.comment_content.match(/@(\w+)/m)) { // just use the first @user in the comment, not multiple
             let summoned_user_username = matches[1]
             var u
@@ -2755,6 +2754,7 @@ async function render(state) { /////////////////////////////////////////
         var already_mailed = []
 
         // if post_content contains a summons like @user, and user is user_summonable, then email user the post
+        var matches
         if (matches = post.post_content.match(/@(\w+)/m)) { // just use the first @user in the post, not multiple
             var summoned_user_username = matches[1]
             var u
@@ -3136,6 +3136,7 @@ async function render(state) { /////////////////////////////////////////
 
         if (!state.req.headers.referer) return
 
+        var matches
         if (matches = state.req.headers.referer.match(/\/post\/(\d+)/m)) {
             var referring_post_id = intval(matches[1])
 
