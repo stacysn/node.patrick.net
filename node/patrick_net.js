@@ -23,11 +23,11 @@ const QUERYSTRING = require('querystring')
 const URL         = require('url')
 
 // dependent on requires above
-const BASEURL     = (/^dev\./.test(OS.hostname())) ? CONF.baseurl_dev : CONF.baseurl // CONF.baseurl_dev is for testing, 'like http://dev' locally
+const BASEURL     = (/vafli/.test(OS.hostname())) ? CONF.baseurl_dev : CONF.baseurl // CONF.baseurl_dev is for testing
 const POOL        = MYSQL.createPool(CONF.db)
 
 // end of globals
-if (CLUSTER.isMaster) {
+if (CLUSTER.isMaster && !/vafli/.test(OS.hostname())) {
     for (var i = 0; i < OS.cpus().length; i++) CLUSTER.fork()
 
     CLUSTER.on('exit', function(worker, code, signal) {
@@ -3028,8 +3028,8 @@ async function render(state) { /////////////////////////////////////////
                 else var hide = ''
 
                 let extlinks = get_external_links(post.post_content)
-                if (extlinks && extlinks.length) {
-                    let host = URL.parse(extlinks[0]).host.replace(/www./, '').substring(0, 31)
+                if (extlinks && extlinks.length && URL.parse(extlinks[0]).host) {
+                    var host = URL.parse(extlinks[0]).host.replace(/www./, '').substring(0, 31)
                     var link = `<b><font size='+1'><a href='${brandit(extlinks[0])}' target='_blank' >${post.post_title}</font></b></a> (${host})`
                 }
                 else {
@@ -3480,8 +3480,7 @@ async function render(state) { /////////////////////////////////////////
         }
         catch(e) {
             var message = e.message || e.toString()
-            console.trace()
-            console.error(`${Date()} pid:${PROCESS.pid} ${state.ip} ${state.req.url} failed in render with error: ${message}`)
+            console.error(`${Date()} pid:${PROCESS.pid} ${state.ip} ${state.req.url} failed in render with error: ${message} ${e.stack}`)
             return send_html(intval(e.code) || 500, `node server says: ${message}`)
         }
     }
