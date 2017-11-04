@@ -3198,7 +3198,7 @@ async function render(state) { /////////////////////////////////////////
         //html = html.replace(/\s+/g, ' ')   // primitive compression. requires that browser js statements end in semicolon!
 
         var headers =    {
-            'Content-Type'   : 'text/html',
+            'Content-Type'   : 'text/html;charset=utf-8',
             'Expires'        : new Date().toUTCString()
         }
 
