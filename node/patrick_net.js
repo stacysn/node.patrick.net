@@ -2680,7 +2680,7 @@ async function render(state) { /////////////////////////////////////////
                     <fieldset>
                         <input type='submit' id='submit' value='log in'
                             onclick="$.post('/post_login', $('#loginform').serialize()).done(function(data) { $('#status').html(data) });return false">
-                        <a href='#' onclick="midpage.innerHTML = lostpwform.innerHTML;  return false" >forgot password</a>
+                        <a href='#' onclick="midpage.innerHTML = lostpwform.innerHTML;  return false" >forgot password</a> /
                         <a href='#' onclick="midpage.innerHTML = registerform.innerHTML; return false" >register</a>
                     </fieldset>
                 </form>
