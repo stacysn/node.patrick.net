@@ -2330,9 +2330,9 @@ async function render(state) { /////////////////////////////////////////
         </script>`
     }
 
-    function format_date(gmt_date) { // create localized date string from gmt date out of mysql
+    function format_date(gmt_date, format='YYYY MMM D, h:mma') { // create localized date string from gmt date out of mysql
         var utz = state.current_user ? state.current_user.user_timezone : 'America/Los_Angeles'
-        return MOMENT(Date.parse(gmt_date)).tz(utz).format('YYYY MMM D, h:mma')
+        return MOMENT(Date.parse(gmt_date)).tz(utz).format(format)
     }
 
     function _GET(parm) { // given a string, return the GET parameter by that name
@@ -3036,8 +3036,10 @@ async function render(state) { /////////////////////////////////////////
                     var link = `<b><font size='+1'>${post_link(post)}</font></b>` // internal link
                 }
 
+                var date = format_date(post.post_date, 'D MMM YYYY')
+
                 return `<div class='post' id='post-${post.post_id}' ${hide} >${arrowbox_html}${imgdiv}${link}
-                <br>by <a href='/user/${ post.user_name }'>${ post.user_name }</a> ${hashlink} &nbsp;
+                <br>by <a href='/user/${ post.user_name }'>${ post.user_name }</a> ${hashlink} on ${date}&nbsp;
                 ${latest} ${unread} ${approval_link} ${delete_link} ${nuke_link}<br>${firstwords}</div>`
             })
         }
