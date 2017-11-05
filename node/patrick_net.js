@@ -2961,7 +2961,7 @@ async function render(state) { /////////////////////////////////////////
 
     function post_link(post) {
         let path = post2path(post)
-        return `<a href='${path}'>${post.post_title}</a>`
+        return `<a href='${path}' title='patrick.net' >${post.post_title}</a>`
     }
 
     function post_list() { // format a list of posts from whatever source; pass in only a limited number, because all will display
@@ -3027,13 +3027,11 @@ async function render(state) { /////////////////////////////////////////
                     state.current_user.relationships[post.post_author].rel_i_ban) var hide = `style='display: none'`
                 else var hide = ''
 
+                var link = `<b>${post_link(post)}</b>`
                 let extlinks = get_external_links(post.post_content)
                 if (extlinks && extlinks.length && URL.parse(extlinks[0]).host) {
                     var host = URL.parse(extlinks[0]).host.replace(/www./, '').substring(0, 31)
-                    var link = `<b><font size='+1'><a href='${brandit(extlinks[0])}' target='_blank' >${post.post_title}</font></b></a> (${host})`
-                }
-                else {
-                    var link = `<b><font size='+1'>${post_link(post)}</font></b>` // internal link
+                    link += ` (<a href='${brandit(extlinks[0])}' target='_blank' title='original story' >${host})</a>`
                 }
 
                 var date = format_date(post.post_date, 'D MMM YYYY')
