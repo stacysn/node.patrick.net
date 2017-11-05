@@ -157,10 +157,15 @@ async function set_user(state) { // update state with whether they are logged in
             pairs[name] = value
         })
 
-        state.current_user = await get_row('select * from users where user_id = ? and user_pass = ?',
-                                           [pairs[CONF.usercookie], pairs[CONF.pwcookie]], state)
+        state.current_user = await get_row('select * from users where user_id = ? and user_pass = ?', [pairs[CONF.usercookie], pairs[CONF.pwcookie]], state)
         await set_relations(state)
         await set_topics(state)
+
+        state.current_user.is_a_moderator_of = (await query(`select topic from topics where moderator = ? or
+                                                             deputy1 = ? or
+                                                             deputy2 = ? or
+                                                             deputy3 = ?`,
+                                                             Array(4).fill(state.current_user.user_id), state)).map(row => row.topic)
 
         // update users currently online for display in header
         await query(`delete from onlines where online_last_view < date_sub(now(), interval 5 minute)`, null, state)
@@ -1577,7 +1582,8 @@ async function render(state) { /////////////////////////////////////////
                     follow_topic_button(topic),
                     tabs(order, `&topic=${topic}`),
                     post_list(),
-                    post_pagination(sql_calc_found_rows(), curpage, `&topic=${topic}&order=${order}`)
+                    post_pagination(sql_calc_found_rows(), curpage, `&topic=${topic}&order=${order}`),
+                    topic_moderation(topic)
                 )
             )
 
@@ -3284,6 +3290,27 @@ async function render(state) { /////////////////////////////////////////
 
             return formatted.join(' ')
         }
+    }
+
+    function topic_moderation(topic) {
+
+        if (!state.current_user || !state.current_user.is_a_moderator_of) return ''
+
+        if (!state.current_user.is_a_moderator_of.includes(topic)) return ''
+
+        return `<hr id='moderation' >
+            <h2>Welcome ${state.current_user.user_name}, a moderator of ${topic}!</h2>
+            set or edit "About ${topic}"<br>
+            posts waiting for moderation<br>
+            comments waiting for moderation<br>
+            jailed comments<br>
+            user blacklist by ip or username<br>
+            user whitelist<br>
+            appoint deputy<br> (if moderator)
+            set background image<br>
+            set color<br>
+            set donation link<br>
+        `
     }
 
     function topic_nav() {
