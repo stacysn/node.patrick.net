@@ -1681,8 +1681,8 @@ async function render(state) { /////////////////////////////////////////
 
                     if (state.req.headers.referer.match(/edit_profile/)) { // uploading user icon
 
-                        await resize_image(`${abs_path}/${clean_name}`, max_dim = 80) // limit max width to 80 px
-                        dims = await getimagesize(`${abs_path}/${clean_name}`)        // get the new reduced image dimensions
+                        await resize_image(`${abs_path}/${clean_name}`, 80)    // limit max width to 80 px
+                        dims = await getimagesize(`${abs_path}/${clean_name}`) // get the new reduced image dimensions
 
                         let id = state.current_user.user_id
                         await query(`update users set user_icon        = ? where user_id = ?`, [`${url_path}/${clean_name}`, id], state)
@@ -1693,8 +1693,8 @@ async function render(state) { /////////////////////////////////////////
                     }
                     else { // uploading image link to post or comment text area
                         if (dims[0] > 600) {
-                            await resize_image(`${abs_path}/${clean_name}`, max_dim = 600) // limit max width to 600 px
-                            dims = await getimagesize(`${abs_path}/${clean_name}`)         // get the new reduced image dimensions
+                            await resize_image(`${abs_path}/${clean_name}`, 600)   // limit max width to 600 px
+                            dims = await getimagesize(`${abs_path}/${clean_name}`) // get the new reduced image dimensions
                         }
                         addendum = `"<img src='${url_path}/${clean_name}' width='${dims[0]}' height='${dims[1]}' >"`
 
