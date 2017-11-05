@@ -23,11 +23,11 @@ const QUERYSTRING = require('querystring')
 const URL         = require('url')
 
 // dependent on requires above
-const BASEURL     = (/vafli/.test(OS.hostname())) ? CONF.baseurl_dev : CONF.baseurl // CONF.baseurl_dev is for testing
+const BASEURL     = ('dev' === process.env.environment) ? CONF.baseurl_dev : CONF.baseurl // CONF.baseurl_dev is for testing
 const POOL        = MYSQL.createPool(CONF.db)
 
 // end of globals
-if (CLUSTER.isMaster && !/vafli/.test(OS.hostname())) {
+if (CLUSTER.isMaster && !('dev' === process.env.environment)) { // to keep debugging simpler, do not fork in dev
     for (var i = 0; i < OS.cpus().length; i++) CLUSTER.fork()
 
     CLUSTER.on('exit', function(worker, code, signal) {
@@ -2573,7 +2573,7 @@ async function render(state) { /////////////////////////////////////////
         }
         </script>
         </head>
-        <body>
+        <body ${ 'dev' === process.env.environment ? "style='background-color: #dfd;'" : '' } >
             <div class="container" >
             ${ header() }
             ${ args.join('') }
