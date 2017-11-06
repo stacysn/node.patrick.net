@@ -161,11 +161,8 @@ async function set_user(state) { // update state with whether they are logged in
         await set_relations(state)
         await set_topics(state)
 
-        state.current_user.is_a_moderator_of = (await query(`select topic from topics where moderator = ? or
-                                                             deputy1 = ? or
-                                                             deputy2 = ? or
-                                                             deputy3 = ?`,
-                                                             Array(4).fill(state.current_user.user_id), state)).map(row => row.topic)
+        state.current_user.is_moderator_of = (await query('select topic from topics where topic_moderator = ?',
+                                                          [state.current_user.user_id], state)).map(row => row.topic)
 
         // update users currently online for display in header
         await query(`delete from onlines where online_last_view < date_sub(now(), interval 5 minute)`, null, state)
@@ -897,6 +894,12 @@ async function render(state) { /////////////////////////////////////////
             if (!state.current_user)      return send_html(200, '')
             if (!valid_nonce())           return send_html(200, '')
             if (!(comment_id && post_id)) return send_html(200, '')
+
+            // find the topic
+            // find the moderators for that topic
+            // allow them to delete
+            // put similar permission on showing delete link by a comment
+            // announce
 
             var comment_author = await get_var('select comment_author from comments where comment_id=?', [comment_id], state)
 
@@ -3294,19 +3297,18 @@ async function render(state) { /////////////////////////////////////////
 
     function topic_moderation(topic) {
 
-        if (!state.current_user || !state.current_user.is_a_moderator_of) return ''
+        if (!state.current_user || !state.current_user.is_moderator_of) return ''
 
-        if (!state.current_user.is_a_moderator_of.includes(topic)) return ''
+        if (!state.current_user.is_moderator_of.includes(topic)) return ''
 
         return `<hr id='moderation' >
-            <h2>Welcome ${state.current_user.user_name}, a moderator of ${topic}!</h2>
+            <h2>Welcome ${state.current_user.user_name}, moderator of ${topic}!</h2>
             set or edit "About ${topic}"<br>
             posts waiting for moderation<br>
             comments waiting for moderation<br>
-            jailed comments<br>
+            review jailed comments<br>
             user blacklist by ip or username<br>
             user whitelist<br>
-            appoint deputy<br> (if moderator)
             set background image<br>
             set color<br>
             set donation link<br>
