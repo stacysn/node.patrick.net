@@ -1368,6 +1368,35 @@ async function render(state) { /////////////////////////////////////////
             redirect(state.req.headers.referer) 
         },
 
+        old : async function() {
+
+            let years_ago = intval(_GET('years_ago'))
+
+            let user_id = state.current_user ? state.current_user.user_id : 0
+            
+            let sql = `select sql_calc_found_rows * from posts
+                       left join postviews on postview_post_id=post_id and postview_user_id= ?
+                       left join postvotes on postvote_post_id=post_id and postvote_user_id= ?
+                       left join users on user_id=post_author
+                       where post_approved=1 and
+                        post_date <          date_sub(now(), interval ${years_ago} year) and
+                        post_date > date_sub(date_sub(now(), interval ${years_ago} year), interval 1 year)
+                        order by post_date desc limit 40`
+
+            state.posts = await query(sql, [user_id, user_id], state)
+            let s = (years_ago == 1) ? '' : 's'
+            state.message = `Posts from ${years_ago} year${s} ago`
+            
+            let content = html(
+                midpage(
+                    h1(),
+                    post_list()
+                )
+            )
+
+            send_html(200, content)
+        },
+
         post : async function() { // show a single post and its comments
 
             let current_user_id = state.current_user ? state.current_user.user_id : 0
@@ -1579,11 +1608,17 @@ async function render(state) { /////////////////////////////////////////
 
             state.posts = await query(sql, [user_id, user_id, topic], state)
             state.message = '#' + topic
+            
+            var moderator = await get_var('select user_name from users, topics where topic=? and topic_moderator=user_id', [topic], state)
+            if (moderator) var moderator_announcement = `<br>moderator is ${moderator}`
+            else var moderator_announcement = `<br>#${topic} needs a moderator, write <a href='mailto:${ CONF.admin_email }' >${ CONF.admin_email }</a> if
+                you\'re interested`
 
             let content = html(
                 midpage(
                     h1(),
                     follow_topic_button(topic),
+                    moderator_announcement,
                     tabs(order, `&topic=${topic}`),
                     post_list(),
                     post_pagination(sql_calc_found_rows(), curpage, `&topic=${topic}&order=${order}`),
@@ -2310,6 +2345,7 @@ async function render(state) { /////////////////////////////////////////
         <a href='/topics'>topics</a> &nbsp;
         <a href='/best'>best comments</a> &nbsp;
         <a href='/comment_jail'>comment jail</a> &nbsp;
+        <a href='/old?years_ago=1'>old posts by year</a> &nbsp;
         <br>
         <a href='/post/1282720/2015-07-11-ten-reasons-it-s-a-terrible-time-to-buy-an-expensive-house'>10 reasons it's a terrible time to buy</a> &nbsp;
         <br>
@@ -3292,9 +3328,9 @@ async function render(state) { /////////////////////////////////////////
         //var formatted = state.header_data.top3.map(item => `<a href='/topic/${ item.post_topic }'>#${ item.post_topic }</a>`)
         //return formatted.join(' ') + ` <a href='/random'>#random</a> <a href='/topics/'>more&raquo;</a>`
         return `
-            <a href='/topic/housing'>#housing</a> 
             <a href='/topic/investing'>#investing</a> 
             <a href='/topic/politics'>#politics</a> 
+            <a href='/topic/realestate'>#realestate</a> 
             <a href='/random'>#random</a> <a href='/topics/'>more&raquo;</a>`
     }
 
