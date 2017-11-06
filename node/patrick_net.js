@@ -900,11 +900,12 @@ async function render(state) { /////////////////////////////////////////
             // allow them to delete
             // put similar permission on showing delete link by a comment
             // announce
+            var topic_moderator = intval(await get_moderator(post_id))
 
             var comment_author = await get_var('select comment_author from comments where comment_id=?', [comment_id], state)
 
-            await query('delete from comments where comment_id = ? and (comment_author = ? or 1 = ?)',
-                        [comment_id, state.current_user.user_id, state.current_user.user_id], state)
+            await query(`delete from comments where comment_id = ? and (comment_author = ? or 1 = ? or ${topic_moderator}=?)`,
+                        [comment_id, state.current_user.user_id, state.current_user.user_id, state.current_user.user_id], state)
 
             await query(`update users set user_comments=(select count(*) from comments where comment_author = ?) where user_id = ?`,
                         [comment_author, comment_author], state)
@@ -2390,7 +2391,9 @@ async function render(state) { /////////////////////////////////////////
 
         if (!state.current_user) return ''
 
-        return (state.current_user.user_id === c.comment_author || state.current_user.user_id === 1) ?
+        return (state.current_user.user_id === c.comment_author ||
+                state.current_user.user_id === 1                ||
+                state.current_user.user_id === c.topic_moderator) ?
             `<a href='#' onclick="if (confirm('Really delete?')) { $.get('/delete_comment?comment_id=${ c.comment_id }&post_id=${ c.comment_post_id }&${create_nonce_parms()}', function() { $('#comment-${ c.comment_id }').remove() }); return false}">delete</a>` : ''
     }
 
@@ -2436,6 +2439,10 @@ async function render(state) { /////////////////////////////////////////
             return `<div class='icon' ><a href='${post2path(post)}' ><img src='/images/nsfw.png' border=0 width=100 align=top hspace=5 vspace=5 ></a></div>`
         else
             return `<div class='icon' ><a href='${post2path(post)}' ><img src='${c('img').attr('src')}' border=0 width=100 align=top hspace=5 vspace=5 ></a></div>`
+    }
+
+    async function get_moderator(post_id) {
+        return await get_var('select topic_moderator from topics, posts where post_id=? and post_topic=topic', [post_id], state)
     }
 
     function get_nonce(ts) {
@@ -2918,9 +2925,15 @@ async function render(state) { /////////////////////////////////////////
                    order by comment_date limit 40 offset ?`
 
         let results = await query(sql, [user_id, post.post_id, offset], state)
+        let topic_moderator = await get_moderator(post.post_id)
 
         // add in the comment row number to the result here for easier pagination info; would be better to do in mysql, but how?
-        results = results.map(comment => { comment.row_number = ++offset; return comment })
+        // also add in topic_moderator so we can display del link
+        results = results.map(comment => {
+            comment.row_number = ++offset
+            comment.topic_moderator = topic_moderator
+            return comment
+        })
 
         return results
     }
