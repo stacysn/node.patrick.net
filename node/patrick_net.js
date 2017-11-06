@@ -1418,9 +1418,8 @@ async function render(state) { /////////////////////////////////////////
 
             if (!state.post.post_approved && current_user_id !== 1) { await repair_referer(); return die(`That post is waiting for moderation`) }
 
-            state.comments            = await post_comment_list(state.post) // pick up the comment list for this post
-            state.comments.found_rows = await sql_calc_found_rows()
-            state.post.watchers       = await get_var(`select count(*) as c from postviews
+            state.comments      = await post_comment_list(state.post) // pick up the comment list for this post
+            state.post.watchers = await get_var(`select count(*) as c from postviews
                                                        where postview_post_id=? and postview_want_email=1`, [post_id], state)
 
             state.post.post_views++ // increment here for display and in db on next line as record
@@ -1609,8 +1608,12 @@ async function render(state) { /////////////////////////////////////////
             state.posts = await query(sql, [user_id, user_id, topic], state)
             state.message = '#' + topic
             
-            var moderator = await get_var('select user_name from users, topics where topic=? and topic_moderator=user_id', [topic], state)
-            if (moderator) var moderator_announcement = `<br>moderator is ${moderator}`
+            var row = await get_row('select * from users, topics where topic=? and topic_moderator=user_id', [topic], state)
+
+            if (row) {
+                var moderator_announcement = `<br>Moderator is <a href='/user/${row.user_name}'>${row.user_name}</a>.
+                    <a href='/post/${row.topic_about_post_id}' title='rules for #${topic}' >Read before posting.</a>`
+            }
             else var moderator_announcement = `<br>#${topic} needs a moderator, write <a href='mailto:${ CONF.admin_email }' >${ CONF.admin_email }</a> if
                 you\'re interested`
 
@@ -2961,6 +2964,8 @@ async function render(state) { /////////////////////////////////////////
                    order by comment_date limit 40 offset ?`
 
         let results = await query(sql, [user_id, post.post_id, offset], state)
+        let found_rows = await sql_calc_found_rows()
+
         let topic_moderator = await get_moderator(post.post_id)
 
         // add in the comment row number to the result here for easier pagination info; would be better to do in mysql, but how?
@@ -2970,6 +2975,8 @@ async function render(state) { /////////////////////////////////////////
             comment.topic_moderator = topic_moderator
             return comment
         })
+
+        results.found_rows = found_rows // have to put this after map() above to retain it
 
         return results
     }
