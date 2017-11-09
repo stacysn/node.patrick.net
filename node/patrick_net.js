@@ -895,11 +895,6 @@ async function render(state) { /////////////////////////////////////////
             if (!valid_nonce())           return send_html(200, '')
             if (!(comment_id && post_id)) return send_html(200, '')
 
-            // find the topic
-            // find the moderators for that topic
-            // allow them to delete
-            // put similar permission on showing delete link by a comment
-            // announce
             var topic_moderator = intval(await get_moderator(post_id))
 
             var comment_author = await get_var('select comment_author from comments where comment_id=?', [comment_id], state)
@@ -1344,7 +1339,6 @@ async function render(state) { /////////////////////////////////////////
             if (!valid_nonce())                   return die(invalid_nonce_message())
             if (1 !== state.current_user.user_id) return die('non-admin may not nuke')
             if (1 === nuke_id)                    return die('admin cannot nuke himself')
-            if (u.user_comments > 100)            return die('cannot nuke user with more than 100 comments')
 
             let country = await ip2country(u.user_last_comment_ip)
 
