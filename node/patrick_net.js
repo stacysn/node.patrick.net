@@ -684,6 +684,9 @@ async function render(state) { /////////////////////////////////////////
             else if (matches = post_data.post_content.match(/>#(\w+)/m)) post_data.post_topic = matches[1] // else existing, linked topic
             else                                                         post_data.post_topic = 'misc'
 
+            // get all the topics in an array
+            // if post topic is not in that array, reject, asking for one of the #elements in array
+
             post_data.post_content  = strip_tags(post_data.post_content.linkify()) // remove all but a small set of allowed html tags
             post_data.post_approved = 1 // may need to be more restrictive if spammers start getting through
 
@@ -2997,7 +3000,18 @@ async function render(state) { /////////////////////////////////////////
         <form action='/accept_post' method='post' name='postform' onsubmit='return checkforhash()' >
             <div class='form-group'><input name='post_title' type='text' class='form-control' placeholder='title' id='title' value='${title}' ></div>
             <textarea class='form-control' name='post_content' rows='12' id='ta' name='ta'
-                placeholder='please include a topic hashtag like #investing or #politics at the beginning of a line' >${content}</textarea><p>
+                placeholder='please include one of these topic hashtags at the beginning of a line to classify your post:
+#cheesecake
+#crime
+#economics
+#environment
+#housing
+#humor
+#investing
+#misc
+#politics
+#religion
+#scitech ' >${content}</textarea><p>
             ${post_id}
             <button type='submit' id='submit' class='btn btn-success btn-sm' >submit</button>
         </form>
