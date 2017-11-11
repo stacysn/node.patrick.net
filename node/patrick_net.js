@@ -776,6 +776,22 @@ async function render(state) { /////////////////////////////////////////
             return send_html(200, content)
         },
 
+        ban_from_topic : async function() {
+
+            let user_id = intval(_GET('user_id'))
+            return send_html(200, 'banned')
+            /*
+            let topic   = _GET('topic')
+            if (!valid_nonce())                   return die(invalid_nonce_message())
+            
+            .replace(/\W/, '')
+
+            if (1 !== state.current_user.user_id) return die('non-moderator may not ban')
+
+            let u = await get_userrow(user_id)
+            */
+        },
+
         best : async function() {
 
             if ('true' === _GET('all')) {
@@ -2402,7 +2418,15 @@ async function render(state) { /////////////////////////////////////////
         state.message = `${banned_user_name} now banned for a day`;
 
         return (state.current_user.user_id === 1 || state.current_user.is_moderator_of.includes(topic)) ?
-            `<a href='#' onclick="if (confirm('Ban ${banned_user_name}from topic for a day?')) { $.get('/ban_from_topic?user_id=${ user.user_id }&topic=${ topic }&${create_nonce_parms()}', function() { $('head').append(${ popup() }) }); return false}">ban ${banned_user_name} from ${topic} for a day</a>` : ''
+            `<a href='#'
+                id='ban_${user.user_id}_from_${topic}'
+                onclick="if (confirm('Ban ${banned_user_name} from ${topic} for a day?')) {
+                             $.get('/ban_from_topic?user_id=${ user.user_id }&topic=${ topic }&${create_nonce_parms()
+                         }',
+                         function() {
+                            $('#ban_${user.user_id}_from_${topic}').html('banned from ${topic}')
+                         }); return false}"
+             >ban ${banned_user_name} from ${topic} for a day</a>` : ''
     }
 
     async function get_comment_list_by_author(a, start, num) {
@@ -3504,7 +3528,7 @@ async function render(state) { /////////////////////////////////////////
 
         var ban_links = ''
         if (state.current_user && state.current_user.is_moderator_of.length) {
-            ban_links = state.current_user.is_moderator_of.map(topic => get_ban_link(u, topic))
+            ban_links = state.current_user.is_moderator_of.map(topic => get_ban_link(u, topic)).join('<br>')
         }
 
         return `${edit_or_logout}
@@ -3519,7 +3543,7 @@ async function render(state) { /////////////////////////////////////////
                 <span style='display: none;' > ${ignore_link} ${unignore_link} </span>
                 ${ignore}
                 <p>
-                ${ban_links.join('<br>')}
+                ${ban_links}
                 </center>`
     }
 
