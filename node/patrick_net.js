@@ -720,7 +720,8 @@ async function render(state) { /////////////////////////////////////////
             }
 
             await update_prev_next(post_data.post_topic, p)
-            var post_row = await get_row(`select * from posts where post_id=?`, [p], state) 
+
+            var post_row = await get_post(p)
 
             redirect(post2path(post_row))
         },
@@ -898,7 +899,8 @@ async function render(state) { /////////////////////////////////////////
             if (!valid_nonce())           return send_html(200, '')
             if (!(comment_id && post_id)) return send_html(200, '')
 
-            var topic_moderator = intval(await get_moderator(post_id))
+            var topic = (await get_post(post_id)).post_topic
+            var topic_moderator = intval(await get_moderator(topic))
 
             var comment_author = await get_var('select comment_author from comments where comment_id=?', [comment_id], state)
 
@@ -921,7 +923,7 @@ async function render(state) { /////////////////////////////////////////
             var post_id
             if (post_id = intval(_GET('post_id'))) {
 
-                let post = await get_row(`select * from posts where post_id = ?`, [post_id], state)
+                let post = await get_post(post_id)
                 if (!post) return die('no such post')
 
                 // if it's their own post or if it's admin
@@ -980,7 +982,7 @@ async function render(state) { /////////////////////////////////////////
 
                 if (vote.c) { // if they have voted before on this, just return
 
-                    let post_row = await get_row(`select * from posts where post_id=?`, [post_id], state)
+                    let post_row = await get_post(post_id)
 
                     return send_html(200, String(post_row.post_dislikes))
                 }
@@ -990,7 +992,7 @@ async function render(state) { /////////////////////////////////////////
                 await query(`insert into postvotes (postvote_user_id, postvote_post_id, postvote_down) values (?, ?, 1)
                              on duplicate key update postvote_down=0`, [user_id, post_id], state)
 
-                let post_row = await get_row(`select * from posts where post_id=?`, [post_id], state)
+                let post_row = await get_post(post_id)
 
                 await query(`update users set user_dislikes=user_dislikes+1 where user_id=?`, [post_row.post_author], state)
 
@@ -1255,7 +1257,7 @@ async function render(state) { /////////////////////////////////////////
                                       [user_id, post_id], state)
 
                 if (vote && vote.c) { // if they have voted before on this, just return
-                    let post_row = await get_row(`select * from posts where post_id=?`, [post_id], state)
+                    let post_row = await get_post(post_id)
                     return send_html(200, String(post_row.post_likes))
                 }
 
@@ -1264,7 +1266,7 @@ async function render(state) { /////////////////////////////////////////
                 await query(`insert into postvotes (postvote_user_id, postvote_post_id, postvote_up) values (?, ?, 1)
                              on duplicate key update postvote_up=0`, [user_id, post_id], state)
 
-                let post_row = await get_row(`select * from posts where post_id=?`, [post_id], state)
+                let post_row = await get_post(post_id)
 
                 await query(`update users set user_likes=user_likes+1 where user_id=?`, [post_row.post_author], state)
 
@@ -1582,7 +1584,7 @@ async function render(state) { /////////////////////////////////////////
                                        order by comment_date limit 1`, [p, when], state)
 
             let offset = await cid2offset(p, c)
-            let post = await get_row(`select * from posts where post_id=?`, [p], state)
+            let post = await get_post(p)
             redirect(`${post2path(post)}?offset=${offset}#comment-${c}`)
         },
 
@@ -1982,7 +1984,7 @@ async function render(state) { /////////////////////////////////////////
 
     async function comment_mail(c) { // reasons to send out comment emails: @user summons, user watching post
 
-        let p              = await get_row(`select * from posts where post_id=?`, [c.comment_post_id], state)
+        let p              = await get_post(c.comment_post_id)
         let commenter      = c.user_name
         let already_mailed = []
         let offset         = await cid2offset(p.post_id, c.comment_id)
@@ -2391,6 +2393,18 @@ async function render(state) { /////////////////////////////////////////
         return URL.parse(state.req.url, true).query[parm]
     }
 
+    function get_ban_link(user, topic) {
+
+        if (!state.current_user) return ''
+
+        var banned_user_name = user.user_name
+
+        state.message = `${banned_user_name} now banned for a day`;
+
+        return (state.current_user.user_id === 1 || state.current_user.is_moderator_of.includes(topic)) ?
+            `<a href='#' onclick="if (confirm('Ban ${banned_user_name}from topic for a day?')) { $.get('/ban_from_topic?user_id=${ user.user_id }&topic=${ topic }&${create_nonce_parms()}', function() { $('head').append(${ popup() }) }); return false}">ban ${banned_user_name} from ${topic} for a day</a>` : ''
+    }
+
     async function get_comment_list_by_author(a, start, num) {
 
         let comments = await query(`select sql_calc_found_rows * from comments left join users on comment_author=user_id
@@ -2477,8 +2491,9 @@ async function render(state) { /////////////////////////////////////////
             return `<div class='icon' ><a href='${post2path(post)}' ><img src='${c('img').attr('src')}' border=0 width=100 align=top hspace=5 vspace=5 ></a></div>`
     }
 
-    async function get_moderator(post_id) {
-        return await get_var('select topic_moderator from topics, posts where post_id=? and post_topic=topic', [post_id], state)
+    async function get_moderator(topic) {
+        topic = topic.replace(/\W/, '') // topic names contain only \w chars
+        return await get_var('select topic_moderator from topics where topic=?', [topic], state)
     }
 
     function get_nonce(ts) {
@@ -2503,6 +2518,10 @@ async function render(state) { /////////////////////////////////////////
 
     function get_permalink(c) {
         return `<a href='/post/${c.comment_post_id}/?c=${c.comment_id}' title='permalink' >${format_date(c.comment_date)}</a>`
+    }
+
+    async function get_post(post_id) {
+        return await get_row('select * from posts where post_id = ?', [post_id], state)
     }
 
     async function get_userrow(user_id) {
@@ -2650,6 +2669,10 @@ async function render(state) { /////////////////////////////////////////
             <div id='status' >
                 ${img}<a href='/user/${state.current_user.user_name}' >${state.current_user.user_name}</a>
             </div>`
+    }
+
+    function invalid_nonce_message() {
+        return `invalid nonce: ${_GET('nonce')} !== ${get_nonce(_GET('ts'))} with ts=${_GET('ts')} and now=${Date.now()}`
     }
 
     async function ip2country(ip) { // probably a bit slow, so don't overuse this
@@ -2963,7 +2986,7 @@ async function render(state) { /////////////////////////////////////////
         let results = await query(sql, [user_id, post.post_id, offset], state)
         let found_rows = await sql_calc_found_rows()
 
-        let topic_moderator = await get_moderator(post.post_id)
+        let topic_moderator = await get_moderator(post.post_topic)
 
         // add in the comment row number to the result here for easier pagination info; would be better to do in mysql, but how?
         // also add in topic_moderator so we can display del link
@@ -3213,7 +3236,7 @@ async function render(state) { /////////////////////////////////////////
         if (matches = state.req.headers.referer.match(/\/post\/(\d+)/m)) {
             var referring_post_id = intval(matches[1])
 
-            var post = await get_row(`select * from posts where post_id=?`, [referring_post_id], state)
+            var post = await get_post(referring_post_id)
 
             if (post && post.post_topic) await update_prev_next(post.post_topic, post.post_id)
         }
@@ -3479,6 +3502,11 @@ async function render(state) { /////////////////////////////////////////
             var ignore = `<span id='ignore' >${ignore_link}</span>`
         }
 
+        var ban_links = ''
+        if (state.current_user && state.current_user.is_moderator_of.length) {
+            ban_links = state.current_user.is_moderator_of.map(topic => get_ban_link(u, topic))
+        }
+
         return `${edit_or_logout}
                 <center>
                 <a href='/user/${u.user_name}' >${ img }</a><h2>${u.user_name}</h2>
@@ -3490,6 +3518,8 @@ async function render(state) { /////////////////////////////////////////
                 ${follow_user_button(u)} &nbsp;
                 <span style='display: none;' > ${ignore_link} ${unignore_link} </span>
                 ${ignore}
+                <p>
+                ${ban_links}
                 </center>`
     }
 
@@ -3551,10 +3581,6 @@ async function render(state) { /////////////////////////////////////////
 
         if (get_nonce(_GET('ts')) === _GET('nonce')) return true
         else                                         return false
-    }
-
-    function invalid_nonce_message() {
-        return `invalid nonce: ${_GET('nonce')} !== ${get_nonce(_GET('ts'))} with ts=${_GET('ts')} and now=${Date.now()}`
     }
 
     function watch_indicator(want_email) {
