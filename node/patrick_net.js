@@ -778,11 +778,13 @@ async function render(state) { /////////////////////////////////////////
 
         ban_from_topic : async function() {
 
+            if (!valid_nonce()) return send_html(200, invalid_nonce_message())
+
             let user_id = intval(_GET('user_id'))
-            return send_html(200, 'banned')
+            if (!user_id) return send_html(200, 'missing user_id')
+
             /*
             let topic   = _GET('topic')
-            if (!valid_nonce())                   return die(invalid_nonce_message())
             
             .replace(/\W/, '')
 
@@ -790,6 +792,7 @@ async function render(state) { /////////////////////////////////////////
 
             let u = await get_userrow(user_id)
             */
+            return send_html(200, 'banned')
         },
 
         best : async function() {
@@ -2421,11 +2424,12 @@ async function render(state) { /////////////////////////////////////////
             `<a href='#'
                 id='${id}'
                 onclick="if (confirm('Ban ${user.user_name} from ${topic} for a day?')) {
-                             $.get('/ban_from_topic?user_id=${ user.user_id }&topic=${ topic }&${create_nonce_parms()
-                         }',
-                         function() {
-                            $('#${id}').html('banned from ${topic}')
-                         }); return false}"
+                             $.get(
+                                 '/ban_from_topic?user_id=${user.user_id}&topic=${topic}&${create_nonce_parms()}',
+                                 function(response) { $('#${id}').html(response) }
+                             );
+                             return false;
+                         }";
              >ban ${user.user_name} from ${topic} for a day</a>` : ''
     }
 
@@ -2696,7 +2700,7 @@ async function render(state) { /////////////////////////////////////////
     }
 
     function invalid_nonce_message() {
-        return `invalid nonce: ${_GET('nonce')} !== ${get_nonce(_GET('ts'))} with ts=${_GET('ts')} and now=${Date.now()}`
+        return `invalid nonce. reload this page and try again`
     }
 
     async function ip2country(ip) { // probably a bit slow, so don't overuse this
