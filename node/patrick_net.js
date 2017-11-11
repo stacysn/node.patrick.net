@@ -3519,7 +3519,7 @@ async function render(state) { /////////////////////////////////////////
                 <span style='display: none;' > ${ignore_link} ${unignore_link} </span>
                 ${ignore}
                 <p>
-                ${ban_links}
+                ${ban_links.join('<br>')}
                 </center>`
     }
 
