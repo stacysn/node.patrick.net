@@ -1672,6 +1672,7 @@ async function render(state) { /////////////////////////////////////////
             post_data.user_summonable            = intval(post_data.user_summonable)
             post_data.user_hide_post_list_photos = intval(post_data.user_hide_post_list_photos)
 
+            if (get_external_links(post_data.user_aboutyou).length) return die('Sorry, no external links allowed in profile')
             post_data.user_aboutyou = strip_tags(post_data.user_aboutyou.linkify()) 
 
             await query(`update users set user_email                 = ?,
@@ -3343,9 +3344,9 @@ async function render(state) { /////////////////////////////////////////
         //var formatted = state.header_data.top3.map(item => `<a href='/topic/${ item.post_topic }'>#${ item.post_topic }</a>`)
         //return formatted.join(' ') + ` <a href='/random'>#random</a> <a href='/topics/'>more&raquo;</a>`
         return `
+            <a href='/topic/housing'>#housing</a> 
             <a href='/topic/investing'>#investing</a> 
             <a href='/topic/politics'>#politics</a> 
-            <a href='/topic/realestate'>#realestate</a> 
             <a href='/random'>#random</a> <a href='/topics/'>more&raquo;</a>`
     }
 
