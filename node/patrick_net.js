@@ -796,7 +796,10 @@ async function render(state) { /////////////////////////////////////////
                                            values (              ?,                  ?, date_add(now(), interval 1 day))
                          on duplicate key update topicwatch_banned_until=date_add(now(), interval 1 day)`, [topic, user_id], state)
 
-            return send_html(200, `banned from ${topic}`)
+            let until = await get_var('select topicwatch_banned_until from topicwatches where topicwatch_user_id=? and topicwatch_name=?',
+                                      [user_id, topic], state)
+
+            return send_html(200, `banned from ${topic} until ${until}`)
         },
 
         best : async function() {
@@ -2421,8 +2424,6 @@ async function render(state) { /////////////////////////////////////////
         if (!state.current_user) return ''
 
         var id=`ban_${user.user_id}_from_${topic}`
-
-        state.message = `${user.user_name} now banned for a day`;
 
         return (state.current_user.user_id === 1 || state.current_user.is_moderator_of.includes(topic)) ?
             `<a href='#'
