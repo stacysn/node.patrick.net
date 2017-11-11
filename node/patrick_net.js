@@ -452,7 +452,7 @@ async function get_var(sql, sql_parms, state) {
     else return null
 }
 
-function query(sql, sql_parms, state) {
+function query(sql, sql_parms, state, debug) {
 
     return new Promise(function(resolve, reject) {
         var query
@@ -464,7 +464,7 @@ function query(sql, sql_parms, state) {
 
         var get_results = function (error, results, fields, timing) { // callback to give to state.db.query()
 
-            //debug(query.sql)
+            if (debug) console.log(query.sql)
 
             if (error) {
                 console.error('db error when attempting to run: ' + query.sql)
@@ -1650,10 +1650,9 @@ async function render(state) { /////////////////////////////////////////
 
             let comment_id = intval(_GET('c'))
 
-            if (state.current_user && valid_nonce() && comment_id) {
-                await query(`update comments set comment_adhom_reporter=?, comment_adhom_when=now()
-                             where comment_id = ? and (comment_author = ? or 1 = ?)`,
-                             [state.current_user.user_id, comment_id, state.current_user.user_id, state.current_user.user_id], state)
+            if (state.current_user && (state.current_user.user_pbias > 3) && valid_nonce() && comment_id) {
+                await query(`update comments set comment_adhom_reporter=?, comment_adhom_when=now() where comment_id = ?`,
+                            [state.current_user.user_id, comment_id], state)
             }
 
             send_html(200, '') // blank response in all cases
