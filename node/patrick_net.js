@@ -2413,20 +2413,20 @@ async function render(state) { /////////////////////////////////////////
 
         if (!state.current_user) return ''
 
-        var banned_user_name = user.user_name
+        var id=`ban_${user.user_id}_from_${topic}`
 
-        state.message = `${banned_user_name} now banned for a day`;
+        state.message = `${user.user_name} now banned for a day`;
 
         return (state.current_user.user_id === 1 || state.current_user.is_moderator_of.includes(topic)) ?
             `<a href='#'
-                id='ban_${user.user_id}_from_${topic}'
-                onclick="if (confirm('Ban ${banned_user_name} from ${topic} for a day?')) {
+                id='${id}'
+                onclick="if (confirm('Ban ${user.user_name} from ${topic} for a day?')) {
                              $.get('/ban_from_topic?user_id=${ user.user_id }&topic=${ topic }&${create_nonce_parms()
                          }',
                          function() {
-                            $('#ban_${user.user_id}_from_${topic}').html('banned from ${topic}')
+                            $('#${id}').html('banned from ${topic}')
                          }); return false}"
-             >ban ${banned_user_name} from ${topic} for a day</a>` : ''
+             >ban ${user.user_name} from ${topic} for a day</a>` : ''
     }
 
     async function get_comment_list_by_author(a, start, num) {
