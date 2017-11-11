@@ -3217,7 +3217,7 @@ async function render(state) { /////////////////////////////////////////
         <input type='checkbox' name='user_hide_post_list_photos' value='1' ${ u.user_hide_post_list_photos ? 'checked' : '' } >
             Hide images on post lists
         <h2>about you</h2>
-        <textarea class='form-control' rows='3' name='user_aboutyou' >${u.user_aboutyou}</textarea><br>
+        <textarea class='form-control' rows='3' name='user_aboutyou' >${u.user_aboutyou || ''}</textarea><br>
 
         <input type='submit' class='btn btn-success btn-sm' value='Save' />
         </form><p><h3>ignored users</h3>(click to unignore that user)<br>`
@@ -3543,7 +3543,7 @@ async function render(state) { /////////////////////////////////////////
         return `${edit_or_logout}
                 <center>
                 <a href='/user/${u.user_name}' >${ img }</a><h2>${u.user_name}</h2>
-                ${u.user_aboutyou ? u.user_aboutyou : ''}
+                ${u.user_aboutyou || ''}
                 <p>joined ${ format_date(u.user_registered) } &nbsp;
                 ${u.user_country ? u.user_country : ''}
                 ${u.user_posts.number_format()} posts &nbsp;
