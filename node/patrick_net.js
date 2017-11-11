@@ -783,16 +783,20 @@ async function render(state) { /////////////////////////////////////////
             let user_id = intval(_GET('user_id'))
             if (!user_id) return send_html(200, 'missing user_id')
 
-            /*
-            let topic   = _GET('topic')
+            let topic = _GET('topic')
+            if (!topic) return send_html(200, 'missing topic')
             
-            .replace(/\W/, '')
+            topic = topic.replace(/\W/, '')
 
-            if (1 !== state.current_user.user_id) return die('non-moderator may not ban')
+            let topic_moderator = await get_moderator(topic)
 
-            let u = await get_userrow(user_id)
-            */
-            return send_html(200, 'banned')
+            if (state.current_user.user_id != topic_moderator) return send_html(200, 'non-moderator may not ban')
+
+            await query(`insert into topicwatches (topicwatch_name, topicwatch_user_id,         topicwatch_banned_until)
+                                           values (              ?,                  ?, date_add(now(), interval 1 day))
+                         on duplicate key update topicwatch_banned_until=date_add(now(), interval 1 day)`, [topic, user_id], state)
+
+            return send_html(200, `banned from ${topic}`)
         },
 
         best : async function() {
