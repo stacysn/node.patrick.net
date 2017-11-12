@@ -147,6 +147,8 @@ async function collect_post_data_and_trim(state) { // to deal with safari on iph
 
 async function set_user(state) { // update state with whether they are logged in or not
 
+    if (!state.req.headers.cookie) return
+
     try {
         var pairs = []
 
@@ -171,6 +173,7 @@ async function set_user(state) { // update state with whether they are logged in
 
     }
     catch(e) { // no valid cookie
+        console.log(e)
         state.current_user = null
     }
 }
@@ -584,7 +587,13 @@ async function render(state) { /////////////////////////////////////////
                 return send_html(200, JSON.stringify({ err: true, content: popup() }))
             }
             else {
-                post_data.comment_author   = state.current_user ? state.current_user.user_id : await find_or_create_anon()
+                post_data.comment_author = state.current_user ? state.current_user.user_id : await find_or_create_anon()
+
+                let bans = await user_topic_bans(post_data.comment_author)
+                let topic = (await get_post(post_data.comment_post_id)).post_topic
+                state.message = is_user_banned(bans, topic)
+                if (state.message) return send_html(200, JSON.stringify({ err: true, content: popup() }))
+
                 post_data.comment_content  = strip_tags(post_data.comment_content.linkify())
                 post_data.comment_dislikes = 0
                 post_data.comment_likes    = 0
