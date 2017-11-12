@@ -386,7 +386,7 @@ function sanitize_html(s) {
 
             if (item.hasAttributes()) {
                 for(var j = 0; j < item.attributes.length; j++) {
-                    if (allowed[tag].indexOf(item.attributes[j].name) == -1) {
+                    if (allowed[tag].indexOf(item.attributes[j].name) === -1) {
                         item.removeAttribute(item.attributes[j].name)
                     }
                 }
@@ -600,7 +600,7 @@ async function render(state) { /////////////////////////////////////////
                 post_data.comment_date     = new Date().toISOString().slice(0, 19).replace('T', ' ') // mysql datetime format
 
                 var extlink_count = get_external_links(post_data.comment_content).length // appr anon comment if no external links
-                if (state.current_user || (extlink_count == 0)) post_data.comment_approved = 1
+                if (state.current_user || (extlink_count === 0)) post_data.comment_approved = 1
 
                 try {
                     var insert_result = await query('insert into comments set ?', post_data, state)
@@ -799,7 +799,7 @@ async function render(state) { /////////////////////////////////////////
 
             let topic_moderator = await get_moderator(topic)
 
-            if (state.current_user.user_id != topic_moderator) return send_html(200, 'non-moderator may not ban')
+            if (state.current_user.user_id !== topic_moderator) return send_html(200, 'non-moderator may not ban')
 
             await query(`insert into topicwatches (topicwatch_name, topicwatch_user_id,         topicwatch_banned_until)
                                            values (              ?,                  ?, date_add(now(), interval 1 day))
@@ -1417,7 +1417,7 @@ async function render(state) { /////////////////////////////////////////
                         order by post_date desc limit 40`
 
             state.posts = await query(sql, [user_id, user_id], state)
-            let s = (years_ago == 1) ? '' : 's'
+            let s = (years_ago === 1) ? '' : 's'
             state.message = `Posts from ${years_ago} year${s} ago`
             
             let content = html(
@@ -1460,7 +1460,7 @@ async function render(state) { /////////////////////////////////////////
 
             if (current_user_id) {
                 state.post.postview_want_email = state.post.postview_want_email || 0 // keep as 1 or 0 from db; set to 0 if null in db
-                if( '0' == _GET('want_email') ) state.post.postview_want_email = 0
+                if( '0' === _GET('want_email') ) state.post.postview_want_email = 0
 
                 await query(`replace into postviews set
                              postview_user_id=?, postview_post_id=?, postview_last_view=now(), postview_want_email=?`,
@@ -1911,7 +1911,7 @@ async function render(state) { /////////////////////////////////////////
                     h1(),
                     `<p><a href='${next_page}'>next page &raquo;</a><p>`,
                     user_list(),
-                    `<hr><a href='${next_page}'>next page &raquo;</a>`,
+                    `<hr><a href='${next_page}'>next page &raquo;</a>`
                 )
             )
 
@@ -2740,7 +2740,7 @@ async function render(state) { /////////////////////////////////////////
  
     function is_user_banned(bans, topic) {
 
-        let ban = bans.filter(item => (item.topic == topic))[0]; // there should be only one per topic
+        let ban = bans.filter(item => (item.topic === topic))[0]; // there should be only one per topic
 
         return ban ? `banned from ${ban.topic} until ${format_date(ban.until)}` : ''
     }
