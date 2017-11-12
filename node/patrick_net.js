@@ -2736,7 +2736,7 @@ async function render(state) { /////////////////////////////////////////
 
         let ban = bans.filter(item => (item.topic == topic))[0]; // there should be only one per topic
 
-        return ban ? `banned from ${ban.topic} until ${ban.until}` : ''
+        return ban ? `banned from ${ban.topic} until ${format_date(ban.until)}` : ''
     }
 
     async function user_topic_bans(user_id) {
