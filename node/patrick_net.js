@@ -1833,6 +1833,7 @@ async function render(state) { /////////////////////////////////////////
 
             let d  = _GET('d')  ? _GET('d').replace(/[^adesc]/g, '').substring(0,4)  : 'desc' // asc or desc
             let ob = _GET('ob') ? _GET('ob').replace(/[^a-z_]/g, '').substring(0,32) : 'user_comments' // order by
+            let offset = intval(_GET('offset')) || 0
 
             if ( _GET('unrequited') ) {
                 state.message = `Unrequited Friendship Requests For ${state.current_user.user_name}`
@@ -1847,7 +1848,7 @@ async function render(state) { /////////////////////////////////////////
                       [state.current_user.user_id], state)
                 
                 state.users = await query(`select sql_calc_found_rows * from unrequited, users
-                                           where unrequited.rel_self_id = users.user_id and user_id = ? limit 40 offset 0`,
+                                           where unrequited.rel_self_id = users.user_id and user_id = ? limit 40 offset ${offset}`,
                                           [state.current_user.user_id], state)
             }
             else if ( _GET('followersof') ) {
@@ -1857,7 +1858,7 @@ async function render(state) { /////////////////////////////////////////
 
                 state.users = await query(`select sql_calc_found_rows * from users
                     where user_id in (select rel_self_id from relationships where rel_other_id=? and rel_i_follow > 0)
-                    order by ${ob} ${d} limit 40 offset 0`, [followersof, ob, d], state)
+                    order by ${ob} ${d} limit 40 offset ${offset}`, [followersof, ob, d], state)
 
                 // keep followers-count cache in users table correct
                 await query('update users set user_followers=? where user_id=?', [state.users.length, followersof], state);
@@ -1869,7 +1870,7 @@ async function render(state) { /////////////////////////////////////////
 
                 state.users = await query(`select sql_calc_found_rows * from users where user_id in
                                           (select rel_other_id from relationships where rel_self_id=? and rel_i_follow > 0)
-                                           order by ${ob} ${d} limit 40 offset 0`, [following], state)
+                                           order by ${ob} ${d} limit 40 offset ${offset}`, [following], state)
             }
             else if ( _GET('friendsof') ) {
                 let friendsof = intval(_GET('friendsof'))
@@ -1882,7 +1883,7 @@ async function render(state) { /////////////////////////////////////////
                                               r1.rel_self_id=r2.rel_other_id and
                                               r2.rel_self_id=r1.rel_other_id and
                                               r1.rel_my_friend > 0 and r2.rel_my_friend > 0)
-                                          order by ${ob} ${d} limit 40 offset 0`, [friendsof, ob, d], state)
+                                          order by ${ob} ${d} limit 40 offset ${offset}`, [friendsof, ob, d], state)
 
                 await query(`update users set user_friends=? where user_id=?`,
                             [state.users.length, friendsof], state); // Keep friends-count cache correct.
@@ -1895,17 +1896,22 @@ async function render(state) { /////////////////////////////////////////
                 state.message = `Users With Names Like '${user_name}'`
 
                 state.users = await query(`select sql_calc_found_rows * from users where user_name like '%${user_name}%'
-                                           order by ${ob} ${d} limit 40 offset 0`, [ob, d], state)
+                                           order by ${ob} ${d} limit 40 offset ${offset}`, [ob, d], state)
             }
             else {
                 state.message = 'users'
-                state.users   = await query(`select sql_calc_found_rows * from users order by ${ob} ${d} limit 40 offset 0`, [], state)
+                state.users   = await query(`select sql_calc_found_rows * from users order by ${ob} ${d} limit 40 offset ${offset}`, [], state)
             }
+
+            let next_page = state.req.url.match(/offset=/) ? state.req.url.replace(/offset=\d+/, `offset=${offset + 40}`) :
+                state.req.url.match(/\?/) ? state.req.url + '&offset=40' : state.req.url + '?offset=40'
 
             let content = html(
                 midpage(
                     h1(),
-                    user_list()
+                    `<p><a href='${next_page}'>next page &raquo;</a><p>`,
+                    user_list(),
+                    `<hr><a href='${next_page}'>next page &raquo;</a>`,
                 )
             )
 
