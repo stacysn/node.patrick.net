@@ -796,10 +796,9 @@ async function render(state) { /////////////////////////////////////////
                                            values (              ?,                  ?, date_add(now(), interval 1 day))
                          on duplicate key update topicwatch_banned_until=date_add(now(), interval 1 day)`, [topic, user_id], state)
 
-            let until = await get_var('select topicwatch_banned_until from topicwatches where topicwatch_user_id=? and topicwatch_name=?',
-                                      [user_id, topic], state)
-
-            return send_html(200, `banned from ${topic} until ${until}`)
+            let bans = await user_topic_bans(user_id)
+            
+            return send_html(200, is_user_banned(bans, topic))
         },
 
         best : async function() {
@@ -1804,14 +1803,16 @@ async function render(state) { /////////////////////////////////////////
 
             state.posts = await query(sql, [current_user_id, current_user_id, u.user_id], state)
 
-            let found_rows = await sql_calc_found_rows()
+            let found_post_rows = await sql_calc_found_rows()
+
+            u.bans = await user_topic_bans(u.user_id)
 
             let content = html(
                 midpage(
                     user_info(u),
                     tabs(order),
                     post_list(),
-                    post_pagination(found_rows, curpage, `&order=${order}`),
+                    post_pagination(found_post_rows, curpage, `&order=${order}`),
                     admin_user(u)
                 )
             )
@@ -2425,6 +2426,10 @@ async function render(state) { /////////////////////////////////////////
 
         var id=`ban_${user.user_id}_from_${topic}`
 
+        var ban_message = is_user_banned(user.bans, topic)
+
+        if (ban_message) return ban_message
+
         return (state.current_user.user_id === 1 || state.current_user.is_moderator_of.includes(topic)) ?
             `<a href='#'
                 id='${id}'
@@ -2716,6 +2721,18 @@ async function render(state) { /////////////////////////////////////////
 
         return await get_var(`select country_name from countries where inet_aton(?) >= country_start and inet_aton(?) <= country_end`,
                               [ip, ip], state)
+    }
+ 
+    function is_user_banned(bans, topic) {
+
+        let ban = bans.filter(item => (item.topic == topic))[0]; // there should be only one per topic
+
+        return ban ? `banned from ${ban.topic} until ${ban.until}` : ''
+    }
+
+    async function user_topic_bans(user_id) {
+        return await query(`select topicwatch_name as topic, topicwatch_banned_until as until from topicwatches
+                            where topicwatch_user_id=? and topicwatch_banned_until > now()`, [user_id], state)
     }
 
     async function login(state, email, password) {
