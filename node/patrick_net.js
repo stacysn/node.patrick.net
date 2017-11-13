@@ -160,16 +160,18 @@ async function set_user(state) { // update state with whether they are logged in
         })
 
         state.current_user = await get_row('select * from users where user_id = ? and user_pass = ?', [pairs[CONF.usercookie], pairs[CONF.pwcookie]], state)
-        await set_relations(state)
-        await set_topics(state)
 
-        state.current_user.is_moderator_of = (await query('select topic from topics where topic_moderator = ?',
-                                                          [state.current_user.user_id], state)).map(row => row.topic)
+        if (state.current_user && state.current_user.user_id) {
+            state.current_user.is_moderator_of = (await query('select topic from topics where topic_moderator = ?',
+                                                              [state.current_user.user_id], state)).map(row => row.topic)
+            await set_relations(state)
+            await set_topics(state)
 
-        // update users currently online for display in header
-        await query(`delete from onlines where online_last_view < date_sub(now(), interval 5 minute)`, null, state)
-        await query(`insert into onlines (online_user_id, online_username, online_last_view) values (?, ?, now())
-                     on duplicate key update online_last_view=now()`, [state.current_user.user_id, state.current_user.user_name], state)
+            // update users currently online for display in header
+            await query(`delete from onlines where online_last_view < date_sub(now(), interval 5 minute)`, null, state)
+            await query(`insert into onlines (online_user_id, online_username, online_last_view) values (?, ?, now())
+                         on duplicate key update online_last_view=now()`, [state.current_user.user_id, state.current_user.user_name], state)
+        }
 
     }
     catch(e) { // no valid cookie
