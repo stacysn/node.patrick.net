@@ -752,7 +752,7 @@ function render_user_info(u, current_user, ip) {
 
     var ban_links = ''
     if (current_user && current_user.is_moderator_of.length) {
-        ban_links = current_user.is_moderator_of.map(topic => get_ban_link(u, topic, current_user, ip)).join('<br>')
+        ban_links = current_user.is_moderator_of.map(topic => render_ban_link(u, topic, current_user, ip)).join('<br>')
     }
 
     return `${edit_or_logout}
@@ -803,7 +803,7 @@ function follow_user_button(u, current_user, ip) { // u is the user to follow, a
     return `<span style='display: none;' > ${follow_user_link} ${unfollow_user_link} </span> ${follow}`
 }
 
-function get_ban_link(user, topic, current_user, ip) {
+function render_ban_link(user, topic, current_user, ip) {
 
     if (!current_user) return ''
 
@@ -834,6 +834,101 @@ function is_user_banned(bans, topic, current_user) {
     return ban ? `banned from ${ban.topic} until ${render_date(ban.until, utz)}` : ''
 }
 
+function render_unread_comments_icon(post, last_view, current_user) { // return the blinky icon if there are unread comments in a post
+
+    // if post.post_latest_commenter_id is an ignored user, just return
+    // prevents user from seeing blinky for ignored users, but unfortunately also prevents blinky for wanted unread comments before that
+    if (current_user
+     && current_user.relationships
+     && current_user.relationships[post.post_latest_commenter_id]
+     && current_user.relationships[post.post_latest_commenter_id].rel_i_ban) { return '' }
+
+    // if post_modified > last time they viewed this post, then give them a link to earliest unread comment
+    let last_viewed = Date.parse(last_view) / 1000
+    let modified    = Date.parse(post.post_modified) / 1000
+
+    if (modified > last_viewed) {
+
+        let unread = `<a href='/since?p=${post.post_id}&when=${last_viewed}' ><img src='/content/unread_comments.gif' width='19' height='18' title='View unread comments'></a>`
+
+        return unread
+    }
+    else return ''
+}
+
+function render_upload_form() {
+
+    return `
+    <form enctype='multipart/form-data' id='upload-file' method='post' target='upload_target' action='/upload' >
+        <input type='file'   id='upload'   name='image' class='form' /> 
+        <input type='submit' value='Include Image' class='form' />
+    </form>
+    <iframe id='upload_target' name='upload_target' src='' style='display: none;' ></iframe>` // for uploading a bit of js to insert the img link
+}
+
+function topic_nav(post) {
+
+    if (post && post.post_topic) {
+        let prev_link = post.post_prev_in_topic ? `&laquo; <a href='/post/${post.post_prev_in_topic}'>prev</a>  &nbsp;` : ''
+        let next_link = post.post_next_in_topic ? `&nbsp;  <a href='/post/${post.post_next_in_topic}'>next</a> &raquo;` : ''
+
+        return `<b>${prev_link} ${post.post_topic} ${next_link}</b>`
+    }
+    else return ``
+}
+
+function admin_user(u, current_user, ip) { // links to administer a user
+
+    if (!current_user)                              return ``
+    if (current_user && current_user.user_id !== 1) return ``
+
+    return `<hr>
+        <a href='mailto:${u.user_email}'>email ${u.user_email}</a> &nbsp;
+        <a href='https://whatismyipaddress.com/ip/${u.user_last_comment_ip}'>${u.user_last_comment_ip}</a> &nbsp;
+        <a href='/user/${u.user_name}?become=1&${create_nonce_parms(ip)}' >become ${u.user_name}</a> &nbsp;
+        <a href='/nuke?nuke_id=${u.user_id}&${create_nonce_parms(ip)}' onClick='javascript:return confirm("Really?")' >nuke</a> &nbsp;
+        <hr>`
+}
+
+function arrowbox(post) { // output html for vote up/down arrows; takes a post left joined on user's votes for that post
+
+    var upgrey   = post.postvote_up   ? `style='color: grey; pointer-events: none;'` : ``
+    var downgrey = post.postvote_down ? `style='color: grey; pointer-events: none;'` : ``
+
+    var likelink    = `href='#' ${upgrey}   onclick="postlike('post_${post.post_id}_up'); return false;"`
+    var dislikelink = `href='#' ${downgrey} onclick="postdislike('post_${post.post_id}_down');return false;"`
+
+    return `<div class='arrowbox' >
+            <a ${likelink}    title='${post.post_likes} upvotes'      >&#9650;</a><br>
+            <span id='post_${post.post_id}_up' />${post.post_likes}</span><br>
+            <span id='post_${post.post_id}_down' />${post.post_dislikes}</span><br>
+            <a ${dislikelink} title='${post.post_dislikes} downvotes' >&#9660;</a>
+            </div>`
+}
+
+function topic_moderation(topic, current_user) {
+
+    if (!current_user || !current_user.is_moderator_of) return ''
+
+    if (!current_user.is_moderator_of.includes(topic)) return ''
+
+    return `<hr id='moderation' >
+        <h2>Welcome ${current_user.user_name}, moderator of ${topic}!</h2>
+        set or edit "About ${topic}"<br>
+        posts waiting for moderation<br>
+        comments waiting for moderation<br>
+        review jailed comments<br>
+        user blacklist by ip or username<br>
+        user whitelist<br>
+        set background image<br>
+        set color<br>
+        set donation link<br>
+    `
+}
+
+function topic_list(topics) {
+    return topics ? topics.map(item => `<a href='/topic/${ item.post_topic }'>#${ item.post_topic }</a>`).join(' ') : ''
+}
 
 async function render(state) { /////////////////////////////////////////
 
@@ -1765,7 +1860,7 @@ async function render(state) { /////////////////////////////////////////
 
             let content = html(
                 midpage(
-                    topic_nav(),
+                    topic_nav(state.post),
                     post(),
                     comment_pagination(),
                     comment_list(), // mysql offset is greatest item number to ignore, next item is first returned
@@ -1942,7 +2037,7 @@ async function render(state) { /////////////////////////////////////////
                     tabs(order, `&topic=${topic}`),
                     post_list(),
                     post_pagination(sql_calc_found_rows(), curpage, `&topic=${topic}&order=${order}`),
-                    topic_moderation(topic)
+                    topic_moderation(topic, state.current_user)
                 )
             )
 
@@ -1959,7 +2054,7 @@ async function render(state) { /////////////////////////////////////////
             let content = html(
                 midpage(
                     h1(),
-                    topic_list()
+                    topic_list(state.topics)
                 )
             )
 
@@ -2106,7 +2201,7 @@ async function render(state) { /////////////////////////////////////////
                     tabs(order),
                     post_list(),
                     post_pagination(found_post_rows, curpage, `&order=${order}`),
-                    admin_user(u)
+                    admin_user(u, state.current_user, state.ip)
                 )
             )
 
@@ -2229,39 +2324,6 @@ async function render(state) { /////////////////////////////////////////
     /////////////////////////////////////////////////////////
     // functions within render(), arranged alphabetically:
     /////////////////////////////////////////////////////////
-
-    function about_this_site() {
-        return `<h1>About ${ CONF.domain }</h1>${ CONF.domain } is the bomb!`
-    }
-
-    function admin_user(u) { // links to administer a user
-
-        if (!state.current_user)                                    return ``
-        if (state.current_user && state.current_user.user_id !== 1) return ``
-
-        return `<hr>
-            <a href='mailto:${u.user_email}'>email ${u.user_email}</a> &nbsp;
-            <a href='https://whatismyipaddress.com/ip/${u.user_last_comment_ip}'>${u.user_last_comment_ip}</a> &nbsp;
-            <a href='/user/${u.user_name}?become=1&${create_nonce_parms(state.ip)}' >become ${u.user_name}</a> &nbsp;
-            <a href='/nuke?nuke_id=${u.user_id}&${create_nonce_parms(state.ip)}' onClick='javascript:return confirm("Really?")' >nuke</a> &nbsp;
-            <hr>`
-    }
-
-    function arrowbox(post) { // output html for vote up/down arrows; takes a post left joined on user's votes for that post
-
-        var upgrey   = post.postvote_up   ? `style='color: grey; pointer-events: none;'` : ``
-        var downgrey = post.postvote_down ? `style='color: grey; pointer-events: none;'` : ``
-
-        var likelink    = `href='#' ${upgrey}   onclick="postlike('post_${post.post_id}_up'); return false;"`
-        var dislikelink = `href='#' ${downgrey} onclick="postdislike('post_${post.post_id}_down');return false;"`
-
-        return `<div class='arrowbox' >
-                <a ${likelink}    title='${post.post_likes} upvotes'      >&#9650;</a><br>
-                <span id='post_${post.post_id}_up' />${post.post_likes}</span><br>
-                <span id='post_${post.post_id}_down' />${post.post_dislikes}</span><br>
-                <a ${dislikelink} title='${post.post_dislikes} downvotes' >&#9660;</a>
-                </div>`
-    }
 
     function brag() {
 
@@ -2452,7 +2514,7 @@ async function render(state) { /////////////////////////////////////////
         return `<hr>Comment as
         ${state.current_user ? state.current_user.user_name : ip2anon(state.ip) }
         ${state.current_user ? '' : ' or <a href="#">log in</a> at top of page'}:
-        ${upload_form()}
+        ${render_upload_form()}
         <form id='commentform' >
             <textarea id='ta' name='comment_content' class='form-control' rows='10' ></textarea><p>
             <input type='hidden' name='comment_post_id' value='${state.post.post_id}' />
@@ -2476,7 +2538,7 @@ async function render(state) { /////////////////////////////////////////
 
         return `
         <h1>edit comment</h1>
-        ${state.current_user ? upload_form() : ''}
+        ${state.current_user ? render_upload_form() : ''}
         <form id='commentform' action='/accept_edited_comment?${create_nonce_parms(state.ip)}' method='post' >
             <textarea id='ta' name='comment_content' class='form-control' rows='10' placeholder='write a comment...' >${state.comment.comment_content}</textarea><p>
             <input type='hidden' name='comment_id' value='${comment_id}' />
@@ -3254,7 +3316,7 @@ async function render(state) { /////////////////////////////////////////
             else return true;
         }
         </script>
-        ${upload_form()}`
+        ${render_upload_form()}`
     }
 
     function post_link(post) {
@@ -3286,7 +3348,7 @@ async function render(state) { /////////////////////////////////////////
                     if (!post.postview_last_view)
                         var unread = `<a href='${post2path(post)}' ><img src='/content/unread_post.gif' width='45' height='16' title='You never read this one' ></a>`
                     else 
-                        var unread = unread_comments_icon(post, post.postview_last_view) // last view by this user, from left join
+                        var unread = render_unread_comments_icon(post, post.postview_last_view, state.current_user) // last view by this user, from left join
                 }
                 else var unread = ''
 
@@ -3575,69 +3637,6 @@ async function render(state) { /////////////////////////////////////////
             <a href='/random'>#random</a> <a href='/topics/'>more&raquo;</a>`
     }
 
-    function topic_list() {
-        if (state.topics) {
-            var formatted = state.topics.map( (item) => {
-                return `<a href='/topic/${ item.post_topic }'>#${ item.post_topic }</a>`
-            })
-
-            return formatted.join(' ')
-        }
-    }
-
-    function topic_moderation(topic) {
-
-        if (!state.current_user || !state.current_user.is_moderator_of) return ''
-
-        if (!state.current_user.is_moderator_of.includes(topic)) return ''
-
-        return `<hr id='moderation' >
-            <h2>Welcome ${state.current_user.user_name}, moderator of ${topic}!</h2>
-            set or edit "About ${topic}"<br>
-            posts waiting for moderation<br>
-            comments waiting for moderation<br>
-            review jailed comments<br>
-            user blacklist by ip or username<br>
-            user whitelist<br>
-            set background image<br>
-            set color<br>
-            set donation link<br>
-        `
-    }
-
-    function topic_nav() {
-
-        if (state.post && state.post.post_topic) {
-            let prev_link = state.post.post_prev_in_topic ? `&laquo; <a href='/post/${state.post.post_prev_in_topic}'>prev</a>  &nbsp;` : ''
-            let next_link = state.post.post_next_in_topic ? `&nbsp;  <a href='/post/${state.post.post_next_in_topic}'>next</a> &raquo;` : ''
-
-            return `<b>${prev_link} ${state.post.post_topic} ${next_link}</b>`
-        }
-        else return ``
-    }
-
-    function unread_comments_icon(post, last_view) { // return the blinky icon if there are unread comments in a post
-
-        // if post.post_latest_commenter_id is an ignored user, just return
-        // prevents user from seeing blinky for ignored users, but unfortunately also prevents blinky for wanted unread comments before that
-        if (state.current_user
-         && state.current_user.relationships
-         && state.current_user.relationships[post.post_latest_commenter_id]
-         && state.current_user.relationships[post.post_latest_commenter_id].rel_i_ban) { return '' }
-
-        // if post_modified > last time they viewed this post, then give them a link to earliest unread comment
-        let last_viewed = Date.parse(last_view) / 1000
-        let modified    = Date.parse(post.post_modified) / 1000
-
-        if (modified > last_viewed) {
-
-            let unread = `<a href='/since?p=${post.post_id}&when=${last_viewed}' ><img src='/content/unread_comments.gif' width='19' height='18' title='View unread comments'></a>`
-
-            return unread
-        }
-        else return ''
-    }
-
     async function update_prev_next(post_topic, post_id) { // slow, so do this only when post is changed or the prev or next is null
 
         if (!post_topic || !post_id) return
@@ -3651,16 +3650,6 @@ async function render(state) { /////////////////////////////////////////
         await query(`update posts set post_prev_in_topic=?, post_next_in_topic=? where post_id=?`, [prev, next, post_id], state)
 
         return [prev, next]
-    }
-
-    function upload_form() {
-
-        return `
-        <form enctype='multipart/form-data' id='upload-file' method='post' target='upload_target' action='/upload' >
-            <input type='file'   id='upload'   name='image' class='form' /> 
-            <input type='submit' value='Include Image' class='form' />
-        </form>
-        <iframe id='upload_target' name='upload_target' src='' style='display: none;' ></iframe>` // for uploading a bit of js to insert the img link
     }
 
     if (typeof pages[state.page] === 'function') { // hit the db iff the request is for a valid url
