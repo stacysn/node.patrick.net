@@ -681,7 +681,7 @@ function render_user_list(users, d) {
             return `<tr>
                 <td >${render_user_icon(u)}</td>
                 <td align=left >${user_link(u)}</td>
-                <td align=left >${format_date(u.user_registered)}</td>
+                <td align=left >${render_date(u.user_registered)}</td>
                 <td align=right ><a href='/user/${u.user_name}' >${u.user_posts.number_format()}</a></td>
                 <td align=right ><a href='/comments?a=${u.user_name}'>${u.user_comments.number_format()}</a></td>
                 <td align=right >${u.user_likes.number_format()}</td>
@@ -714,9 +714,95 @@ function user_link(u) {
     return `<a href='/user/${ u.user_name }'>${ u.user_name }</a>`
 }
 
-function format_date(gmt_date, utz='America/Los_Angeles', format='YYYY MMM D, h:mma') { // create localized date string from gmt date out of mysql
+function render_date(gmt_date, utz='America/Los_Angeles', format='YYYY MMM D, h:mma') { // create localized date string from gmt date out of mysql
     return MOMENT(Date.parse(gmt_date)).tz(utz).format(format)
 }
+
+function render_user_info(u, current_user, ip) {
+    let img = render_user_icon(u)
+
+    if (current_user && u.user_id === current_user.user_id) {
+        var edit_or_logout = `<div style='float:right'>
+        <b><a href='/edit_profile'>edit profile</a> &nbsp; 
+           <a href='#' onclick="$.get('/logout', function(data) { $('#status').html(data) });return false">logout</a></b><p>
+        </div><div style='clear: both;'></div>`
+    }
+    else var edit_or_logout = ''
+
+    let offset = (u.user_comments - 40 > 0) ? u.user_comments - 40 : 0
+
+    var unignore_link = `<span id='unignore_link' >ignoring ${u.user_name}<sup>
+                         <a href='#' onclick="$.get('/ignore?other_id=${u.user_id}&undo=1&${create_nonce_parms(ip)}',
+                         function() { document.getElementById('ignore').innerHTML = document.getElementById('ignore_link').innerHTML }); return false" >x</a></sup></span>`
+
+    var ignore_link = `<span id='ignore_link' >
+                       <a href='#' title='hide all posts and comments by ${u.user_name}'
+                       onclick="$.get('/ignore?other_id=${u.user_id}&${create_nonce_parms(ip)}',
+                       function() { document.getElementById('ignore').innerHTML = document.getElementById('unignore_link').innerHTML }); return false" >ignore</a></span>`
+
+    if (current_user
+     && current_user.relationships
+     && current_user.relationships[u.user_id]
+     && current_user.relationships[u.user_id].rel_i_ban) {
+        var ignore = `<span id='ignore' >${unignore_link}</span>`
+    }
+    else {
+        var ignore = `<span id='ignore' >${ignore_link}</span>`
+    }
+
+    var ban_links = ''
+    if (current_user && current_user.is_moderator_of.length) {
+        ban_links = current_user.is_moderator_of.map(topic => get_ban_link(u, topic)).join('<br>')
+    }
+
+    return `${edit_or_logout}
+            <center>
+            <a href='/user/${u.user_name}' >${ img }</a><h2>${u.user_name}</h2>
+            ${u.user_aboutyou || ''}
+            <p>joined ${ render_date(u.user_registered) } &nbsp;
+            ${u.user_country ? u.user_country : ''}
+            ${u.user_posts.number_format()} posts &nbsp;
+            <a href='/comments?a=${encodeURI(u.user_name)}&offset=${offset}'>${ u.user_comments.number_format() } comments</a> &nbsp;
+            ${follow_user_button(u, current_user, ip)} &nbsp;
+            <span style='display: none;' > ${ignore_link} ${unignore_link} </span>
+            ${ignore}
+            <p>
+            ${ban_links}
+            </center>`
+}
+
+function create_nonce_parms(ip) {
+    let ts = Date.now() // current unix time in ms
+    let nonce = get_nonce(ts, ip)
+    return `ts=${ts}&nonce=${nonce}`
+}
+
+function follow_user_button(u, current_user, ip) { // u is the user to follow, a row from users table
+
+    let b = `<button type="button" class="btn btn-default btn-xs" title="get emails of new posts by ${u.user_name}" >follow ${u.user_name}</button>`
+
+    var unfollow_user_link = `<span id='unfollow_user_link' >following<sup>
+                         <a href='#' onclick="$.get('/follow_user?other_id=${u.user_id}&undo=1&${create_nonce_parms(ip)}&ajax=1',
+                         function() { document.getElementById('follow').innerHTML = document.getElementById('follow_user_link').innerHTML }); return false" >x</a></sup></span>`
+
+    var follow_user_link = `<span id='follow_user_link' >
+                       <a href='#' title='hide all posts and comments by ${u.user_name}'
+                       onclick="$.get('/follow_user?other_id=${u.user_id}&${create_nonce_parms(ip)}&ajax=1',
+                       function() { document.getElementById('follow').innerHTML = document.getElementById('unfollow_user_link').innerHTML }); return false" >${b}</a></span>`
+
+    if (current_user
+     && current_user.relationships
+     && current_user.relationships[u.user_id]
+     && current_user.relationships[u.user_id].rel_i_follow) {
+        var follow = `<span id='follow' >${unfollow_user_link}</span>`
+    }
+    else {
+        var follow = `<span id='follow' >${follow_user_link}</span>`
+    }
+
+    return `<span style='display: none;' > ${follow_user_link} ${unfollow_user_link} </span> ${follow}`
+}
+
 
 async function render(state) { /////////////////////////////////////////
 
@@ -1292,7 +1378,7 @@ async function render(state) { /////////////////////////////////////////
             }
 
             // either way, output follow button with right state and update this user's follow count
-            ajax ? send_html(200, follow_user_button(await get_userrow(other_id))) : die('Follow status updated')
+            ajax ? send_html(200, follow_user_button(await get_userrow(other_id)), state.current_user, state.ip) : die('Follow status updated')
 
             await query(`update users set user_followers=(select count(*) from relationships where rel_i_follow > 0 and rel_other_id=?)
                          where user_id=?`, [other_id, other_id], state)
@@ -1979,7 +2065,7 @@ async function render(state) { /////////////////////////////////////////
 
             let content = html(
                 midpage(
-                    user_info(u),
+                    render_user_info(u, state.current_user, state.ip),
                     tabs(order),
                     post_list(),
                     post_pagination(found_post_rows, curpage, `&order=${order}`),
@@ -2119,8 +2205,8 @@ async function render(state) { /////////////////////////////////////////
         return `<hr>
             <a href='mailto:${u.user_email}'>email ${u.user_email}</a> &nbsp;
             <a href='https://whatismyipaddress.com/ip/${u.user_last_comment_ip}'>${u.user_last_comment_ip}</a> &nbsp;
-            <a href='/user/${u.user_name}?become=1&${create_nonce_parms()}' >become ${u.user_name}</a> &nbsp;
-            <a href='/nuke?nuke_id=${u.user_id}&${create_nonce_parms()}' onClick='javascript:return confirm("Really?")' >nuke</a> &nbsp;
+            <a href='/user/${u.user_name}?become=1&${create_nonce_parms(state.ip)}' >become ${u.user_name}</a> &nbsp;
+            <a href='/nuke?nuke_id=${u.user_id}&${create_nonce_parms(state.ip)}' onClick='javascript:return confirm("Really?")' >nuke</a> &nbsp;
             <hr>`
     }
 
@@ -2269,7 +2355,7 @@ async function render(state) { /////////////////////////////////////////
         var nuke             = get_nuke_link(c)
         var icon             = render_user_icon(c, 0.4, `'align='left' hspace='5' vspace='2'`) // scale image down
         var u                = c.user_name ? `<a href='/user/${c.user_name}'>${c.user_name}</a>` : 'anonymous'
-        var mute             = `<a href='#' onclick="if (confirm('Really ignore ${c.user_name}?')) { $.get('/ignore?other_id=${ c.user_id }&${create_nonce_parms()}', function() { $('#comment-${ c.comment_id }').remove() }); return false}; return false" title='ignore ${c.user_name}' >ignore (${c.user_bannedby})</a>`
+        var mute             = `<a href='#' onclick="if (confirm('Really ignore ${c.user_name}?')) { $.get('/ignore?other_id=${ c.user_id }&${create_nonce_parms(state.ip)}', function() { $('#comment-${ c.comment_id }').remove() }); return false}; return false" title='ignore ${c.user_name}' >ignore (${c.user_bannedby})</a>`
         var clink            = contextual_link(c)
 
         var liketext    = c.commentvote_up   ? 'you like this'    : '&#8593;&nbsp;like';
@@ -2325,7 +2411,7 @@ async function render(state) { /////////////////////////////////////////
 
     async function comment_box() { // add new comment, just updates page without reload
 
-        let url = `/accept_comment?${create_nonce_parms()}` // first href on button below is needed for mocha test
+        let url = `/accept_comment?${create_nonce_parms(state.ip)}` // first href on button below is needed for mocha test
         return `<hr>Comment as
         ${state.current_user ? state.current_user.user_name : ip2anon(state.ip) }
         ${state.current_user ? '' : ' or <a href="#">log in</a> at top of page'}:
@@ -2354,7 +2440,7 @@ async function render(state) { /////////////////////////////////////////
         return `
         <h1>edit comment</h1>
         ${state.current_user ? upload_form() : ''}
-        <form id='commentform' action='/accept_edited_comment?${create_nonce_parms()}' method='post' >
+        <form id='commentform' action='/accept_edited_comment?${create_nonce_parms(state.ip)}' method='post' >
             <textarea id='ta' name='comment_content' class='form-control' rows='10' placeholder='write a comment...' >${state.comment.comment_content}</textarea><p>
             <input type='hidden' name='comment_id' value='${comment_id}' />
             <button type='submit' id='submit' class='btn btn-success btn-sm'>submit</button>
@@ -2458,19 +2544,13 @@ async function render(state) { /////////////////////////////////////////
         }
         
         if (URL.parse(state.req.url).pathname.match(/comment_moderation/) && (state.current_user.user_level === 4)) {
-            return `<a href='#' onclick="$.get('/approve_comment?comment_id=${ c.comment_id }&${create_nonce_parms()}', function() { $('#comment-${ c.comment_id }').remove() }); return false">approve</a>`
+            return `<a href='#' onclick="$.get('/approve_comment?comment_id=${ c.comment_id }&${create_nonce_parms(state.ip)}', function() { $('#comment-${ c.comment_id }').remove() }); return false">approve</a>`
         }
 
         if (state.current_user.user_pbias >= 3 || state.current_user.user_id === 1) {
-            return `<a href='#' onclick="if (confirm('Really mark as uncivil?')) { $.get('/uncivil?c=${ c.comment_id }&${create_nonce_parms()}', function() { $('#comment-${ c.comment_id }').remove() }); return false}" title='attacks person, not point' >uncivil</a>`
+            return `<a href='#' onclick="if (confirm('Really mark as uncivil?')) { $.get('/uncivil?c=${ c.comment_id }&${create_nonce_parms(state.ip)}', function() { $('#comment-${ c.comment_id }').remove() }); return false}" title='attacks person, not point' >uncivil</a>`
         }
         else return ''
-    }
-
-    function create_nonce_parms() {
-        let ts = Date.now() // current unix time in ms
-        let nonce = get_nonce(ts, state.ip)
-        return `ts=${ts}&nonce=${nonce}`
     }
 
     function die(message) {
@@ -2491,12 +2571,12 @@ async function render(state) { /////////////////////////////////////////
         let b = `<button type="button" class="btn btn-default btn-xs" title="get emails of new posts in ${t}" >follow ${t}</button>`
 
         var unfollow_topic_link = `<span id='unfollow_topic_link' >following<sup>
-                             <a href='#' onclick="$.get('/follow_topic?topic=${t}&undo=1&${create_nonce_parms()}&ajax=1',
+                             <a href='#' onclick="$.get('/follow_topic?topic=${t}&undo=1&${create_nonce_parms(state.ip)}&ajax=1',
                              function() { document.getElementById('follow').innerHTML = document.getElementById('follow_topic_link').innerHTML }); return false" >x</a></sup></span>`
 
         var follow_topic_link = `<span id='follow_topic_link' >
                            <a href='#' title='get emails of new posts in ${t}'
-                           onclick="$.get('/follow_topic?topic=${t}&${create_nonce_parms()}&ajax=1',
+                           onclick="$.get('/follow_topic?topic=${t}&${create_nonce_parms(state.ip)}&ajax=1',
                            function() { document.getElementById('follow').innerHTML = document.getElementById('unfollow_topic_link').innerHTML }); return false" >${b}</a></span>`
 
         if (state.current_user
@@ -2509,32 +2589,6 @@ async function render(state) { /////////////////////////////////////////
         }
 
         return `<span style='display: none;' > ${follow_topic_link} ${unfollow_topic_link} </span> ${follow}`
-    }
-
-    function follow_user_button(u) { // u is the user to follow, a row from users table
-
-        let b = `<button type="button" class="btn btn-default btn-xs" title="get emails of new posts by ${u.user_name}" >follow ${u.user_name}</button>`
-
-        var unfollow_user_link = `<span id='unfollow_user_link' >following<sup>
-                             <a href='#' onclick="$.get('/follow_user?other_id=${u.user_id}&undo=1&${create_nonce_parms()}&ajax=1',
-                             function() { document.getElementById('follow').innerHTML = document.getElementById('follow_user_link').innerHTML }); return false" >x</a></sup></span>`
-
-        var follow_user_link = `<span id='follow_user_link' >
-                           <a href='#' title='hide all posts and comments by ${u.user_name}'
-                           onclick="$.get('/follow_user?other_id=${u.user_id}&${create_nonce_parms()}&ajax=1',
-                           function() { document.getElementById('follow').innerHTML = document.getElementById('unfollow_user_link').innerHTML }); return false" >${b}</a></span>`
-
-        if (state.current_user
-         && state.current_user.relationships
-         && state.current_user.relationships[u.user_id]
-         && state.current_user.relationships[u.user_id].rel_i_follow) {
-            var follow = `<span id='follow' >${unfollow_user_link}</span>`
-        }
-        else {
-            var follow = `<span id='follow' >${follow_user_link}</span>`
-        }
-
-        return `<span style='display: none;' > ${follow_user_link} ${unfollow_user_link} </span> ${follow}`
     }
 
     function footer() {
@@ -2606,7 +2660,7 @@ async function render(state) { /////////////////////////////////////////
                 id='${id}'
                 onclick="if (confirm('Ban ${user.user_name} from ${topic} for a day?')) {
                              $.get(
-                                 '/ban_from_topic?user_id=${user.user_id}&topic=${topic}&${create_nonce_parms()}',
+                                 '/ban_from_topic?user_id=${user.user_id}&topic=${topic}&${create_nonce_parms(state.ip)}',
                                  function(response) { $('#${id}').html(response) }
                              );
                              return false;
@@ -2653,7 +2707,7 @@ async function render(state) { /////////////////////////////////////////
         return (state.current_user.user_id === c.comment_author ||
                 state.current_user.user_id === 1                ||
                 state.current_user.user_id === c.topic_moderator) ?
-            `<a href='#' onclick="if (confirm('Really delete?')) { $.get('/delete_comment?comment_id=${ c.comment_id }&post_id=${ c.comment_post_id }&${create_nonce_parms()}', function() { $('#comment-${ c.comment_id }').remove() }); return false}">delete</a>` : ''
+            `<a href='#' onclick="if (confirm('Really delete?')) { $.get('/delete_comment?comment_id=${ c.comment_id }&post_id=${ c.comment_post_id }&${create_nonce_parms(state.ip)}', function() { $('#comment-${ c.comment_id }').remove() }); return false}">delete</a>` : ''
     }
 
     function get_edit_link(c) {
@@ -2661,7 +2715,7 @@ async function render(state) { /////////////////////////////////////////
         if (!state.current_user) return ''
 
         if ((state.current_user.user_id === c.comment_author) || (state.current_user.user_level === 4)) {
-            return `<a href='/edit_comment?c=${c.comment_id}&${create_nonce_parms()}'>edit</a>`
+            return `<a href='/edit_comment?c=${c.comment_id}&${create_nonce_parms(state.ip)}'>edit</a>`
         }
 
         return ''
@@ -2715,13 +2769,13 @@ async function render(state) { /////////////////////////////////////////
         }
 
         return (URL.parse(state.req.url).pathname.match(/comment_moderation/) && (state.current_user.user_level === 4)) ?
-            `<a href='/nuke?nuke_id=${c.comment_author}&${create_nonce_parms()}' onClick='javascript:return confirm("Really?")' >nuke</a>`
+            `<a href='/nuke?nuke_id=${c.comment_author}&${create_nonce_parms(state.ip)}' onClick='javascript:return confirm("Really?")' >nuke</a>`
             : ''
     }
 
     function get_permalink(c) {
         var utz = state.current_user ? state.current_user.user_timezone : 'America/Los_Angeles'
-        return `<a href='/post/${c.comment_post_id}/?c=${c.comment_id}' title='permalink' >${format_date(c.comment_date, utz)}</a>`
+        return `<a href='/post/${c.comment_post_id}/?c=${c.comment_id}' title='permalink' >${render_date(c.comment_date, utz)}</a>`
     }
 
     async function get_post(post_id) {
@@ -2817,7 +2871,7 @@ async function render(state) { /////////////////////////////////////////
         let ban = bans.filter(item => (item.topic === topic))[0]; // there should be only one per topic
 
         var utz = state.current_user ? state.current_user.user_timezone : 'America/Los_Angeles'
-        return ban ? `banned from ${ban.topic} until ${format_date(ban.until, utz)}` : ''
+        return ban ? `banned from ${ban.topic} until ${render_date(ban.until, utz)}` : ''
     }
 
     async function user_topic_bans(user_id) {
@@ -3071,7 +3125,7 @@ async function render(state) { /////////////////////////////////////////
         let arrowbox_html = arrowbox(state.post)
         let icon          = render_user_icon(state.post, 1, `align='left' hspace='5' vspace='2'`)
         let link          = post_link(state.post)
-        let nonce_parms   = create_nonce_parms()
+        let nonce_parms   = create_nonce_parms(state.ip)
 
         if (state.current_user && state.current_user.user_pbias >= 3) {
 
@@ -3102,7 +3156,7 @@ async function render(state) { /////////////////////////////////////////
         var utz = state.current_user ? state.current_user.user_timezone : 'America/Los_Angeles'
 
         return `<div class='comment' >${arrowbox_html} ${icon} <h2 style='display:inline' >${ link }</h2>
-                <p>By ${user_link(state.post)} ${follow_user_button(state.post)} &nbsp; ${format_date(state.post.post_date, utz)} ${uncivil}
+                <p>By ${user_link(state.post)} ${follow_user_button(state.post, state.current_user, state.ip)} &nbsp; ${render_date(state.post.post_date, utz)} ${uncivil}
                 ${state.post.post_views.number_format()} views &nbsp; ${state.post.post_comments.number_format()} comments &nbsp;
                 ${watcheye} &nbsp;
                 <a href="#commentform" onclick="addquote( '${state.post.post_id}', '0', '0', '${state.post.user_name}' ); return false;"
@@ -3205,7 +3259,7 @@ async function render(state) { /////////////////////////////////////////
     function post_list() { // format a list of posts from whatever source; pass in only a limited number, because all will display
 
         if (state.posts) {
-            let nonce_parms = create_nonce_parms()
+            let nonce_parms = create_nonce_parms(state.ip)
             let moderation = 0
 
             if (!state.req.url) {
@@ -3244,7 +3298,7 @@ async function render(state) { /////////////////////////////////////////
                 if (moderation) {
                     var approval_link = `<a href='#' onclick="$.get('/approve_post?post_id=${ post.post_id }&${nonce_parms}', function() { $('#post-${ post.post_id }').remove() }); return false">approve</a>`
                     var delete_link = ` &nbsp; <a href='/delete_post?post_id=${post.post_id}&${nonce_parms}' onClick="javascript:return confirm('Really delete?')" id='delete_post' >delete</a> &nbsp;`
-                    var nuke_link = `<a href='/nuke?nuke_id=${post.post_author}&${create_nonce_parms()}' onClick='javascript:return confirm("Really?")' >nuke</a>`
+                    var nuke_link = `<a href='/nuke?nuke_id=${post.post_author}&${create_nonce_parms(state.ip)}' onClick='javascript:return confirm("Really?")' >nuke</a>`
                 }
                 else {
                     var approval_link = ''
@@ -3273,7 +3327,7 @@ async function render(state) { /////////////////////////////////////////
                 }
 
                 var utz = state.current_user ? state.current_user.user_timezone : 'America/Los_Angeles'
-                var date = format_date(post.post_date, utz, 'D MMM YYYY')
+                var date = render_date(post.post_date, utz, 'D MMM YYYY')
 
                 return `<div class='post' id='post-${post.post_id}' ${hide} >${arrowbox_html}${imgdiv}${link}
                 <br>by <a href='/user/${ post.user_name }'>${ post.user_name }</a> ${hashlink} on ${date}&nbsp;
@@ -3317,7 +3371,7 @@ async function render(state) { /////////////////////////////////////////
         </tr>
         </table>
         <p>
-        <form name='profile' action='update_profile?${create_nonce_parms()}' method='post'>
+        <form name='profile' action='update_profile?${create_nonce_parms(state.ip)}' method='post'>
         <input type='text' name='user_name'  placeholder='user_name' size='25' value='${ u.user_name }'  maxlength='30'  /> user name<p>
         <input type='text' name='user_email' placeholder='email'     size='25' value='${ u.user_email }' maxlength='100' /> email<p>
         <br>
@@ -3335,7 +3389,7 @@ async function render(state) { /////////////////////////////////////////
         let ignored_users = state.current_user.relationships.filter(rel => rel.rel_i_ban)
         
         if (ignored_users.length)
-            ret += ignored_users.map(u => `<a href='#' onclick="$.get('/ignore?other_id=${u.user_id}&undo=1&${create_nonce_parms()}',
+            ret += ignored_users.map(u => `<a href='#' onclick="$.get('/ignore?other_id=${u.user_id}&undo=1&${create_nonce_parms(state.ip)}',
              function() { $('#user-${ u.user_id }').remove() }); return false" id='user-${u.user_id}' >${u.user_name}</a><br>`).join('')
         else
             ret += 'none'
@@ -3601,59 +3655,6 @@ async function render(state) { /////////////////////////////////////////
             <input type='submit' value='Include Image' class='form' />
         </form>
         <iframe id='upload_target' name='upload_target' src='' style='display: none;' ></iframe>` // for uploading a bit of js to insert the img link
-    }
-
-    function user_info(u) {
-        let img = render_user_icon(u)
-
-        if (state.current_user && u.user_id === state.current_user.user_id) {
-            var edit_or_logout = `<div style='float:right'>
-            <b><a href='/edit_profile'>edit profile</a> &nbsp; 
-               <a href='#' onclick="$.get('/logout', function(data) { $('#status').html(data) });return false">logout</a></b><p>
-            </div><div style='clear: both;'></div>`
-        }
-        else var edit_or_logout = ''
-
-        let offset = (u.user_comments - 40 > 0) ? u.user_comments - 40 : 0
-
-        var unignore_link = `<span id='unignore_link' >ignoring ${u.user_name}<sup>
-                             <a href='#' onclick="$.get('/ignore?other_id=${u.user_id}&undo=1&${create_nonce_parms()}',
-                             function() { document.getElementById('ignore').innerHTML = document.getElementById('ignore_link').innerHTML }); return false" >x</a></sup></span>`
-
-        var ignore_link = `<span id='ignore_link' >
-                           <a href='#' title='hide all posts and comments by ${u.user_name}'
-                           onclick="$.get('/ignore?other_id=${u.user_id}&${create_nonce_parms()}',
-                           function() { document.getElementById('ignore').innerHTML = document.getElementById('unignore_link').innerHTML }); return false" >ignore</a></span>`
-
-        if (state.current_user
-         && state.current_user.relationships
-         && state.current_user.relationships[u.user_id]
-         && state.current_user.relationships[u.user_id].rel_i_ban) {
-            var ignore = `<span id='ignore' >${unignore_link}</span>`
-        }
-        else {
-            var ignore = `<span id='ignore' >${ignore_link}</span>`
-        }
-
-        var ban_links = ''
-        if (state.current_user && state.current_user.is_moderator_of.length) {
-            ban_links = state.current_user.is_moderator_of.map(topic => get_ban_link(u, topic)).join('<br>')
-        }
-
-        return `${edit_or_logout}
-                <center>
-                <a href='/user/${u.user_name}' >${ img }</a><h2>${u.user_name}</h2>
-                ${u.user_aboutyou || ''}
-                <p>joined ${ format_date(u.user_registered) } &nbsp;
-                ${u.user_country ? u.user_country : ''}
-                ${u.user_posts.number_format()} posts &nbsp;
-                <a href='/comments?a=${encodeURI(u.user_name)}&offset=${offset}'>${ u.user_comments.number_format() } comments</a> &nbsp;
-                ${follow_user_button(u)} &nbsp;
-                <span style='display: none;' > ${ignore_link} ${unignore_link} </span>
-                ${ignore}
-                <p>
-                ${ban_links}
-                </center>`
     }
 
     if (typeof pages[state.page] === 'function') { // hit the db iff the request is for a valid url
