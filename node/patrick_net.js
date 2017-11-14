@@ -752,7 +752,7 @@ function render_user_info(u, current_user, ip) {
 
     var ban_links = ''
     if (current_user && current_user.is_moderator_of.length) {
-        ban_links = current_user.is_moderator_of.map(topic => get_ban_link(u, topic)).join('<br>')
+        ban_links = current_user.is_moderator_of.map(topic => get_ban_link(u, topic, current_user, ip)).join('<br>')
     }
 
     return `${edit_or_logout}
@@ -803,6 +803,37 @@ function follow_user_button(u, current_user, ip) { // u is the user to follow, a
     return `<span style='display: none;' > ${follow_user_link} ${unfollow_user_link} </span> ${follow}`
 }
 
+function get_ban_link(user, topic, current_user, ip) {
+
+    if (!current_user) return ''
+
+    var id=`ban_${user.user_id}_from_${topic}`
+
+    var ban_message = is_user_banned(user.bans, topic, current_user)
+
+    if (ban_message) return ban_message
+
+    return (current_user.user_id === 1 || current_user.is_moderator_of.includes(topic)) ?
+        `<a href='#'
+            id='${id}'
+            onclick="if (confirm('Ban ${user.user_name} from ${topic} for a day?')) {
+                         $.get(
+                             '/ban_from_topic?user_id=${user.user_id}&topic=${topic}&${create_nonce_parms(ip)}',
+                             function(response) { $('#${id}').html(response) }
+                         );
+                         return false;
+                     }";
+         >ban ${user.user_name} from ${topic} for a day</a>` : ''
+}
+
+function is_user_banned(bans, topic, current_user) {
+
+    let ban = bans.filter(item => (item.topic === topic))[0]; // there should be only one per topic
+
+    var utz = current_user ? current_user.user_timezone : 'America/Los_Angeles'
+    return ban ? `banned from ${ban.topic} until ${render_date(ban.until, utz)}` : ''
+}
+
 
 async function render(state) { /////////////////////////////////////////
 
@@ -834,11 +865,17 @@ async function render(state) { /////////////////////////////////////////
                 return send_html(200, JSON.stringify({ err: true, content: popup() }))
             }
             else {
-                post_data.comment_author = state.current_user ? state.current_user.user_id : await find_or_create_anon()
+                //post_data.comment_author = state.current_user ? state.current_user.user_id : await find_or_create_anon()
+                if (state.current_user && state.current_user.user_id)
+                    post_data.comment_author = state.current_user.user_id
+                else {
+                    state.message = 'anonymous comments have been disabled, please reg/login'
+                    return send_html(200, JSON.stringify({ err: true, content: popup() }))
+                }
 
                 let bans = await user_topic_bans(post_data.comment_author)
                 let topic = (await get_post(post_data.comment_post_id)).post_topic
-                state.message = is_user_banned(bans, topic)
+                state.message = is_user_banned(bans, topic, state.current_user)
                 if (state.message) return send_html(200, JSON.stringify({ err: true, content: popup() }))
 
                 post_data.comment_content  = strip_tags(post_data.comment_content.linkify())
@@ -1054,7 +1091,7 @@ async function render(state) { /////////////////////////////////////////
 
             let bans = await user_topic_bans(user_id)
             
-            return send_html(200, is_user_banned(bans, topic))
+            return send_html(200, is_user_banned(bans, topic, state.current_user))
         },
 
         best : async function() {
@@ -2645,29 +2682,6 @@ async function render(state) { /////////////////////////////////////////
         return URL.parse(state.req.url, true).query[parm]
     }
 
-    function get_ban_link(user, topic) {
-
-        if (!state.current_user) return ''
-
-        var id=`ban_${user.user_id}_from_${topic}`
-
-        var ban_message = is_user_banned(user.bans, topic)
-
-        if (ban_message) return ban_message
-
-        return (state.current_user.user_id === 1 || state.current_user.is_moderator_of.includes(topic)) ?
-            `<a href='#'
-                id='${id}'
-                onclick="if (confirm('Ban ${user.user_name} from ${topic} for a day?')) {
-                             $.get(
-                                 '/ban_from_topic?user_id=${user.user_id}&topic=${topic}&${create_nonce_parms(state.ip)}',
-                                 function(response) { $('#${id}').html(response) }
-                             );
-                             return false;
-                         }";
-             >ban ${user.user_name} from ${topic} for a day</a>` : ''
-    }
-
     async function get_comment_list_by_author(a, start, num) {
 
         let comments = await query(`select sql_calc_found_rows * from comments left join users on comment_author=user_id
@@ -2866,14 +2880,6 @@ async function render(state) { /////////////////////////////////////////
                               [ip, ip], state)
     }
  
-    function is_user_banned(bans, topic) {
-
-        let ban = bans.filter(item => (item.topic === topic))[0]; // there should be only one per topic
-
-        var utz = state.current_user ? state.current_user.user_timezone : 'America/Los_Angeles'
-        return ban ? `banned from ${ban.topic} until ${render_date(ban.until, utz)}` : ''
-    }
-
     async function user_topic_bans(user_id) {
         return await query(`select topicwatch_name as topic, topicwatch_banned_until as until from topicwatches
                             where topicwatch_user_id=? and topicwatch_banned_until > now()`, [user_id], state)
