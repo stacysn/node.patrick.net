@@ -652,6 +652,72 @@ function get_nonce(ts, ip) {
     return md5(ip + CONF.nonce_secret + ts)
 }
 
+function render_user_list(users, d) {
+
+    d = d ? d.replace(/[^adesc]/, '').substring(0,4)  : 'desc' // asc or desc
+    let i = (d === 'desc') ? 'asc' : 'desc'                    // invert asc or desc
+
+    let header = `
+    <form name='input' action='/users' method='get' >
+    <input type='text' size=40 maxlength=80 name='user_name' autofocus />
+    <input type='submit' value='User Search' />
+    </form><p>
+    <table width='100%' cellpadding='10' style="overflow-x:auto;" ><tr>
+    <th ></th>
+    <th                    ><a href='/users?ob=user_name&d=${ i }'       title='order by user name' >Username</a></th>
+    <th                    ><a href='/users?ob=user_registered&d=${ i }' title='order by registration date' >Registered</a></th>
+    <th class='text-right' ><a href='/users?ob=user_posts&d=${ i }'      title='order by number of posts started' >Posts</a></th>
+    <th class='text-right' ><a href='/users?ob=user_comments&d=${ i }'   title='order by number of comments' >Comments</a></th>
+    <th class='text-right' ><a href='/users?ob=user_likes&d=${ i }'      title='number of likes user got' >Likes</a></th>
+    <th class='text-right' ><a href='/users?ob=user_dislikes&d=${ i }'   title='number of dislikes user got' >Dislikes</a></th>
+    <th class='text-right' ><a href='/users?ob=user_friends&d=${ i }'    title='order by number of friends' >Friends</a></th>
+    <th class='text-right' ><a href='/users?ob=user_followers&d=${ i }'  title='order by number of followers' >Followers</a></th>
+    <th class='text-right' ><a href='/users?ob=user_bannedby&d=${ i }'   title='how many people are ignoring user' >Ignored By</a></th>
+    <th class='text-right' ><a href='/users?ob=user_banning&d=${ i }'    title='how many people user is ignoring' >Ignoring</a></th>
+    </tr>`
+
+    if (users.length) {
+        var formatted = users.map( (u) => {
+            return `<tr>
+                <td >${user_icon(u)}</td>
+                <td align=left >${user_link(u)}</td>
+                <td align=left >${format_date(u.user_registered)}</td>
+                <td align=right ><a href='/user/${u.user_name}' >${u.user_posts.number_format()}</a></td>
+                <td align=right ><a href='/comments?a=${u.user_name}'>${u.user_comments.number_format()}</a></td>
+                <td align=right >${u.user_likes.number_format()}</td>
+                <td align=right >${u.user_dislikes.number_format()}</td>
+                <td align=right ><a href='/users?friendsof=${u.user_id}' >${u.user_friends.number_format()}</a></td>
+                <td align=right ><a href='/users?followersof=${u.user_id}' >${u.user_followers.number_format()}</a></td>
+                <td align=right >${u.user_bannedby.number_format()}</td>
+                <td align=right >${u.user_banning.number_format()}</td>
+               </tr>`
+        })
+
+        var result = formatted.join('')
+    }
+    else var result = 'no such user'
+
+    return header + result + '</table>'
+}
+
+function user_icon(u, scale=1, img_parms='') { // clickable icon for this user if they have icon
+
+    var user_icon_width  = Math.round(u.user_icon_width  * scale)
+    var user_icon_height = Math.round(u.user_icon_height * scale)
+
+    return u.user_icon ?
+            `<a href='/user/${ u.user_name }'><img src='${u.user_icon}' width='${user_icon_width}' height='${user_icon_height}' ${img_parms} ></a>`
+            : ''
+}
+
+function user_link(u) {
+    return `<a href='/user/${ u.user_name }'>${ u.user_name }</a>`
+}
+
+function format_date(gmt_date, utz='America/Los_Angeles', format='YYYY MMM D, h:mma') { // create localized date string from gmt date out of mysql
+    return MOMENT(Date.parse(gmt_date)).tz(utz).format(format)
+}
+
 async function render(state) { /////////////////////////////////////////
 
     var pages = {
@@ -2005,7 +2071,7 @@ async function render(state) { /////////////////////////////////////////
                 midpage(
                     h1(),
                     `<p><a href='${next_page}'>next page &raquo;</a><p>`,
-                    user_list(),
+                    render_user_list(state.users, _GET('d')),
                     `<hr><a href='${next_page}'>next page &raquo;</a>`
                 )
             )
@@ -2515,11 +2581,6 @@ async function render(state) { /////////////////////////////////////////
         </script>`
     }
 
-    function format_date(gmt_date, format='YYYY MMM D, h:mma') { // create localized date string from gmt date out of mysql
-        var utz = state.current_user ? state.current_user.user_timezone : 'America/Los_Angeles'
-        return MOMENT(Date.parse(gmt_date)).tz(utz).format(format)
-    }
-
     function _GET(parm) { // given a string, return the GET parameter by that name
 
         if (!state.req.url) {
@@ -2659,7 +2720,8 @@ async function render(state) { /////////////////////////////////////////
     }
 
     function get_permalink(c) {
-        return `<a href='/post/${c.comment_post_id}/?c=${c.comment_id}' title='permalink' >${format_date(c.comment_date)}</a>`
+        var utz = state.current_user ? state.current_user.user_timezone : 'America/Los_Angeles'
+        return `<a href='/post/${c.comment_post_id}/?c=${c.comment_id}' title='permalink' >${format_date(c.comment_date, utz)}</a>`
     }
 
     async function get_post(post_id) {
@@ -2754,7 +2816,8 @@ async function render(state) { /////////////////////////////////////////
 
         let ban = bans.filter(item => (item.topic === topic))[0]; // there should be only one per topic
 
-        return ban ? `banned from ${ban.topic} until ${format_date(ban.until)}` : ''
+        var utz = state.current_user ? state.current_user.user_timezone : 'America/Los_Angeles'
+        return ban ? `banned from ${ban.topic} until ${format_date(ban.until, utz)}` : ''
     }
 
     async function user_topic_bans(user_id) {
@@ -3036,8 +3099,10 @@ async function render(state) { /////////////////////////////////////////
 
         state.post.user_name = state.post.user_name || 'anonymous' // so we don't display 'null' in case the post is anonymous
 
+        var utz = state.current_user ? state.current_user.user_timezone : 'America/Los_Angeles'
+
         return `<div class='comment' >${arrowbox_html} ${icon} <h2 style='display:inline' >${ link }</h2>
-                <p>By ${user_link(state.post)} ${follow_user_button(state.post)} &nbsp; ${format_date(state.post.post_date)} ${uncivil}
+                <p>By ${user_link(state.post)} ${follow_user_button(state.post)} &nbsp; ${format_date(state.post.post_date, utz)} ${uncivil}
                 ${state.post.post_views.number_format()} views &nbsp; ${state.post.post_comments.number_format()} comments &nbsp;
                 ${watcheye} &nbsp;
                 <a href="#commentform" onclick="addquote( '${state.post.post_id}', '0', '0', '${state.post.user_name}' ); return false;"
@@ -3207,7 +3272,8 @@ async function render(state) { /////////////////////////////////////////
                     link += ` (<a href='${brandit(extlinks[0])}' target='_blank' title='original story' >${host})</a>`
                 }
 
-                var date = format_date(post.post_date, 'D MMM YYYY')
+                var utz = state.current_user ? state.current_user.user_timezone : 'America/Los_Angeles'
+                var date = format_date(post.post_date, utz, 'D MMM YYYY')
 
                 return `<div class='post' id='post-${post.post_id}' ${hide} >${arrowbox_html}${imgdiv}${link}
                 <br>by <a href='/user/${ post.user_name }'>${ post.user_name }</a> ${hashlink} on ${date}&nbsp;
@@ -3537,16 +3603,6 @@ async function render(state) { /////////////////////////////////////////
         <iframe id='upload_target' name='upload_target' src='' style='display: none;' ></iframe>` // for uploading a bit of js to insert the img link
     }
 
-    function user_icon(u, scale=1, img_parms='') { // clickable icon for this user if they have icon
-
-        var user_icon_width  = Math.round(u.user_icon_width  * scale)
-        var user_icon_height = Math.round(u.user_icon_height * scale)
-
-        return u.user_icon ?
-                `<a href='/user/${ u.user_name }'><img src='${u.user_icon}' width='${user_icon_width}' height='${user_icon_height}' ${img_parms} ></a>`
-                : ''
-    }
-
     function user_info(u) {
         let img = user_icon(u)
 
@@ -3598,58 +3654,6 @@ async function render(state) { /////////////////////////////////////////
                 <p>
                 ${ban_links}
                 </center>`
-    }
-
-    function user_link(u) {
-        return `<a href='/user/${ u.user_name }'>${ u.user_name }</a>`
-    }
-
-    function user_list() {
-
-        let d = _GET('d') ? _GET('d').replace(/[^adesc]/, '').substring(0,4)  : 'desc' // asc or desc
-        let i = (d === 'desc') ? 'asc' : 'desc'                                         // invert asc or desc
-
-        let header = `
-        <form name='input' action='/users' method='get' >
-        <input type='text' size=40 maxlength=80 name='user_name' autofocus />
-        <input type='submit' value='User Search' />
-        </form><p>
-        <table width='100%' cellpadding='10' style="overflow-x:auto;" ><tr>
-        <th ></th>
-        <th                    ><a href='/users?ob=user_name&d=${ i }'       title='order by user name' >Username</a></th>
-        <th                    ><a href='/users?ob=user_registered&d=${ i }' title='order by registration date' >Registered</a></th>
-        <th class='text-right' ><a href='/users?ob=user_posts&d=${ i }'      title='order by number of posts started' >Posts</a></th>
-        <th class='text-right' ><a href='/users?ob=user_comments&d=${ i }'   title='order by number of comments' >Comments</a></th>
-        <th class='text-right' ><a href='/users?ob=user_likes&d=${ i }'      title='number of likes user got' >Likes</a></th>
-        <th class='text-right' ><a href='/users?ob=user_dislikes&d=${ i }'   title='number of dislikes user got' >Dislikes</a></th>
-        <th class='text-right' ><a href='/users?ob=user_friends&d=${ i }'    title='order by number of friends' >Friends</a></th>
-        <th class='text-right' ><a href='/users?ob=user_followers&d=${ i }'  title='order by number of followers' >Followers</a></th>
-        <th class='text-right' ><a href='/users?ob=user_bannedby&d=${ i }'   title='how many people are ignoring user' >Ignored By</a></th>
-        <th class='text-right' ><a href='/users?ob=user_banning&d=${ i }'    title='how many people user is ignoring' >Ignoring</a></th>
-        </tr>`
-
-        if (state.users.length) {
-            var formatted = state.users.map( (u) => {
-                return `<tr id='this_user' >
-                    <td >${user_icon(u)}</td>
-                    <td align=left >${user_link(u)}</td>
-                    <td align=left >${format_date(u.user_registered)}</td>
-                    <td align=right ><a href='/user/${u.user_name}' >${u.user_posts.number_format()}</a></td>
-                    <td align=right ><a href='/comments?a=${u.user_name}'>${u.user_comments.number_format()}</a></td>
-                    <td align=right >${u.user_likes.number_format()}</td>
-                    <td align=right >${u.user_dislikes.number_format()}</td>
-                    <td align=right ><a href='/users?friendsof=${u.user_id}' >${u.user_friends.number_format()}</a></td>
-                    <td align=right ><a href='/users?followersof=${u.user_id}' >${u.user_followers.number_format()}</a></td>
-                    <td align=right >${u.user_bannedby.number_format()}</td>
-                    <td align=right >${u.user_banning.number_format()}</td>
-                   </tr>`
-            })
-
-            var result = formatted.join('')
-        }
-        else var result = 'no such user'
-
-        return header + result + '</table>'
     }
 
     if (typeof pages[state.page] === 'function') { // hit the db iff the request is for a valid url
