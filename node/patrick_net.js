@@ -224,6 +224,18 @@ function md5(str) {
     return hash.digest('hex')
 }
 
+function render_query_times(start_t, queries) {
+    var db_total_ms = 0
+    var queries = queries.sortByProp('ms').map( (item) => {
+        db_total_ms += item.ms
+        return `${ item.ms }ms ${ item.sql }`
+    }).join('\n')
+
+    return `<span id='render_query_times'>
+                <!-- ${'\n' + queries + '\n'}\n${db_total_ms} ms db\n${Date.now() - start_t} ms total time -->
+            </span>`
+}
+
 function ip2anon(ip) {
     return 'anon_' + md5(ip).substring(0, 5)
 }
@@ -258,6 +270,70 @@ function strip_tags(s) { // use like this: str = strip_tags('<p>There is some <u
 
 function strip_all_tags(s) {
     return s.replace(/(<([^>]+)>)/g,'')
+}
+
+function client_side_js() {
+    return `<script type="text/javascript">
+
+    function addquote(post_id, offset, comment_id, author) {
+
+        var comment_link;
+        var textarea = document.forms['commentform'].elements['ta'];
+        var theSelection = '';
+
+        if (comment_id > 0)
+            comment_link = '<a href="/post/' + post_id + '&offset=' + offset + '#comment-' + comment_id + '">' + author + ' says</a>';
+        else
+            comment_link = '<a href="/post/' + post_id                                                  + '">' + author + ' says</a>';
+
+        if (theSelection = getHTMLOfSelection()) { // user manually selected something
+            if (s = sessionStorage.getItem('tripleclickselect')) { // override tripleclick selection to avoid getting extra html elements
+                theSelection = s.trim(); // trim bc tripleclick appends useless whitespace
+                sessionStorage.removeItem('tripleclickselect'); // so we don't keep using it by mistake
+            }
+        }
+        else { // either we are on mobile (no selection possible) or the user did not select any text
+            // whole comment, or post when comment_id === 0
+            theSelection = document.getElementById('comment-' + comment_id + '-text').innerHTML;
+        }
+
+        if (theSelection.length > 1024) var theSelection = theSelection.substring(0, 1000) + '...'; // might mangle tags
+
+        textarea.value = textarea.value + comment_link + '<br><blockquote>' + theSelection + '</blockquote>';
+        textarea.focus();
+        return;
+    }
+
+    window.addEventListener('click', function (evt) {
+        if (evt.detail === 3) {
+            sessionStorage.setItem('tripleclickselect', window.getSelection());
+
+            // if they don't use it by clicking "quote" within 10 seconds, delete it so it dn confuse them later
+            setTimeout(function() { sessionStorage.removeItem('tripleclickselect'); }, 10000);
+        }
+    });
+
+    function getHTMLOfSelection () {
+      var range;
+      if (window.getSelection) {
+        var selection = window.getSelection();
+        if (selection.rangeCount > 0) {
+          range = selection.getRangeAt(0);
+          var clonedSelection = range.cloneContents();
+          var div = document.createElement('div');
+          div.appendChild(clonedSelection);
+          return div.innerHTML;
+        }
+        else {
+          return '';
+        }
+      }
+      else {
+        return '';
+      }
+    }
+    </script>
+    `
 }
 
 function newlineify(s) { // transform the html shown in the edit box to be more human-friendly
@@ -559,6 +635,23 @@ function resize_image(file, max_dim = 600) { // max_dim is maximum dimension in 
     })
 }
 
+function render_watch_indicator(want_email) {
+    return want_email ? `<img src='/content/openeye.png'> unwatch` : `<img src='/content/closedeye.png'> watch`
+}
+
+function valid_nonce(ip, ts, nonce) {
+    if (intval(ts) < (Date.now() - 7200000)) return false // don't accept timestamps older than two hours
+
+    if (get_nonce(ts, ip) === nonce) return true
+    else                             return false
+}
+
+function get_nonce(ts, ip) {
+    // create or check a nonce string for input forms. this makes each form usable only once, and only from the ip that got the form.
+    // hopefully this slows down spammers and cross-site posting tricks
+    return md5(ip + CONF.nonce_secret + ts)
+}
+
 async function render(state) { /////////////////////////////////////////
 
     var pages = {
@@ -569,7 +662,7 @@ async function render(state) { /////////////////////////////////////////
 
         accept_comment : async function() { // insert new comment
 
-            if (!valid_nonce()) { // do not die, because that will return a whole html page to be appended into the #comment_list slot
+            if (!valid_nonce(state.ip, _GET('ts'), _GET('nonce'))) { // do not die, because that will return a whole html page to be appended into the #comment_list slot
                 // show values for debugging nonce problems
                 state.message = invalid_nonce_message()
                 return send_html(200, { err: true, content: popup() })
@@ -648,7 +741,7 @@ async function render(state) { /////////////////////////////////////////
 
         accept_edited_comment : async function() { // update old comment
 
-            if (!valid_nonce()) return die(invalid_nonce_message())
+            if (!valid_nonce(state.ip, _GET('ts'), _GET('nonce'))) return die(invalid_nonce_message())
 
             let post_data = await collect_post_data_and_trim(state)
 
@@ -744,7 +837,7 @@ async function render(state) { /////////////////////////////////////////
             if (!comment_id)                        return send_html(200, '')
             if (!state.current_user)                return send_html(200, '')
             if (state.current_user.user_level !== 4) return send_html(200, '')
-            if (!valid_nonce())                     return send_html(200, '')
+            if (!valid_nonce(state.ip, _GET('ts'), _GET('nonce')))                     return send_html(200, '')
 
             await query('update comments set comment_approved=1, comment_date=now() where comment_id=?', [comment_id], state)
             await query('update posts set post_modified=now() where post_id=(select comment_post_id from comments where comment_id=?)',
@@ -760,7 +853,7 @@ async function render(state) { /////////////////////////////////////////
             if (!post_id)                            return send_html(200, '')
             if (!state.current_user)                 return send_html(200, '')
             if (state.current_user.user_level !== 4) return send_html(200, '')
-            if (!valid_nonce())                      return send_html(200, '')
+            if (!valid_nonce(state.ip, _GET('ts'), _GET('nonce')))                      return send_html(200, '')
 
             await query('update posts set post_approved=1, post_modified=now() where post_id=?', [post_id], state)
 
@@ -789,7 +882,7 @@ async function render(state) { /////////////////////////////////////////
 
         ban_from_topic : async function() {
 
-            if (!valid_nonce()) return send_html(200, invalid_nonce_message())
+            if (!valid_nonce(state.ip, _GET('ts'), _GET('nonce'))) return send_html(200, invalid_nonce_message())
 
             let user_id = intval(_GET('user_id'))
             if (!user_id) return send_html(200, 'missing user_id')
@@ -932,7 +1025,7 @@ async function render(state) { /////////////////////////////////////////
             let post_id    = intval(_GET('post_id'))
 
             if (!state.current_user)      return send_html(200, '')
-            if (!valid_nonce())           return send_html(200, '')
+            if (!valid_nonce(state.ip, _GET('ts'), _GET('nonce')))           return send_html(200, '')
             if (!(comment_id && post_id)) return send_html(200, '')
 
             var topic = (await get_post(post_id)).post_topic
@@ -954,7 +1047,7 @@ async function render(state) { /////////////////////////////////////////
         delete_post : async function() { // delete a whole post, but not its comments
 
             if (!state.current_user) return die('you must be logged in to delete a post')
-            if (!valid_nonce())      return die(invalid_nonce_message())
+            if (!valid_nonce(state.ip, _GET('ts'), _GET('nonce')))      return die(invalid_nonce_message())
 
             var post_id
             if (post_id = intval(_GET('post_id'))) {
@@ -1041,7 +1134,7 @@ async function render(state) { /////////////////////////////////////////
 
         edit_comment : async function () {
 
-            if (!valid_nonce()) return die(invalid_nonce_message())
+            if (!valid_nonce(state.ip, _GET('ts'), _GET('nonce'))) return die(invalid_nonce_message())
 
             let comment_id = intval(_GET('c'))
             state.comment = await get_row(`select * from comments left join users on user_id=comment_author
@@ -1062,7 +1155,7 @@ async function render(state) { /////////////////////////////////////////
 
         edit_post : async function () {
 
-            if (!valid_nonce()) return die(invalid_nonce_message())
+            if (!valid_nonce(state.ip, _GET('ts'), _GET('nonce'))) return die(invalid_nonce_message())
 
             let post_id = intval(_GET('p'))
             state.post = await get_row(`select * from posts left join users on user_id=post_author where post_id=?`, [post_id], state)
@@ -1098,7 +1191,7 @@ async function render(state) { /////////////////////////////////////////
 
             if (!topic)              return ajax ? send_html(200, '') : die('topic missing')
             if (!state.current_user) return ajax ? send_html(200, '') : die('must be logged in to follow or unfollow')
-            if (!valid_nonce())      return ajax ? send_html(200, '') : die(invalid_nonce_message())
+            if (!valid_nonce(state.ip, _GET('ts'), _GET('nonce')))      return ajax ? send_html(200, '') : die(invalid_nonce_message())
 
             if (intval(_GET('undo'))) {
 
@@ -1121,7 +1214,7 @@ async function render(state) { /////////////////////////////////////////
 
             if (!other_id)           return ajax ? send_html(200, '') : die('other_id missing')
             if (!state.current_user) return ajax ? send_html(200, '') : die('must be logged in to follow or unfollow')
-            if (!valid_nonce())      return ajax ? send_html(200, '') : die(invalid_nonce_message())
+            if (!valid_nonce(state.ip, _GET('ts'), _GET('nonce')))      return ajax ? send_html(200, '') : die(invalid_nonce_message())
 
             if (intval(_GET('undo'))) {
                 await query(`replace into relationships set rel_i_follow=0, rel_self_id=?, rel_other_id=?`,
@@ -1181,7 +1274,7 @@ async function render(state) { /////////////////////////////////////////
             let other_id = intval(_GET('other_id'))
 
             if (!state.current_user) return send_html(200, '')
-            if (!valid_nonce())      return send_html(200, '')
+            if (!valid_nonce(state.ip, _GET('ts'), _GET('nonce')))      return send_html(200, '')
 
             if (intval(_GET('undo'))) {
                 await query(`replace into relationships set rel_i_ban=0, rel_self_id=?, rel_other_id=?`,
@@ -1204,7 +1297,7 @@ async function render(state) { /////////////////////////////////////////
         key_login : async function() {
 
             let key      = _GET('key')
-            let password = get_nonce(Date.now()).substring(0, 6)
+            let password = get_nonce(Date.now(), state.ip).substring(0, 6)
 
             var email = await get_var('select user_email from users where user_activation_key = ?', [key], state)
 
@@ -1377,7 +1470,7 @@ async function render(state) { /////////////////////////////////////////
             let nuke_id = intval(_GET('nuke_id'))
             let u = await get_userrow(nuke_id)
 
-            if (!valid_nonce())                   return die(invalid_nonce_message())
+            if (!valid_nonce(state.ip, _GET('ts'), _GET('nonce')))                   return die(invalid_nonce_message())
             if (1 !== state.current_user.user_id) return die('non-admin may not nuke')
             if (1 === nuke_id)                    return die('admin cannot nuke himself')
 
@@ -1688,7 +1781,7 @@ async function render(state) { /////////////////////////////////////////
 
             let comment_id = intval(_GET('c'))
 
-            if (state.current_user && (state.current_user.user_pbias > 3) && valid_nonce() && comment_id) {
+            if (state.current_user && (state.current_user.user_pbias > 3) && valid_nonce(state.ip, _GET('ts'), _GET('nonce')) && comment_id) {
                 await query(`update comments set comment_adhom_reporter=?, comment_adhom_when=now() where comment_id = ?`,
                             [state.current_user.user_id, comment_id], state)
             }
@@ -1698,7 +1791,7 @@ async function render(state) { /////////////////////////////////////////
 
         update_profile : async function() { // accept data from profile_form
 
-            if (!valid_nonce())              return die(invalid_nonce_message())
+            if (!valid_nonce(state.ip, _GET('ts'), _GET('nonce')))              return die(invalid_nonce_message())
             if (!state.current_user)         return die('must be logged in to update profile')
 
             let post_data = await collect_post_data_and_trim(state)
@@ -1925,7 +2018,7 @@ async function render(state) { /////////////////////////////////////////
             let post_id = intval(_GET('post_id'))
 
             if (!state.current_user) return send_html(200, '')
-            if (!valid_nonce())      return send_html(200, '')
+            if (!valid_nonce(state.ip, _GET('ts'), _GET('nonce')))      return send_html(200, '')
             if (!post_id)            return send_html(200, '')
 
             let postview_want_email = await get_var(`select postview_want_email from postviews
@@ -1939,7 +2032,7 @@ async function render(state) { /////////////////////////////////////////
                          on duplicate key update postview_want_email=?`,
                         [state.current_user.user_id, post_id, want_email, want_email], state)
 
-            send_html(200, watch_indicator(want_email))
+            send_html(200, render_watch_indicator(want_email))
         },
 
     } // end of pages
@@ -2310,7 +2403,7 @@ async function render(state) { /////////////////////////////////////////
 
     function create_nonce_parms() {
         let ts = Date.now() // current unix time in ms
-        let nonce = get_nonce(ts)
+        let nonce = get_nonce(ts, state.ip)
         return `ts=${ts}&nonce=${nonce}`
     }
 
@@ -2551,12 +2644,6 @@ async function render(state) { /////////////////////////////////////////
         return await get_var('select topic_moderator from topics where topic=?', [topic], state)
     }
 
-    function get_nonce(ts) {
-        // create or check a nonce string for input forms. this makes each form usable only once, and only from the ip that got the form.
-        // hopefully this slows down spammers and cross-site posting tricks
-        return md5(state.ip + CONF.nonce_secret + ts)
-    }
-
     function get_nuke_link(c) {
 
         if (!state.current_user) return ''
@@ -2610,12 +2697,6 @@ async function render(state) { /////////////////////////////////////////
 
     function html(...args) {
 
-        var db_total_ms = 0
-        var queries = state.queries.sortByProp('ms').map( (item) => {
-            db_total_ms += item.ms
-            return `${ item.ms }ms ${ item.sql }`
-        }).join('\n')
-
         var title = state.post ? state.post.post_title : CONF.domain
 
         return `<!DOCTYPE html><html lang="en">
@@ -2626,78 +2707,7 @@ async function render(state) { /////////////////////////////////////////
         <meta name='description' content='${ CONF.description }' />
         <meta name='viewport' content='width=device-width, initial-scale=1, shrink-to-fit=no' />
         <title>${ title }</title>
-        <script type="text/javascript">
-
-        function addquote(post_id, offset, comment_id, author) {
-
-            var comment_link;
-            var textarea = document.forms['commentform'].elements['ta'];
-            var theSelection = '';
-
-            if (comment_id > 0)
-                comment_link = '<a href="/post/' + post_id + '&offset=' + offset + '#comment-' + comment_id + '">' + author + ' says</a>';
-            else
-                comment_link = '<a href="/post/' + post_id                                                  + '">' + author + ' says</a>';
-
-            if (theSelection = getHTMLOfSelection()) { // user manually selected something
-                if (s = sessionStorage.getItem('tripleclickselect')) { // override tripleclick selection to avoid getting extra html elements
-                    theSelection = s.trim(); // trim bc tripleclick appends useless whitespace
-                    sessionStorage.removeItem('tripleclickselect'); // so we don't keep using it by mistake
-                }
-            }
-            else { // either we are on mobile (no selection possible) or the user did not select any text
-                // whole comment, or post when comment_id === 0
-                theSelection = document.getElementById('comment-' + comment_id + '-text').innerHTML;
-            }
-
-            if (theSelection.length > 1024) var theSelection = theSelection.substring(0, 1000) + '...'; // might mangle tags
-
-            textarea.value = textarea.value + comment_link + '<br><blockquote>' + theSelection + '</blockquote>';
-            textarea.focus();
-            return;
-        }
-
-        window.addEventListener('click', function (evt) {
-            if (evt.detail === 3) {
-                sessionStorage.setItem('tripleclickselect', window.getSelection());
-
-                // if they don't use it by clicking "quote" within 10 seconds, delete it so it dn confuse them later
-                setTimeout(function() { sessionStorage.removeItem('tripleclickselect'); }, 10000);
-            }
-        });
-
-        function getHTMLOfSelection () {
-          var range;
-          if (window.getSelection) {
-            var selection = window.getSelection();
-            if (selection.rangeCount > 0) {
-              range = selection.getRangeAt(0);
-              var clonedSelection = range.cloneContents();
-              var div = document.createElement('div');
-              div.appendChild(clonedSelection);
-              return div.innerHTML;
-            }
-            else {
-              return '';
-            }
-          }
-          else {
-            return '';
-          }
-        }
-
-        function on_mobile() { 
-            if (navigator.userAgent.match(/Android/i)
-             || navigator.userAgent.match(/webOS/i)
-             || navigator.userAgent.match(/iPhone/i)
-             || navigator.userAgent.match(/iPad/i)
-             || navigator.userAgent.match(/iPod/i)
-             || navigator.userAgent.match(/BlackBerry/i)
-             || navigator.userAgent.match(/Windows Phone/i)
-            )    return true;
-            else return false;
-        }
-        </script>
+        ${client_side_js()}
         </head>
         <body ${ 'dev' === process.env.environment ? "style='background-color: #dfd;'" : '' } >
             <div class="container" >
@@ -2707,7 +2717,7 @@ async function render(state) { /////////////////////////////////////////
             </div>
         </body>
         <script async src="/jquery.min.js"></script>
-        <!-- ${'\n' + queries + '\n'}\n${db_total_ms} ms db\n${Date.now() - state.start_t} ms total time -->
+        ${render_query_times(state.start_t, state.queries)}
         </html>`
     }
 
@@ -3011,7 +3021,7 @@ async function render(state) { /////////////////////////////////////////
         // watch toggle
         var watcheye = `<a href='#' id='watch' onclick="$.get('/watch?post_id=${state.post.post_id}&${nonce_parms}', function(data) {
         document.getElementById('watch').innerHTML = data; });
-        return false" title='comments by email'>${watch_indicator(state.post.postview_want_email)}</a>`
+        return false" title='comments by email'>${render_watch_indicator(state.post.postview_want_email)}</a>`
 
         let edit_link = ''
         if (state.current_user && ((state.current_user.user_id === state.post.post_author) || (state.current_user.user_level >= 4)) ) {
@@ -3370,7 +3380,7 @@ async function render(state) { /////////////////////////////////////////
 
         if (!valid_email(post_data.user_email)) return `Please go back and enter a valid email`
 
-        let key      = get_nonce(Date.now())
+        let key      = get_nonce(Date.now(), state.ip)
         let key_link = `${BASEURL}/key_login?key=${ key }`
 
         var results = await query('update users set user_activation_key=? where user_email=?', [key, post_data.user_email], state)
@@ -3640,18 +3650,6 @@ async function render(state) { /////////////////////////////////////////
         else var result = 'no such user'
 
         return header + result + '</table>'
-    }
-
-    function valid_nonce() {
-
-        if (intval(_GET('ts')) < (Date.now() - 7200000)) return false // don't accept timestamps older than two hours
-
-        if (get_nonce(_GET('ts')) === _GET('nonce')) return true
-        else                                         return false
-    }
-
-    function watch_indicator(want_email) {
-        return want_email ? `<img src='/content/openeye.png'> unwatch` : `<img src='/content/closedeye.png'> watch`
     }
 
     if (typeof pages[state.page] === 'function') { // hit the db iff the request is for a valid url
