@@ -679,7 +679,7 @@ function render_user_list(users, d) {
     if (users.length) {
         var formatted = users.map( (u) => {
             return `<tr>
-                <td >${user_icon(u)}</td>
+                <td >${render_user_icon(u)}</td>
                 <td align=left >${user_link(u)}</td>
                 <td align=left >${format_date(u.user_registered)}</td>
                 <td align=right ><a href='/user/${u.user_name}' >${u.user_posts.number_format()}</a></td>
@@ -700,7 +700,7 @@ function render_user_list(users, d) {
     return header + result + '</table>'
 }
 
-function user_icon(u, scale=1, img_parms='') { // clickable icon for this user if they have icon
+function render_user_icon(u, scale=1, img_parms='') { // clickable icon for this user if they have icon
 
     var user_icon_width  = Math.round(u.user_icon_width  * scale)
     var user_icon_height = Math.round(u.user_icon_height * scale)
@@ -2267,7 +2267,7 @@ async function render(state) { /////////////////////////////////////////
         var del              = get_del_link(c)
         var edit             = get_edit_link(c)
         var nuke             = get_nuke_link(c)
-        var icon             = user_icon(c, 0.4, `'align='left' hspace='5' vspace='2'`) // scale image down
+        var icon             = render_user_icon(c, 0.4, `'align='left' hspace='5' vspace='2'`) // scale image down
         var u                = c.user_name ? `<a href='/user/${c.user_name}'>${c.user_name}</a>` : 'anonymous'
         var mute             = `<a href='#' onclick="if (confirm('Really ignore ${c.user_name}?')) { $.get('/ignore?other_id=${ c.user_id }&${create_nonce_parms()}', function() { $('#comment-${ c.comment_id }').remove() }); return false}; return false" title='ignore ${c.user_name}' >ignore (${c.user_bannedby})</a>`
         var clink            = contextual_link(c)
@@ -2790,7 +2790,7 @@ async function render(state) { /////////////////////////////////////////
 
     function id_box() {
 
-        var img = user_icon(state.current_user, 0.4, `'align='left' hspace='5' vspace='2'`) // scale image down
+        var img = render_user_icon(state.current_user, 0.4, `'align='left' hspace='5' vspace='2'`) // scale image down
 
         return `
             <div id='status' >
@@ -3069,7 +3069,7 @@ async function render(state) { /////////////////////////////////////////
 
         let uncivil       = ''
         let arrowbox_html = arrowbox(state.post)
-        let icon          = user_icon(state.post, 1, `align='left' hspace='5' vspace='2'`)
+        let icon          = render_user_icon(state.post, 1, `align='left' hspace='5' vspace='2'`)
         let link          = post_link(state.post)
         let nonce_parms   = create_nonce_parms()
 
@@ -3303,7 +3303,7 @@ async function render(state) { /////////////////////////////////////////
         ret += `
         <table>
         <tr>
-        <td>${user_icon(u)} &nbsp; </td>
+        <td>${render_user_icon(u)} &nbsp; </td>
         <td>
             <div style='margin: 0px; padding: 5px; border: 1px solid #ddd; background-color: #f5f5f5; display: inline-block;' >
                 <form enctype='multipart/form-data' id='upload-file' method='post' action='upload'>
@@ -3604,7 +3604,7 @@ async function render(state) { /////////////////////////////////////////
     }
 
     function user_info(u) {
-        let img = user_icon(u)
+        let img = render_user_icon(u)
 
         if (state.current_user && u.user_id === state.current_user.user_id) {
             var edit_or_logout = `<div style='float:right'>
