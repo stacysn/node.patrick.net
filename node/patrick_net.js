@@ -930,6 +930,36 @@ function topic_list(topics) {
     return topics ? topics.map(item => `<a href='/topic/${ item.post_topic }'>#${ item.post_topic }</a>`).join(' ') : ''
 }
 
+function top_topics() {
+    return `
+        <a href='/topic/housing'>#housing</a> 
+        <a href='/topic/investing'>#investing</a> 
+        <a href='/topic/politics'>#politics</a> 
+        <a href='/random'>#random</a> <a href='/topics/'>more&raquo;</a>`
+}
+
+function tabs(order, extra='', path) {
+
+    let selected_tab = []
+    selected_tab['active']   = ''
+    selected_tab['comments'] = ''
+    selected_tab['likes']    = ''
+    selected_tab['new']      = ''
+    selected_tab[order]      = `class='active'` // default is active
+
+    if (!path) {
+        console.log('tabs() was passed falsey path, derived from req.url')
+        return
+    }
+
+    return `<ul class='nav nav-tabs'>
+        <li ${selected_tab['active']}   > <a href='${path}?order=active${extra}'   title='most recent comments'       >active</a></li>
+        <li ${selected_tab['comments']} > <a href='${path}?order=comments${extra}' title='most comments in last week' >comments</a></li>
+        <li ${selected_tab['likes']}    > <a href='${path}?order=likes${extra}'    title='most likes in last week'    >likes</a></li>
+        <li ${selected_tab['new']}      > <a href='${path}?order=new${extra}'      title='newest'                     >new</a></li>
+        </ul>`
+}
+
 async function render(state) { /////////////////////////////////////////
 
     var pages = {
@@ -1542,9 +1572,11 @@ async function render(state) { /////////////////////////////////////////
 
             state.posts = await query(sql, [current_user_id, current_user_id], state)
 
+            let path = URL.parse(state.req.url).pathname // "pathNAME" is url path without ? parms, unlike "path"
+
             let content = html(
                 midpage(
-                    tabs(order),
+                    tabs(order, '', path),
                     post_list(),
                     post_pagination(await sql_calc_found_rows(), curpage, `&order=${order}`)
                 )
@@ -1599,7 +1631,7 @@ async function render(state) { /////////////////////////////////////////
                 let content = html(
                     midpage(
                         h1(),
-                        text()
+                        state.text || ''
                     )
                 )
 
@@ -1911,7 +1943,7 @@ async function render(state) { /////////////////////////////////////////
             let content = html(
                 midpage(
                     h1(),
-                    text()
+                    state.text || ''
                 )
             )
 
@@ -1944,7 +1976,7 @@ async function render(state) { /////////////////////////////////////////
             let content = html(
                 midpage(
                 `<h2>${state.message}</h2>`,
-                text()
+                state.text || ''
                 )
             )
 
@@ -1973,11 +2005,13 @@ async function render(state) { /////////////////////////////////////////
             let found_rows = sql_calc_found_rows()
             state.message  = `search results for "${s}"`
 
+            let path = URL.parse(state.req.url).pathname // "pathNAME" is url path without ? parms, unlike "path"
+
             let content = html(
                 midpage(
                     h1(),
                     post_pagination(found_rows, curpage, `&s=${us}&order=${order}`),
-                    tabs(order, `&s=${us}`),
+                    tabs(order, `&s=${us}`, path),
                     post_list(),
                     post_pagination(found_rows, curpage, `&s=${us}&order=${order}`)
                 )
@@ -2029,12 +2063,14 @@ async function render(state) { /////////////////////////////////////////
             else var moderator_announcement = `<br>#${topic} needs a moderator, write <a href='mailto:${ CONF.admin_email }' >${ CONF.admin_email }</a> if
                 you\'re interested`
 
+            let path = URL.parse(state.req.url).pathname // "pathNAME" is url path without ? parms, unlike "path"
+
             let content = html(
                 midpage(
                     h1(),
                     follow_topic_button(topic),
                     moderator_announcement,
-                    tabs(order, `&topic=${topic}`),
+                    tabs(order, `&topic=${topic}`, path),
                     post_list(),
                     post_pagination(sql_calc_found_rows(), curpage, `&topic=${topic}&order=${order}`),
                     topic_moderation(topic, state.current_user)
@@ -2195,10 +2231,12 @@ async function render(state) { /////////////////////////////////////////
 
             u.bans = await user_topic_bans(u.user_id)
 
+            let path = URL.parse(state.req.url).pathname // "pathNAME" is url path without ? parms, unlike "path"
+
             let content = html(
                 midpage(
                     render_user_info(u, state.current_user, state.ip),
-                    tabs(order),
+                    tabs(order, '', path),
                     post_list(),
                     post_pagination(found_post_rows, curpage, `&order=${order}`),
                     admin_user(u, state.current_user, state.ip)
@@ -3597,44 +3635,6 @@ async function render(state) { /////////////////////////////////////////
 
     async function sql_calc_found_rows() {
         return await get_var('select found_rows() as f', [], state)
-    }
-
-    function tabs(order, extra='') {
-
-        let selected_tab = []
-        selected_tab['active']   = ''
-        selected_tab['comments'] = ''
-        selected_tab['likes']    = ''
-        selected_tab['new']      = ''
-        selected_tab[order]      = `class='active'` // default is active
-
-        if (!state.req.url) {
-            console.log('tabs() was passed falsey state.req.url')
-            return
-        }
-
-        let path = URL.parse(state.req.url).pathname // "pathNAME" is url path without ? parms, unlike "path"
-
-        return `<ul class='nav nav-tabs'>
-            <li ${selected_tab['active']}   > <a href='${path}?order=active${extra}'   title='most recent comments'       >active</a></li>
-            <li ${selected_tab['comments']} > <a href='${path}?order=comments${extra}' title='most comments in last week' >comments</a></li>
-            <li ${selected_tab['likes']}    > <a href='${path}?order=likes${extra}'    title='most likes in last week'    >likes</a></li>
-            <li ${selected_tab['new']}      > <a href='${path}?order=new${extra}'      title='newest'                     >new</a></li>
-            </ul>`
-    }
-
-    function text() {
-        return `${ state.text || '' }`
-    }
-
-    function top_topics() { // try just statically coding these to save 26ms on each hit
-        //var formatted = state.header_data.top3.map(item => `<a href='/topic/${ item.post_topic }'>#${ item.post_topic }</a>`)
-        //return formatted.join(' ') + ` <a href='/random'>#random</a> <a href='/topics/'>more&raquo;</a>`
-        return `
-            <a href='/topic/housing'>#housing</a> 
-            <a href='/topic/investing'>#investing</a> 
-            <a href='/topic/politics'>#politics</a> 
-            <a href='/random'>#random</a> <a href='/topics/'>more&raquo;</a>`
     }
 
     async function update_prev_next(post_topic, post_id) { // slow, so do this only when post is changed or the prev or next is null
