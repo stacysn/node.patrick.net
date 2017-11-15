@@ -993,6 +993,10 @@ function post2path(post) {
     return `/post/${post.post_id}/${slug}`
 }
 
+function get_permalink(c, utz) {
+    return `<a href='/post/${c.comment_post_id}/?c=${c.comment_id}' title='permalink' >${render_date(c.comment_date, utz)}</a>`
+}
+
 async function render(state) { /////////////////////////////////////////
 
     var pages = {
@@ -2508,9 +2512,11 @@ async function render(state) { /////////////////////////////////////////
 
     function format_comment(c) {
 
+        var utz = state.current_user ? state.current_user.user_timezone : 'America/Los_Angeles'
+
         var comment_dislikes = intval(c.comment_dislikes)
         var comment_likes    = intval(c.comment_likes)
-        var date_link        = get_permalink(c)
+        var date_link        = get_permalink(c, utz)
         var del              = get_del_link(c)
         var edit             = get_edit_link(c)
         var nuke             = get_nuke_link(c)
@@ -2609,7 +2615,7 @@ async function render(state) { /////////////////////////////////////////
         <script type="text/javascript">document.getElementById('ta').focus();</script>`
     }
 
-    function comment_list() { // format one page of comments
+    function comment_list(comments) { // format one page of comments
         let ret = `<div id='comment_list' >`
         ret = ret +
             (state.comments.length ? state.comments.map(item => { return format_comment(item) }).join('') : '<b>no comments found</b>')
@@ -2909,11 +2915,6 @@ async function render(state) { /////////////////////////////////////////
         return (URL.parse(state.req.url).pathname.match(/comment_moderation/) && (state.current_user.user_level === 4)) ?
             `<a href='/nuke?nuke_id=${c.comment_author}&${create_nonce_parms(state.ip)}' onClick='javascript:return confirm("Really?")' >nuke</a>`
             : ''
-    }
-
-    function get_permalink(c) {
-        var utz = state.current_user ? state.current_user.user_timezone : 'America/Los_Angeles'
-        return `<a href='/post/${c.comment_post_id}/?c=${c.comment_id}' title='permalink' >${render_date(c.comment_date, utz)}</a>`
     }
 
     async function get_post(post_id) {
