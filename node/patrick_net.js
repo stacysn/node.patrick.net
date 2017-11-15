@@ -988,6 +988,11 @@ function registerform() {
     </div>`
 }
 
+function post2path(post) {
+    let slug = JSON.stringify(post.post_date).replace(/"/g, '').substring(0, 10) + '-' + slugify(`${post.post_title}`)
+    return `/post/${post.post_id}/${slug}`
+}
+
 async function render(state) { /////////////////////////////////////////
 
     var pages = {
@@ -3462,11 +3467,6 @@ async function render(state) { /////////////////////////////////////////
         else formatted = []
 
         return formatted.join('')
-    }
-
-    function post2path(post) {
-        let slug = JSON.stringify(post.post_date).replace(/"/g, '').substring(0, 10) + '-' + slugify(`${post.post_title}`)
-        return `/post/${post.post_id}/${slug}`
     }
 
     function profile_form() {
