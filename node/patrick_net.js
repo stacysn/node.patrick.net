@@ -960,6 +960,15 @@ function tabs(order, extra='', path) {
         </ul>`
 }
 
+function brag(header_data) {
+
+    var online_list = header_data.onlines.map(u => `<a href='/user/${u.online_username}'>${u.online_username}</a>`).join(', ')
+
+    return `${ header_data.comments.number_format() } comments by
+            <a href='/users'>${ header_data.tot.number_format() } users</a>,
+            ${ header_data.onlines.length } online now: ${ online_list }`
+}
+
 async function render(state) { /////////////////////////////////////////
 
     var pages = {
@@ -2363,15 +2372,6 @@ async function render(state) { /////////////////////////////////////////
     // functions within render(), arranged alphabetically:
     /////////////////////////////////////////////////////////
 
-    function brag() {
-
-        var online_list = state.header_data.onlines.map(u => `<a href='/user/${u.online_username}'>${u.online_username}</a>`).join(', ')
-
-        return `${ state.header_data.comments.number_format() } comments by
-                <a href='/users'>${ state.header_data.tot.number_format() } users</a>,
-                ${ state.header_data.onlines.length } online now: ${ online_list }`
-    }
-
     async function cid2offset(post_id, comment_id) { // given a comment_id, find the offset
 
         return await get_var(`select floor(count(*) / 40) * 40 as o from comments
@@ -2921,7 +2921,7 @@ async function render(state) { /////////////////////////////////////////
             <div style='float:right' >${ icon_or_loginprompt(state) }</div>
             <a href='/' ><h1 class='sitename' title='back to home page' >${ CONF.domain }</h1></a> &nbsp; ${hashtag}
             <br>
-            ${ top_topics() + '<br>' + brag() + '</font><br>' + new_post_button() }
+            ${ top_topics() + '<br>' + brag(state.header_data) + '</font><br>' + new_post_button() }
             </div>`
     }
 
