@@ -1118,6 +1118,26 @@ function share_post(post) {
             <img src='/images/mailicon.jpg' width=15 height=12 ></a>`
 }
 
+function maybe(path) { // maybe the object path exists, maybe not
+    // we pass in a string, evaluate as an object path, then return the value or null
+    // if some object path does not exit, don't just bomb with "TypeError: Cannot read property 'whatever' of null"
+
+    let start = path.split('.')[0]
+
+    try      { return path.split('.').slice(1).reduce((curr, key)=>curr[key], start) }
+    catch(e) { return null }
+}
+
+function midpage(...args) { // just an id so we can easily swap out the middle of the page
+    return `<div id="midpage" >
+        ${ args.join('') }
+        </div>`
+}
+
+function new_post_button() {
+    return '<a href="/new_post" class="btn btn-success btn-sm" title="start a new post" ><b>new post</b></a>'
+}
+
 async function render(state) { /////////////////////////////////////////
 
     var pages = {
@@ -3214,26 +3234,6 @@ async function render(state) { /////////////////////////////////////////
             </form>
             <script type="text/javascript">document.getElementById('lost_pw_email').focus();</script>
         </div>`
-    }
-
-    function maybe(path) { // maybe the object path exists, maybe not
-        // we pass in a string, evaluate as an object path, then return the value or null
-        // if some object path does not exit, don't just bomb with "TypeError: Cannot read property 'whatever' of null"
-
-        let start = path.split('.')[0]
-
-        try      { return path.split('.').slice(1).reduce((curr, key)=>curr[key], start) }
-        catch(e) { return null }
-    }
-
-    function midpage(...args) { // just an id so we can easily swap out the middle of the page
-        return `<div id="midpage" >
-            ${ args.join('') }
-            </div>`
-    }
-
-    function new_post_button() {
-        return '<a href="/new_post" class="btn btn-success btn-sm" title="start a new post" ><b>new post</b></a>'
     }
 
     function page() { // tell homepage, search, userpage, topic which page we are on
