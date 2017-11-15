@@ -1181,6 +1181,16 @@ function get_nuke_link(c, current_user, ip, req) {
         : ''
 }
 
+function id_box(current_user) {
+
+    var img = render_user_icon(current_user, 0.4, `'align='left' hspace='5' vspace='2'`) // scale image down
+
+    return `
+        <div id='status' >
+            ${img}<a href='/user/${current_user.user_name}' >${current_user.user_name}</a>
+        </div>`
+}
+
 async function render(state) { /////////////////////////////////////////
 
     var pages = {
@@ -3123,18 +3133,8 @@ async function render(state) { /////////////////////////////////////////
     }
 
     function icon_or_loginprompt() {
-        if (state.current_user) return id_box(state)
+        if (state.current_user) return id_box(state.current_user)
         else                    return loginprompt(state)
-    }
-
-    function id_box() {
-
-        var img = render_user_icon(state.current_user, 0.4, `'align='left' hspace='5' vspace='2'`) // scale image down
-
-        return `
-            <div id='status' >
-                ${img}<a href='/user/${state.current_user.user_name}' >${state.current_user.user_name}</a>
-            </div>`
     }
 
     function invalid_nonce_message() {
