@@ -1007,6 +1007,59 @@ function get_del_link(c, current_user, ip) {
         `<a href='#' onclick="if (confirm('Really delete?')) { $.get('/delete_comment?comment_id=${ c.comment_id }&post_id=${ c.comment_post_id }&${create_nonce_parms(ip)}', function() { $('#comment-${ c.comment_id }').remove() }); return false}">delete</a>` : ''
 }
 
+function profile_form(current_user, ip, updated) {
+
+    if (!current_user) return die('please log in to edit your profile')
+
+    let u = current_user
+
+    let ret = '<h1>edit profile</h1>'
+
+    if (updated) ret += `<h3><font color='green'>your profile has been updated</font></h3>`
+
+    ret += `
+    <table>
+    <tr>
+    <td>${render_user_icon(u)} &nbsp; </td>
+    <td>
+        <div style='margin: 0px; padding: 5px; border: 1px solid #ddd; background-color: #f5f5f5; display: inline-block;' >
+            <form enctype='multipart/form-data' id='upload-file' method='post' action='upload'>
+                Upload any size image to represent you (gif, jpg, png, bmp)<br>
+                Image will automatically be resized after upload<p>
+                <input type='file'   id='upload' name='image' class='form' />
+                <input type='submit' value='Upload &raquo;' class='form' />
+            </form>
+        </div>
+    </td>
+    </tr>
+    </table>
+    <p>
+    <form name='profile' action='update_profile?${create_nonce_parms(ip)}' method='post'>
+    <input type='text' name='user_name'  placeholder='user_name' size='25' value='${ u.user_name }'  maxlength='30'  /> user name<p>
+    <input type='text' name='user_email' placeholder='email'     size='25' value='${ u.user_email }' maxlength='100' /> email<p>
+    <br>
+    <input type='checkbox' name='user_summonable' value='1' ${ u.user_summonable ? 'checked' : '' } >
+        Get emails of comments which have '@${ u.user_name }' and get emails of 'likes' of your comments
+    <br>
+    <input type='checkbox' name='user_hide_post_list_photos' value='1' ${ u.user_hide_post_list_photos ? 'checked' : '' } >
+        Hide images on post lists
+    <h2>about you</h2>
+    <textarea class='form-control' rows='3' name='user_aboutyou' >${u.user_aboutyou || ''}</textarea><br>
+
+    <input type='submit' class='btn btn-success btn-sm' value='Save' />
+    </form><p><h3>ignored users</h3>(click to unignore that user)<br>`
+
+    let ignored_users = current_user.relationships.filter(rel => rel.rel_i_ban)
+    
+    if (ignored_users.length)
+        ret += ignored_users.map(u => `<a href='#' onclick="$.get('/ignore?other_id=${u.user_id}&undo=1&${create_nonce_parms(ip)}',
+         function() { $('#user-${ u.user_id }').remove() }); return false" id='user-${u.user_id}' >${u.user_name}</a><br>`).join('')
+    else
+        ret += 'none'
+
+    return ret
+}
+
 async function render(state) { /////////////////////////////////////////
 
     var pages = {
@@ -1538,7 +1591,7 @@ async function render(state) { /////////////////////////////////////////
 
             let content = html(
                 midpage(
-                    profile_form()
+                    profile_form(state.current_user, state.ip, _GET('updated'))
                 )
             )
 
@@ -3468,59 +3521,6 @@ async function render(state) { /////////////////////////////////////////
         else formatted = []
 
         return formatted.join('')
-    }
-
-    function profile_form() {
-
-        if (!state.current_user) return die('please log in to edit your profile')
-
-        let u = state.current_user
-
-        let ret = '<h1>edit profile</h1>'
-
-        if (_GET('updated')) ret += `<h3><font color='green'>your profile has been updated</font></h3>`
-
-        ret += `
-        <table>
-        <tr>
-        <td>${render_user_icon(u)} &nbsp; </td>
-        <td>
-            <div style='margin: 0px; padding: 5px; border: 1px solid #ddd; background-color: #f5f5f5; display: inline-block;' >
-                <form enctype='multipart/form-data' id='upload-file' method='post' action='upload'>
-                    Upload any size image to represent you (gif, jpg, png, bmp)<br>
-                    Image will automatically be resized after upload<p>
-                    <input type='file'   id='upload' name='image' class='form' />
-                    <input type='submit' value='Upload &raquo;' class='form' />
-                </form>
-            </div>
-        </td>
-        </tr>
-        </table>
-        <p>
-        <form name='profile' action='update_profile?${create_nonce_parms(state.ip)}' method='post'>
-        <input type='text' name='user_name'  placeholder='user_name' size='25' value='${ u.user_name }'  maxlength='30'  /> user name<p>
-        <input type='text' name='user_email' placeholder='email'     size='25' value='${ u.user_email }' maxlength='100' /> email<p>
-        <br>
-        <input type='checkbox' name='user_summonable' value='1' ${ u.user_summonable ? 'checked' : '' } >
-            Get emails of comments which have '@${ u.user_name }' and get emails of 'likes' of your comments
-        <br>
-        <input type='checkbox' name='user_hide_post_list_photos' value='1' ${ u.user_hide_post_list_photos ? 'checked' : '' } >
-            Hide images on post lists
-        <h2>about you</h2>
-        <textarea class='form-control' rows='3' name='user_aboutyou' >${u.user_aboutyou || ''}</textarea><br>
-
-        <input type='submit' class='btn btn-success btn-sm' value='Save' />
-        </form><p><h3>ignored users</h3>(click to unignore that user)<br>`
-
-        let ignored_users = state.current_user.relationships.filter(rel => rel.rel_i_ban)
-        
-        if (ignored_users.length)
-            ret += ignored_users.map(u => `<a href='#' onclick="$.get('/ignore?other_id=${u.user_id}&undo=1&${create_nonce_parms(state.ip)}',
-             function() { $('#user-${ u.user_id }').remove() }); return false" id='user-${u.user_id}' >${u.user_name}</a><br>`).join('')
-        else
-            ret += 'none'
-
-        return ret
     }
 
     function redirect(redirect_to, code=303) {
