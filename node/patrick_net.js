@@ -1310,6 +1310,75 @@ function comment_pagination(comments, url) { // get pagination links for a singl
     return ret + `<a href='${last_link}' title='Jump to last comment' >Last &raquo;</a></br>`
 }
 
+function post_form(p, post) { // used both for composing new posts and for editing existing posts; distinction is the presence of p, the post_id
+
+    // todo: add conditional display of user-name chooser for non-logged in users
+
+    if (p) {
+        var fn = 'edit'
+        var title = post.post_title.replace(/'/g, '&apos;') // replace to display correctly in single-quoted html value below
+        var content = newlineify(post.post_content.replace(/'/g, '&apos;'))
+        var post_id = `<input type='hidden' name='post_id' value='${post.post_id}' />`
+    }
+    else {
+        var fn = 'new post'
+        var title = ''
+        var content = ''
+        var post_id = ''
+    }
+
+    return `
+    <h1>${fn}</h1>
+    <form action='/accept_post' method='post' name='postform' onsubmit='return checkforhash()' >
+        <div class='form-group'><input name='post_title' type='text' class='form-control' placeholder='title' id='title' value='${title}' ></div>
+        <textarea class='form-control' name='post_content' rows='12' id='ta' name='ta'
+            placeholder='please include one of these topic hashtags at the beginning of a line to classify your post:
+#cheesecake
+#crime
+#economics
+#environment
+#housing
+#humor
+#investing
+#misc
+#politics
+#religion
+#scitech ' >${content}</textarea><p>
+        ${post_id}
+        <button type='submit' id='submit' class='btn btn-success btn-sm' >submit</button>
+    </form>
+    <script type='text/javascript'>
+
+    document.getElementById('title').focus();
+
+    function checkforhash() {
+        let text = document.forms['postform']['ta'].value;
+
+        if (!text.match(/#\\w+/gm)) {
+            alert('Please include a topic hashtag like #investing or #politics at the beginning of a line.');
+            return false;
+        }
+        else return true;
+    }
+    </script>
+    ${render_upload_form()}`
+}
+
+function comment_edit_box(comment, current_user, ip) { // edit existing comment, redirect back to whole post page
+
+    comment.comment_content = newlineify(comment.comment_content)
+
+    return `
+    <h1>edit comment</h1>
+    ${current_user ? render_upload_form() : ''}
+    <form id='commentform' action='/accept_edited_comment?${create_nonce_parms(ip)}' method='post' >
+        <textarea id='ta' name='comment_content' class='form-control' rows='10' placeholder='write a comment...' >${comment.comment_content}</textarea><p>
+        <input type='hidden' name='comment_id' value='${comment.comment_id}' />
+        <button type='submit' id='submit' class='btn btn-success btn-sm'>submit</button>
+    </form>
+    <script type="text/javascript">document.getElementById('ta').focus();</script>`
+}
+
 async function render(state) { /////////////////////////////////////////
 
     var pages = {
@@ -1806,7 +1875,7 @@ async function render(state) { /////////////////////////////////////////
 
                 let content = html(
                     midpage(
-                        comment_edit_box()
+                        comment_edit_box(state.comment, state.current_user, state.ip)
                     )
                 )
 
@@ -1826,7 +1895,7 @@ async function render(state) { /////////////////////////////////////////
 
                 let content = html(
                     midpage(
-                        post_form()
+                        post_form(_GET('p'), state.post)
                     )
                 )
 
@@ -2120,7 +2189,7 @@ async function render(state) { /////////////////////////////////////////
             else {
                 var content = html(
                     midpage(
-                        post_form()
+                        post_form(_GET('p'), state.post)
                     )
                 )
             }
@@ -2886,23 +2955,6 @@ async function render(state) { /////////////////////////////////////////
         </font><p><div id='comment-${c.comment_id}-text'>${ c.comment_content }</div></div>`
     }
 
-    function comment_edit_box() { // edit existing comment, redirect back to whole post page
-
-        let comment_id = intval(_GET('c'))
-
-        state.comment.comment_content = newlineify(state.comment.comment_content)
-
-        return `
-        <h1>edit comment</h1>
-        ${state.current_user ? render_upload_form() : ''}
-        <form id='commentform' action='/accept_edited_comment?${create_nonce_parms(state.ip)}' method='post' >
-            <textarea id='ta' name='comment_content' class='form-control' rows='10' placeholder='write a comment...' >${state.comment.comment_content}</textarea><p>
-            <input type='hidden' name='comment_id' value='${comment_id}' />
-            <button type='submit' id='submit' class='btn btn-success btn-sm'>submit</button>
-        </form>
-        <script type="text/javascript">document.getElementById('ta').focus();</script>`
-    }
-
     function comment_list(comments) { // format one page of comments
         let ret = `<div id='comment_list' >`
         ret = ret +
@@ -3388,60 +3440,6 @@ async function render(state) { /////////////////////////////////////////
         results.found_rows = found_rows // have to put this after map() above to retain it
 
         return results
-    }
-
-    function post_form() { // used both for composing new posts and for editing existing posts; distinction is the presence of p, the post_id
-
-        // todo: add conditional display of user-name chooser for non-logged in users
-
-        if (_GET('p')) {
-            var fn = 'edit'
-            var title = state.post.post_title.replace(/'/g, '&apos;') // replace to display correctly in single-quoted html value below
-            var content = newlineify(state.post.post_content.replace(/'/g, '&apos;'))
-            var post_id = `<input type='hidden' name='post_id' value='${state.post.post_id}' />`
-        }
-        else {
-            var fn = 'new post'
-            var title = ''
-            var content = ''
-            var post_id = ''
-        }
-
-        return `
-        <h1>${fn}</h1>
-        <form action='/accept_post' method='post' name='postform' onsubmit='return checkforhash()' >
-            <div class='form-group'><input name='post_title' type='text' class='form-control' placeholder='title' id='title' value='${title}' ></div>
-            <textarea class='form-control' name='post_content' rows='12' id='ta' name='ta'
-                placeholder='please include one of these topic hashtags at the beginning of a line to classify your post:
-#cheesecake
-#crime
-#economics
-#environment
-#housing
-#humor
-#investing
-#misc
-#politics
-#religion
-#scitech ' >${content}</textarea><p>
-            ${post_id}
-            <button type='submit' id='submit' class='btn btn-success btn-sm' >submit</button>
-        </form>
-        <script type='text/javascript'>
-
-        document.getElementById('title').focus();
-
-        function checkforhash() {
-            let text = document.forms['postform']['ta'].value;
-
-            if (!text.match(/#\\w+/gm)) {
-                alert('Please include a topic hashtag like #investing or #politics at the beginning of a line.');
-                return false;
-            }
-            else return true;
-        }
-        </script>
-        ${render_upload_form()}`
     }
 
     function post_list() { // format a list of posts from whatever source; pass in only a limited number, because all will display
