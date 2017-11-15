@@ -1224,6 +1224,28 @@ function icon_or_loginprompt(current_user, login_failed_email) {
     else              return loginprompt(login_failed_email)
 }
 
+function comment_box(post, current_user, ip) { // add new comment, just updates page without reload
+
+    let url = `/accept_comment?${create_nonce_parms(ip)}` // first href on button below is needed for mocha test
+    return `<hr>Comment as
+    ${current_user ? current_user.user_name : ip2anon(ip) }
+    ${current_user ? '' : ' or <a href="#">log in</a> at top of page'}:
+    ${render_upload_form()}
+    <form id='commentform' >
+        <textarea id='ta' name='comment_content' class='form-control' rows='10' ></textarea><p>
+        <input type='hidden' name='comment_post_id' value='${post.post_id}' />
+        <button class='btn btn-success btn-sm' id='accept_comment' href=${url} 
+            onclick="$.post('${url}', $('#commentform').serialize()).done(function(response) {
+                response = JSON.parse(response) // was a string, now is an object
+                $('#comment_list').append(response.content)
+                if (!response.err) document.getElementById('commentform').reset() // don't clear the textbox if error
+            }).fail(function() {
+                $('#comment_list').append('something went wrong on the server ')
+            })
+            return false" >submit</button>
+    </form>`
+}
+
 async function render(state) { /////////////////////////////////////////
 
     var pages = {
@@ -2158,7 +2180,7 @@ async function render(state) { /////////////////////////////////////////
                     comment_pagination(),
                     comment_list(), // mysql offset is greatest item number to ignore, next item is first returned
                     comment_pagination(),
-                    await comment_box()
+                    comment_box(state.post, state.current_user, state.ip)
                 )
             )
 
@@ -2798,28 +2820,6 @@ async function render(state) { /////////////////////////////////////////
             ${del} &nbsp;
             ${nuke} &nbsp;
         </font><p><div id='comment-${c.comment_id}-text'>${ c.comment_content }</div></div>`
-    }
-
-    async function comment_box() { // add new comment, just updates page without reload
-
-        let url = `/accept_comment?${create_nonce_parms(state.ip)}` // first href on button below is needed for mocha test
-        return `<hr>Comment as
-        ${state.current_user ? state.current_user.user_name : ip2anon(state.ip) }
-        ${state.current_user ? '' : ' or <a href="#">log in</a> at top of page'}:
-        ${render_upload_form()}
-        <form id='commentform' >
-            <textarea id='ta' name='comment_content' class='form-control' rows='10' ></textarea><p>
-            <input type='hidden' name='comment_post_id' value='${state.post.post_id}' />
-            <button class='btn btn-success btn-sm' id='accept_comment' href=${url} 
-                onclick="$.post('${url}', $('#commentform').serialize()).done(function(response) {
-                    response = JSON.parse(response) // was a string, now is an object
-                    $('#comment_list').append(response.content)
-                    if (!response.err) document.getElementById('commentform').reset() // don't clear the textbox if error
-                }).fail(function() {
-                    $('#comment_list').append('something went wrong on the server ')
-                })
-                return false" >submit</button>
-        </form>`
     }
 
     function comment_edit_box() { // edit existing comment, redirect back to whole post page
