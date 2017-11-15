@@ -1246,6 +1246,70 @@ function comment_box(post, current_user, ip) { // add new comment, just updates 
     </form>`
 }
 
+function comment_pagination(comments, url) { // get pagination links for a single page of comments
+
+    if (!comments)                 return
+    if (comments.found_rows <= 40) return // no pagination links needed if one page or less
+
+    let total    = comments.found_rows
+    let ret      = `<p id='comments'>`
+    if (!url) {
+        console.log('comment_pagination() was passed falsey url')
+        return
+    }
+    let pathname = URL.parse(url).pathname // "pathNAME" is url path without the ? parms, unlike "path"
+    let query    = URL.parse(url).query
+
+    // offset is mysql offset, ie greatest row number to exclude from the result set
+    // offset missing from url -> showing last  40 comments in set (same as total - 40)
+    // offset 0                -> showing first 40 comments in set
+    // offset n                -> showing first 40 comments after n
+
+    if (!query || !query.match(/offset=\d+/)) { // we are on the last page of comments, ie offset = total - 40
+        var offset          = total - 40
+        var previous_offset = (total - 80 > 0) ? total - 80 : 0 // second to last page
+        var q               = query ? (query + '&') : ''
+
+        var first_link      = `${pathname}?${q}offset=0#comments`
+        var previous_link   = `${pathname}?${q}offset=${previous_offset}#comments`
+        // there is no next_link because we are necessarily on the last page of comments
+        var last_link       = `${pathname}${q ? ('?' + q) : ''}#last` // don't include the question mark unless q
+    }
+    else { // there is a query string, and it includes offset
+        var offset          = intval(_GET('offset'))
+        var previous_offset = (offset - 40 > 0) ? offset - 40 : 0
+        var next_offset     = (offset + 40 > total - 40) ? total - 40 : offset + 40 // last page will always be 40 comments
+
+        if (offset !== 0) { // don't need these links if we are on the first page
+            var first_link    = `${pathname}?${query.replace(/offset=\d+/, 'offset=0')}#comments`
+            var previous_link = `${pathname}?${query.replace(/offset=\d+/, 'offset=' + previous_offset)}#comments`
+        }
+
+        if (offset < total - 40) { // don't need next link on last page
+            var next_link = `${pathname}?${query.replace(/offset=\d+/, 'offset=' + next_offset)}#comments`
+        }
+
+        var last_link = `${pathname}?${query.replace(/offset=\d+/, 'offset=' + (total - 40))}#last`
+    }
+
+    if (typeof first_link !== 'undefined') {
+        ret = ret + `<a href='${first_link}' title='Jump to first comment' >&laquo; First</a> &nbsp; &nbsp;`
+    }
+
+    if (typeof previous_link !== 'undefined') {
+         ret = ret + `<a href='${previous_link}' title='Previous page of comments' >&laquo; Previous</a> &nbsp; &nbsp; `
+    }
+
+    let max_on_this_page = (total > offset + 40) ? offset + 40 : total
+    ret = ret + `Comments ${offset + 1} - ${max_on_this_page} of ${total.number_format()} &nbsp; &nbsp; `
+
+    if (typeof next_link !== 'undefined') {
+         ret = ret + `<a href='${next_link}' title='Next page of comments' >Next &raquo;</a> &nbsp; &nbsp; `
+    }
+
+    return ret + `<a href='${last_link}' title='Jump to last comment' >Last &raquo;</a></br>`
+}
+
 async function render(state) { /////////////////////////////////////////
 
     var pages = {
@@ -1607,7 +1671,7 @@ async function render(state) { /////////////////////////////////////////
             let content = html(
                 midpage(
                     h1(),
-                    comment_pagination(),
+                    comment_pagination(state.comments, state.req.url),
                     comment_list(),
                     comment_search_box()
                 )
@@ -2177,9 +2241,9 @@ async function render(state) { /////////////////////////////////////////
                 midpage(
                     topic_nav(state.post),
                     post(state.post, state.ip, state.current_user),
-                    comment_pagination(),
+                    comment_pagination(state.comments, state.req.url),
                     comment_list(), // mysql offset is greatest item number to ignore, next item is first returned
-                    comment_pagination(),
+                    comment_pagination(state.comments, state.req.url),
                     comment_box(state.post, state.current_user, state.ip)
                 )
             )
@@ -2845,70 +2909,6 @@ async function render(state) { /////////////////////////////////////////
             (state.comments.length ? state.comments.map(item => { return format_comment(item) }).join('') : '<b>no comments found</b>')
         ret = ret + `</div>`
         return ret
-    }
-
-    function comment_pagination() { // get pagination links for a single page of comments
-
-        if (!state.comments)                 return
-        if (state.comments.found_rows <= 40) return // no pagination links needed if one page or less
-
-        let total    = state.comments.found_rows
-        let ret      = `<p id='comments'>`
-        if (!state.req.url) {
-            console.log('comment_pagination() was passed falsey state.req.url')
-            return
-        }
-        let pathname = URL.parse(state.req.url).pathname // "pathNAME" is url path without the ? parms, unlike "path"
-        let query    = URL.parse(state.req.url).query
-
-        // offset is mysql offset, ie greatest row number to exclude from the result set
-        // offset missing from url -> showing last  40 comments in set (same as total - 40)
-        // offset 0                -> showing first 40 comments in set
-        // offset n                -> showing first 40 comments after n
-
-        if (!query || !query.match(/offset=\d+/)) { // we are on the last page of comments, ie offset = total - 40
-            var offset          = total - 40
-            var previous_offset = (total - 80 > 0) ? total - 80 : 0 // second to last page
-            var q               = query ? (query + '&') : ''
-
-            var first_link      = `${pathname}?${q}offset=0#comments`
-            var previous_link   = `${pathname}?${q}offset=${previous_offset}#comments`
-            // there is no next_link because we are necessarily on the last page of comments
-            var last_link       = `${pathname}${q ? ('?' + q) : ''}#last` // don't include the question mark unless q
-        }
-        else { // there is a query string, and it includes offset
-            var offset          = intval(_GET('offset'))
-            var previous_offset = (offset - 40 > 0) ? offset - 40 : 0
-            var next_offset     = (offset + 40 > total - 40) ? total - 40 : offset + 40 // last page will always be 40 comments
-
-            if (offset !== 0) { // don't need these links if we are on the first page
-                var first_link    = `${pathname}?${query.replace(/offset=\d+/, 'offset=0')}#comments`
-                var previous_link = `${pathname}?${query.replace(/offset=\d+/, 'offset=' + previous_offset)}#comments`
-            }
-
-            if (offset < total - 40) { // don't need next link on last page
-                var next_link = `${pathname}?${query.replace(/offset=\d+/, 'offset=' + next_offset)}#comments`
-            }
-
-            var last_link = `${pathname}?${query.replace(/offset=\d+/, 'offset=' + (total - 40))}#last`
-        }
-
-        if (typeof first_link !== 'undefined') {
-            ret = ret + `<a href='${first_link}' title='Jump to first comment' >&laquo; First</a> &nbsp; &nbsp;`
-        }
-
-        if (typeof previous_link !== 'undefined') {
-             ret = ret + `<a href='${previous_link}' title='Previous page of comments' >&laquo; Previous</a> &nbsp; &nbsp; `
-        }
-
-        let max_on_this_page = (total > offset + 40) ? offset + 40 : total
-        ret = ret + `Comments ${offset + 1} - ${max_on_this_page} of ${total.number_format()} &nbsp; &nbsp; `
-
-        if (typeof next_link !== 'undefined') {
-             ret = ret + `<a href='${next_link}' title='Next page of comments' >Next &raquo;</a> &nbsp; &nbsp; `
-        }
-
-        return ret + `<a href='${last_link}' title='Jump to last comment' >Last &raquo;</a></br>`
     }
 
     function comment_search_box() {
