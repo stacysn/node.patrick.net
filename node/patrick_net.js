@@ -969,6 +969,10 @@ function brag(header_data) {
             ${ header_data.onlines.length } online now: ${ online_list }`
 }
 
+function slugify(s) { // url-safe pretty chars only; not used for navigation, only for seo and humans
+    return s.replace(/\W+/g,'-').toLowerCase().replace(/-+/,'-').replace(/^-+|-+$/,'')
+}
+
 async function render(state) { /////////////////////////////////////////
 
     var pages = {
@@ -3627,10 +3631,6 @@ async function render(state) { /////////////////////////////////////////
         let share_link  = encodeURI('https://' + CONF.domain +  post2path(post) )
         return `<a href='mailto:?subject=${share_title}&body=${share_link}' title='email this' >share
                 <img src='/images/mailicon.jpg' width=15 height=12 ></a>`
-    }
-
-    function slugify(s) { // url-safe pretty chars only; not used for navigation, only for seo and humans
-        return s.replace(/\W+/g,'-').toLowerCase().replace(/-+/,'-').replace(/^-+|-+$/,'')
     }
 
     async function sql_calc_found_rows() {
