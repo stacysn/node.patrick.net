@@ -1156,6 +1156,31 @@ function lostpwform(login_failed_email) {
     </div>`
 }
 
+function get_edit_link(c, current_user, ip) {
+
+    if (!current_user) return ''
+
+    if ((current_user.user_id === c.comment_author) || (current_user.user_level === 4)) {
+        return `<a href='/edit_comment?c=${c.comment_id}&${create_nonce_parms(ip)}'>edit</a>`
+    }
+
+    return ''
+}
+
+function get_nuke_link(c, current_user, ip, req) {
+
+    if (!current_user) return ''
+
+    if (!req.url) {
+        console.log('get_nuke_link() was passed falsey req.url')
+        return
+    }
+
+    return (URL.parse(req.url).pathname.match(/comment_moderation/) && (current_user.user_level === 4)) ?
+        `<a href='/nuke?nuke_id=${c.comment_author}&${create_nonce_parms(ip)}' onClick='javascript:return confirm("Really?")' >nuke</a>`
+        : ''
+}
+
 async function render(state) { /////////////////////////////////////////
 
     var pages = {
@@ -2674,8 +2699,8 @@ async function render(state) { /////////////////////////////////////////
         var comment_likes    = intval(c.comment_likes)
         var date_link        = get_permalink(c, utz)
         var del              = get_del_link(c, state.current_user, state.ip)
-        var edit             = get_edit_link(c)
-        var nuke             = get_nuke_link(c)
+        var edit             = get_edit_link(c, state.current_user, state.ip)
+        var nuke             = get_nuke_link(c, state.current_user, state.ip, state.req)
         var icon             = render_user_icon(c, 0.4, `'align='left' hspace='5' vspace='2'`) // scale image down
         var u                = c.user_name ? `<a href='/user/${c.user_name}'>${c.user_name}</a>` : 'anonymous'
         var mute             = `<a href='#' onclick="if (confirm('Really ignore ${c.user_name}?')) { $.get('/ignore?other_id=${ c.user_id }&${create_nonce_parms(state.ip)}', function() { $('#comment-${ c.comment_id }').remove() }); return false}; return false" title='ignore ${c.user_name}' >ignore (${c.user_bannedby})</a>`
@@ -3000,17 +3025,6 @@ async function render(state) { /////////////////////////////////////////
         return {comments, total}
     }
 
-    function get_edit_link(c) {
-
-        if (!state.current_user) return ''
-
-        if ((state.current_user.user_id === c.comment_author) || (state.current_user.user_level === 4)) {
-            return `<a href='/edit_comment?c=${c.comment_id}&${create_nonce_parms(state.ip)}'>edit</a>`
-        }
-
-        return ''
-    }
-
     function get_external_links(content) {
 
         let c = CHEERIO.load(content)
@@ -3047,20 +3061,6 @@ async function render(state) { /////////////////////////////////////////
     async function get_moderator(topic) {
         topic = topic.replace(/\W/, '') // topic names contain only \w chars
         return await get_var('select topic_moderator from topics where topic=?', [topic], state)
-    }
-
-    function get_nuke_link(c) {
-
-        if (!state.current_user) return ''
-
-        if (!state.req.url) {
-            console.log('get_nuke_link() was passed falsey state.req.url')
-            return
-        }
-
-        return (URL.parse(state.req.url).pathname.match(/comment_moderation/) && (state.current_user.user_level === 4)) ?
-            `<a href='/nuke?nuke_id=${c.comment_author}&${create_nonce_parms(state.ip)}' onClick='javascript:return confirm("Really?")' >nuke</a>`
-            : ''
     }
 
     async function get_post(post_id) {
