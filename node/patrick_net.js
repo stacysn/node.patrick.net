@@ -1142,6 +1142,20 @@ function popup(message) {
     return `<script type='text/javascript'> alert('${ message }');</script>`
 }
 
+function lostpwform(login_failed_email) {
+    var show = login_failed_email ? `value='${ login_failed_email }'` : `placeholder='email address'`
+
+    return `
+    <div id='lostpwform' >
+        <h1>reset password</h1>
+        <form action='/recoveryemail' method='post'>
+            <div class='form-group'><input type='text' name='user_email' ${ show } class='form-control' id='lost_pw_email' ></div>
+            <button type='submit' id='submit' class='btn btn-success btn-sm'>submit</button>
+        </form>
+        <script type="text/javascript">document.getElementById('lost_pw_email').focus();</script>
+    </div>`
+}
+
 async function render(state) { /////////////////////////////////////////
 
     var pages = {
@@ -3217,24 +3231,10 @@ async function render(state) { /////////////////////////////////////////
                     </fieldset>
                 </form>
                 <div style='display: none;' >
-                    ${ lostpwform(state)   }
+                    ${ lostpwform(state.login_failed_email)   }
                     ${ registerform() }
                 </div>
             </div>`
-    }
-
-    function lostpwform() {
-        var show = state.login_failed_email ? `value='${ state.login_failed_email }'` : `placeholder='email address'`
-
-        return `
-        <div id='lostpwform' >
-            <h1>reset password</h1>
-            <form action='/recoveryemail' method='post'>
-                <div class='form-group'><input type='text' name='user_email' ${ show } class='form-control' id='lost_pw_email' ></div>
-                <button type='submit' id='submit' class='btn btn-success btn-sm'>submit</button>
-            </form>
-            <script type="text/javascript">document.getElementById('lost_pw_email').focus();</script>
-        </div>`
     }
 
     function page() { // tell homepage, search, userpage, topic which page we are on
