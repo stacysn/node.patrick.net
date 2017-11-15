@@ -1191,6 +1191,34 @@ function id_box(current_user) {
         </div>`
 }
 
+function invalid_nonce_message() {
+    return `invalid nonce. reload this page and try again`
+}
+
+function loginprompt(login_failed_email) {
+
+    return `
+        <div id='status' >
+            ${ login_failed_email ? 'login failed' : '' }
+            <form id='loginform' >
+                <fieldset>
+                    <input id='email'    name='email'    placeholder='email'    type='text'     required >
+                    <input id='password' name='password' placeholder='password' type='password' required >
+                </fieldset>
+                <fieldset>
+                    <input type='submit' id='submit' value='log in'
+                        onclick="$.post('/post_login', $('#loginform').serialize()).done(function(data) { $('#status').html(data) });return false">
+                    <a href='#' onclick="midpage.innerHTML = lostpwform.innerHTML;  return false" >forgot password</a> /
+                    <a href='#' onclick="midpage.innerHTML = registerform.innerHTML; return false" >register</a>
+                </fieldset>
+            </form>
+            <div style='display: none;' >
+                ${ lostpwform(login_failed_email)   }
+                ${ registerform() }
+            </div>
+        </div>`
+}
+
 async function render(state) { /////////////////////////////////////////
 
     var pages = {
@@ -1970,7 +1998,7 @@ async function render(state) { /////////////////////////////////////////
 
             state.current_user = null
             var d              = new Date()
-            var html           = loginprompt(state)
+            var html           = loginprompt(state.login_failed_email)
 
             // you must use the undocumented "array" feature of res.writeHead to set multiple cookies, because json
             var headers = [
@@ -3134,11 +3162,7 @@ async function render(state) { /////////////////////////////////////////
 
     function icon_or_loginprompt() {
         if (state.current_user) return id_box(state.current_user)
-        else                    return loginprompt(state)
-    }
-
-    function invalid_nonce_message() {
-        return `invalid nonce. reload this page and try again`
+        else                    return loginprompt(state.login_failed_email)
     }
 
     async function ip2country(ip) { // probably a bit slow, so don't overuse this
@@ -3211,30 +3235,6 @@ async function render(state) { /////////////////////////////////////////
         ] // do not use 'secure' parm with cookie or will be unable to test login in dev, bc dev is http only
 
         send(200, headers, content)
-    }
-
-    function loginprompt() {
-
-        return `
-            <div id='status' >
-                ${ state.login_failed_email ? 'login failed' : '' }
-                <form id='loginform' >
-                    <fieldset>
-                        <input id='email'    name='email'    placeholder='email'    type='text'     required >   
-                        <input id='password' name='password' placeholder='password' type='password' required >
-                    </fieldset>
-                    <fieldset>
-                        <input type='submit' id='submit' value='log in'
-                            onclick="$.post('/post_login', $('#loginform').serialize()).done(function(data) { $('#status').html(data) });return false">
-                        <a href='#' onclick="midpage.innerHTML = lostpwform.innerHTML;  return false" >forgot password</a> /
-                        <a href='#' onclick="midpage.innerHTML = registerform.innerHTML; return false" >register</a>
-                    </fieldset>
-                </form>
-                <div style='display: none;' >
-                    ${ lostpwform(state.login_failed_email)   }
-                    ${ registerform() }
-                </div>
-            </div>`
     }
 
     function page() { // tell homepage, search, userpage, topic which page we are on
