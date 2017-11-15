@@ -973,6 +973,21 @@ function slugify(s) { // url-safe pretty chars only; not used for navigation, on
     return s.replace(/\W+/g,'-').toLowerCase().replace(/-+/,'-').replace(/^-+|-+$/,'')
 }
 
+function registerform() {
+    return `
+    <div id='registerform' >
+        <h1>register</h1>
+        <form action='/registration' method='post'>
+        <div >
+            <div class='form-group'><input type='text' name='user_name' placeholder='choose username' class='form-control' id='user_name' ></div>
+            <div class='form-group'><input type='text' name='user_email'      placeholder='email'     class='form-control'                ></div>
+        </div>
+        <button type='submit' id='submit' class='btn btn-success btn-sm'>submit</button>
+        </form>
+        <script type="text/javascript">document.getElementById('user_name').focus();</script>
+    </div>`
+}
+
 async function render(state) { /////////////////////////////////////////
 
     var pages = {
@@ -3518,21 +3533,6 @@ async function render(state) { /////////////////////////////////////////
         }
 
         send(code, headers, message)
-    }
-
-    function registerform() {
-        return `
-        <div id='registerform' >
-            <h1>register</h1>
-            <form action='/registration' method='post'>
-            <div >
-                <div class='form-group'><input type='text' name='user_name' placeholder='choose username' class='form-control' id='user_name' ></div>
-                <div class='form-group'><input type='text' name='user_email'      placeholder='email'     class='form-control'                ></div>
-            </div>
-            <button type='submit' id='submit' class='btn btn-success btn-sm'>submit</button>
-            </form>
-            <script type="text/javascript">document.getElementById('user_name').focus();</script>
-        </div>`
     }
 
     async function repair_referer() { // look at referer to a bad post; if it exist, call update_prev_next() on that
