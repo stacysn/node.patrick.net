@@ -1060,6 +1060,64 @@ function profile_form(current_user, ip, updated) {
     return ret
 }
 
+function post(post, ip, current_user) { // format a single post for display
+
+    let uncivil       = ''
+    let arrowbox_html = arrowbox(post)
+    let icon          = render_user_icon(post, 1, `align='left' hspace='5' vspace='2'`)
+    let link          = post_link(post)
+    let nonce_parms   = create_nonce_parms(ip)
+
+    if (current_user && current_user.user_pbias >= 3) {
+
+        if (!post.post_title.match(/thunderdome/)) {
+            let confirm_uncivil = `onClick="javascript:return confirm('Really mark as uncivil?')"`
+            uncivil = ` &nbsp; <a href='/uncivil?p=${post.post_id}&${nonce_parms}' ${confirm_uncivil} title='attacks person, not point' >uncivil</a> &nbsp;` 
+        }
+    }
+
+    // watch toggle
+    var watcheye = `<a href='#' id='watch' onclick="$.get('/watch?post_id=${post.post_id}&${nonce_parms}', function(data) {
+    document.getElementById('watch').innerHTML = data; });
+    return false" title='comments by email'>${render_watch_indicator(post.postview_want_email)}</a>`
+
+    let edit_link = ''
+    if (current_user && ((current_user.user_id === post.post_author) || (current_user.user_level >= 4)) ) {
+        edit_link = `<a href='/edit_post?p=${post.post_id}&${nonce_parms}'>edit</a> &nbsp; `
+    }
+
+    let delete_link = ''
+    if (current_user && ((current_user.user_id === post.post_author && !post.post_comments) || (current_user.user_level >= 4))) {
+        delete_link = ` &nbsp; <a href='/delete_post?post_id=${post.post_id}&${nonce_parms}' 
+                       onClick="javascript:return confirm('Really delete?')" id='delete_post' >delete</a> &nbsp;` 
+    }
+
+    post.user_name = post.user_name || 'anonymous' // so we don't display 'null' in case the post is anonymous
+
+    var utz = current_user ? current_user.user_timezone : 'America/Los_Angeles'
+
+    return `<div class='comment' >${arrowbox_html} ${icon} <h2 style='display:inline' >${ link }</h2>
+            <p>By ${user_link(post)} ${follow_user_button(post, current_user, ip)} &nbsp; ${render_date(post.post_date, utz)} ${uncivil}
+            ${post.post_views.number_format()} views &nbsp; ${post.post_comments.number_format()} comments &nbsp;
+            ${watcheye} &nbsp;
+            <a href="#commentform" onclick="addquote( '${post.post_id}', '0', '0', '${post.user_name}' ); return false;"
+               title="Select some text then click this to quote" >quote</a> &nbsp;
+            &nbsp; ${share_post(post)} &nbsp; ${edit_link} ${delete_link}
+            <p><hr><div class="entry" class="alt" id="comment-0-text" >${ post.post_content }</div></div>`
+}
+
+function post_link(post) {
+    let path = post2path(post)
+    return `<a href='${path}' title='patrick.net' >${post.post_title}</a>`
+}
+
+function share_post(post) {
+    let share_title = encodeURI(post.post_title).replace(/%20/g,' ')
+    let share_link  = encodeURI('https://' + CONF.domain +  post2path(post) )
+    return `<a href='mailto:?subject=${share_title}&body=${share_link}' title='email this' >share
+            <img src='/images/mailicon.jpg' width=15 height=12 ></a>`
+}
+
 async function render(state) { /////////////////////////////////////////
 
     var pages = {
@@ -1993,7 +2051,7 @@ async function render(state) { /////////////////////////////////////////
             let content = html(
                 midpage(
                     topic_nav(state.post),
-                    post(),
+                    post(state.post, state.ip, state.current_user),
                     comment_pagination(),
                     comment_list(), // mysql offset is greatest item number to ignore, next item is first returned
                     comment_pagination(),
@@ -3303,52 +3361,6 @@ async function render(state) { /////////////////////////////////////////
         return links
     }
 
-    function post() { // format a single post for display
-
-        let uncivil       = ''
-        let arrowbox_html = arrowbox(state.post)
-        let icon          = render_user_icon(state.post, 1, `align='left' hspace='5' vspace='2'`)
-        let link          = post_link(state.post)
-        let nonce_parms   = create_nonce_parms(state.ip)
-
-        if (state.current_user && state.current_user.user_pbias >= 3) {
-
-            if (!state.post.post_title.match(/thunderdome/)) {
-                let confirm_uncivil = `onClick="javascript:return confirm('Really mark as uncivil?')"`
-                uncivil = ` &nbsp; <a href='/uncivil?p=${state.post.post_id}&${nonce_parms}' ${confirm_uncivil} title='attacks person, not point' >uncivil</a> &nbsp;` 
-            }
-        }
-
-        // watch toggle
-        var watcheye = `<a href='#' id='watch' onclick="$.get('/watch?post_id=${state.post.post_id}&${nonce_parms}', function(data) {
-        document.getElementById('watch').innerHTML = data; });
-        return false" title='comments by email'>${render_watch_indicator(state.post.postview_want_email)}</a>`
-
-        let edit_link = ''
-        if (state.current_user && ((state.current_user.user_id === state.post.post_author) || (state.current_user.user_level >= 4)) ) {
-            edit_link = `<a href='/edit_post?p=${state.post.post_id}&${nonce_parms}'>edit</a> &nbsp; `
-        }
-
-        let delete_link = ''
-        if (state.current_user && ((state.current_user.user_id === state.post.post_author && !state.post.post_comments) || (state.current_user.user_level >= 4))) {
-            delete_link = ` &nbsp; <a href='/delete_post?post_id=${state.post.post_id}&${nonce_parms}' 
-                           onClick="javascript:return confirm('Really delete?')" id='delete_post' >delete</a> &nbsp;` 
-        }
-
-        state.post.user_name = state.post.user_name || 'anonymous' // so we don't display 'null' in case the post is anonymous
-
-        var utz = state.current_user ? state.current_user.user_timezone : 'America/Los_Angeles'
-
-        return `<div class='comment' >${arrowbox_html} ${icon} <h2 style='display:inline' >${ link }</h2>
-                <p>By ${user_link(state.post)} ${follow_user_button(state.post, state.current_user, state.ip)} &nbsp; ${render_date(state.post.post_date, utz)} ${uncivil}
-                ${state.post.post_views.number_format()} views &nbsp; ${state.post.post_comments.number_format()} comments &nbsp;
-                ${watcheye} &nbsp;
-                <a href="#commentform" onclick="addquote( '${state.post.post_id}', '0', '0', '${state.post.user_name}' ); return false;"
-                   title="Select some text then click this to quote" >quote</a> &nbsp;
-                &nbsp; ${share_post(state.post)} &nbsp; ${edit_link} ${delete_link}
-                <p><hr><div class="entry" class="alt" id="comment-0-text" >${ state.post.post_content }</div></div>`
-    }
-
     async function post_comment_list(post) {
 
         let offset = (post.post_comments - 40 > 0) ? post.post_comments - 40 : 0 // If offset is not set, select the 40 most recent comments.
@@ -3433,11 +3445,6 @@ async function render(state) { /////////////////////////////////////////
         }
         </script>
         ${render_upload_form()}`
-    }
-
-    function post_link(post) {
-        let path = post2path(post)
-        return `<a href='${path}' title='patrick.net' >${post.post_title}</a>`
     }
 
     function post_list() { // format a list of posts from whatever source; pass in only a limited number, because all will display
@@ -3625,13 +3632,6 @@ async function render(state) { /////////////////////////////////////////
             return `Please check your ${post_data.user_email} email for the login link`
         }
         else return `Could not find user with email ${ post_data.user_email }`
-    }
-
-    function share_post(post) {
-        let share_title = encodeURI(post.post_title).replace(/%20/g,' ')
-        let share_link  = encodeURI('https://' + CONF.domain +  post2path(post) )
-        return `<a href='mailto:?subject=${share_title}&body=${share_link}' title='email this' >share
-                <img src='/images/mailicon.jpg' width=15 height=12 ></a>`
     }
 
     async function sql_calc_found_rows() {
