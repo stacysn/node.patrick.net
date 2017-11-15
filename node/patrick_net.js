@@ -1219,6 +1219,11 @@ function loginprompt(login_failed_email) {
         </div>`
 }
 
+function icon_or_loginprompt(current_user, login_failed_email) {
+    if (current_user) return id_box(current_user)
+    else              return loginprompt(login_failed_email)
+}
+
 async function render(state) { /////////////////////////////////////////
 
     var pages = {
@@ -3127,7 +3132,7 @@ async function render(state) { /////////////////////////////////////////
         }
 
         return `<div class='comment' >
-            <div style='float:right' >${ icon_or_loginprompt(state) }</div>
+            <div style='float:right' >${ icon_or_loginprompt(state.current_user, state.login_failed_email) }</div>
             <a href='/' ><h1 class='sitename' title='back to home page' >${ CONF.domain }</h1></a> &nbsp; ${hashtag}
             <br>
             ${ top_topics() + '<br>' + brag(state.header_data) + '</font><br>' + new_post_button() }
@@ -3158,11 +3163,6 @@ async function render(state) { /////////////////////////////////////////
         <script async src="/jquery.min.js"></script>
         ${render_query_times(state.start_t, state.queries)}
         </html>`
-    }
-
-    function icon_or_loginprompt() {
-        if (state.current_user) return id_box(state.current_user)
-        else                    return loginprompt(state.login_failed_email)
     }
 
     async function ip2country(ip) { // probably a bit slow, so don't overuse this
@@ -3197,7 +3197,7 @@ async function render(state) { /////////////////////////////////////////
             var user_pass            = state.current_user.user_pass
         }
 
-        if ('post_login' === state.page) var content = icon_or_loginprompt(state)
+        if ('post_login' === state.page) var content = icon_or_loginprompt(state.current_user, state.login_failed_email)
         if ('key_login'  === state.page) {
 
             var current_user_id = state.current_user ? state.current_user.user_id : 0
