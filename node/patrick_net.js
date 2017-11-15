@@ -997,6 +997,16 @@ function get_permalink(c, utz) {
     return `<a href='/post/${c.comment_post_id}/?c=${c.comment_id}' title='permalink' >${render_date(c.comment_date, utz)}</a>`
 }
 
+function get_del_link(c, current_user, ip) {
+
+    if (!current_user) return ''
+
+    return (current_user.user_id === c.comment_author ||
+            current_user.user_id === 1                ||
+            current_user.user_id === c.topic_moderator) ?
+        `<a href='#' onclick="if (confirm('Really delete?')) { $.get('/delete_comment?comment_id=${ c.comment_id }&post_id=${ c.comment_post_id }&${create_nonce_parms(ip)}', function() { $('#comment-${ c.comment_id }').remove() }); return false}">delete</a>` : ''
+}
+
 async function render(state) { /////////////////////////////////////////
 
     var pages = {
@@ -2517,7 +2527,7 @@ async function render(state) { /////////////////////////////////////////
         var comment_dislikes = intval(c.comment_dislikes)
         var comment_likes    = intval(c.comment_likes)
         var date_link        = get_permalink(c, utz)
-        var del              = get_del_link(c)
+        var del              = get_del_link(c, state.current_user, state.ip)
         var edit             = get_edit_link(c)
         var nuke             = get_nuke_link(c)
         var icon             = render_user_icon(c, 0.4, `'align='left' hspace='5' vspace='2'`) // scale image down
@@ -2842,16 +2852,6 @@ async function render(state) { /////////////////////////////////////////
         let total = await sql_calc_found_rows()
 
         return {comments, total}
-    }
-
-    function get_del_link(c) {
-
-        if (!state.current_user) return ''
-
-        return (state.current_user.user_id === c.comment_author ||
-                state.current_user.user_id === 1                ||
-                state.current_user.user_id === c.topic_moderator) ?
-            `<a href='#' onclick="if (confirm('Really delete?')) { $.get('/delete_comment?comment_id=${ c.comment_id }&post_id=${ c.comment_post_id }&${create_nonce_parms(state.ip)}', function() { $('#comment-${ c.comment_id }').remove() }); return false}">delete</a>` : ''
     }
 
     function get_edit_link(c) {
