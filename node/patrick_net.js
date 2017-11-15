@@ -1138,6 +1138,10 @@ function new_post_button() {
     return '<a href="/new_post" class="btn btn-success btn-sm" title="start a new post" ><b>new post</b></a>'
 }
 
+function popup(message) {
+    return `<script type='text/javascript'> alert('${ message }');</script>`
+}
+
 async function render(state) { /////////////////////////////////////////
 
     var pages = {
@@ -1150,8 +1154,7 @@ async function render(state) { /////////////////////////////////////////
 
             if (!valid_nonce(state.ip, _GET('ts'), _GET('nonce'))) { // do not die, because that will return a whole html page to be appended into the #comment_list slot
                 // show values for debugging nonce problems
-                state.message = invalid_nonce_message()
-                return send_html(200, { err: true, content: popup() })
+                return send_html(200, { err: true, content: popup(invalid_nonce_message()) })
             }
 
             let post_data = await collect_post_data_and_trim(state)
@@ -1164,22 +1167,20 @@ async function render(state) { /////////////////////////////////////////
                                      order by user_last_comment_time desc limit 1`, [state.ip], state)
 
             if (ago && ago < 2) { // this ip already commented less than two seconds ago
-                state.message = 'You are posting comments too quickly! Please slow down'
-                return send_html(200, JSON.stringify({ err: true, content: popup() }))
+                return send_html(200, JSON.stringify({ err: true, content: popup('You are posting comments too quickly! Please slow down') }))
             }
             else {
                 //post_data.comment_author = state.current_user ? state.current_user.user_id : await find_or_create_anon()
                 if (state.current_user && state.current_user.user_id)
                     post_data.comment_author = state.current_user.user_id
                 else {
-                    state.message = 'anonymous comments have been disabled, please reg/login'
-                    return send_html(200, JSON.stringify({ err: true, content: popup() }))
+                    return send_html(200, JSON.stringify({ err: true, content: popup('anonymous comments have been disabled, please reg/login') }))
                 }
 
                 let bans = await user_topic_bans(post_data.comment_author)
                 let topic = (await get_post(post_data.comment_post_id)).post_topic
-                state.message = is_user_banned(bans, topic, state.current_user)
-                if (state.message) return send_html(200, JSON.stringify({ err: true, content: popup() }))
+                let message = is_user_banned(bans, topic, state.current_user)
+                if (message) return send_html(200, JSON.stringify({ err: true, content: popup(message) }))
 
                 post_data.comment_content  = strip_tags(post_data.comment_content.linkify())
                 post_data.comment_dislikes = 0
@@ -1194,8 +1195,8 @@ async function render(state) { /////////////////////////////////////////
                 }
                 catch(e) {
                     console.log(`${e} at accept_comment`)
-                    state.message = 'database failed to accept some part of the content, maybe an emoticon'
-                    return send_html(200, JSON.stringify({ err: true, content: popup() }))
+                    let message = 'database failed to accept some part of the content, maybe an emoticon'
+                    return send_html(200, JSON.stringify({ err: true, content: popup(message) }))
                 }
                 let comment_id = insert_result.insertId
 
@@ -3252,10 +3253,6 @@ async function render(state) { /////////////////////////////////////////
         let order_by = 'order by ' + orders[order] + ' desc'
 
         return [curpage, slimit, order, order_by]
-    }
-
-    function popup() {
-        return `<script type='text/javascript'> alert('${ state.message }');</script>`
     }
 
     async function post_mail(p) { // reasons to send out post emails: @user, user following post author, user following post topic
