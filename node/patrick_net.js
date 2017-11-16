@@ -1727,6 +1727,27 @@ function follow_topic_button(t, current_user, ip) { // t is the topic to follow,
     return `<span style='display: none;' > ${follow_topic_link} ${unfollow_topic_link} </span> ${follow}`
 }
 
+function header(header_data, post, page, current_user, login_failed_email, url) {
+
+    var hashtag = ''
+
+    // display hashtag in title if we are on a post in that topic, or in the index for that topic
+    if (post && post.post_topic) hashtag =
+        `<a href='/topic/${post.post_topic}'><h1 class='sitename' >#${post.post_topic}</h1></a>`
+
+    if (page === 'topic') {
+        var topic = segments(url)[2] // like /topic/housing
+        hashtag = `<a href='/topic/${topic}'><h1 class='sitename' >#${topic}</h1></a>`
+    }
+
+    return `<div class='comment' >
+        <div style='float:right' >${ icon_or_loginprompt(current_user, login_failed_email) }</div>
+        <a href='/' ><h1 class='sitename' title='back to home page' >${ CONF.domain }</h1></a> &nbsp; ${hashtag}
+        <br>
+        ${ top_topics() + '<br>' + brag(header_data) + '</font><br>' + new_post_button() }
+        </div>`
+}
+
 async function render(state) { /////////////////////////////////////////
 
     var pages = {
@@ -3289,27 +3310,6 @@ async function render(state) { /////////////////////////////////////////
         return await get_row('select * from users where user_id = ?', [user_id], state)
     }
 
-    function header() {
-
-        var hashtag = ''
-
-        // display hashtag in title if we are on a post in that topic, or in the index for that topic
-        if (state.post && state.post.post_topic) hashtag =
-            `<a href='/topic/${state.post.post_topic}'><h1 class='sitename' >#${state.post.post_topic}</h1></a>`
-
-        if (state.page === 'topic') {
-            var topic = segments(state.req.url)[2] // like /topic/housing
-            hashtag = `<a href='/topic/${topic}'><h1 class='sitename' >#${topic}</h1></a>`
-        }
-
-        return `<div class='comment' >
-            <div style='float:right' >${ icon_or_loginprompt(state.current_user, state.login_failed_email) }</div>
-            <a href='/' ><h1 class='sitename' title='back to home page' >${ CONF.domain }</h1></a> &nbsp; ${hashtag}
-            <br>
-            ${ top_topics() + '<br>' + brag(state.header_data) + '</font><br>' + new_post_button() }
-            </div>`
-    }
-
     function html(...args) {
 
         var title = state.post ? state.post.post_title : CONF.domain
@@ -3326,7 +3326,7 @@ async function render(state) { /////////////////////////////////////////
         </head>
         <body ${ 'dev' === process.env.environment ? "style='background-color: #dfd;'" : '' } >
             <div class="container" >
-            ${ header() }
+            ${ header(state.header_data, state.post, state.page, state.current_user, state.login_failed_email, state.req.url) }
             ${ args.join('') }
             ${ footer() }
             </div>
