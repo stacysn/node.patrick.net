@@ -1276,7 +1276,7 @@ function comment_pagination(comments, url) { // get pagination links for a singl
         var last_link       = `${pathname}${q ? ('?' + q) : ''}#last` // don't include the question mark unless q
     }
     else { // there is a query string, and it includes offset
-        var offset          = intval(_GET(state.req.url, 'offset'))
+        var offset          = intval(_GET(url, 'offset'))
         var previous_offset = (offset - 40 > 0) ? offset - 40 : 0
         var next_offset     = (offset + 40 > total - 40) ? total - 40 : offset + 40 // last page will always be 40 comments
 
