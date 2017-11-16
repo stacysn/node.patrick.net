@@ -1635,6 +1635,29 @@ function h1(message) {
     return `<h1 style='display: inline;' >${ message }</h1>`
 }
 
+function post_pagination(post_count, curpage, extra, url) {
+
+    let links    = ''
+    let nextpage = curpage + 1
+    let pages    = Math.floor( (post_count + 20) / 20)
+
+    if (!url) {
+        console.log('post_pagination() was passed falsey url')
+        return
+    }
+
+    let path     = URL.parse(url).pathname
+    let prevpage = curpage - 1
+
+    if (curpage > 1) links = links + `<a href='${path}?page=${prevpage}${extra}'>&laquo; previous</a> &nbsp;`
+
+    links = links + ` page ${curpage} of ${pages} `
+
+    if (curpage < pages) links = links + `&nbsp; <a href='${path}?page=${nextpage}${extra}'>next &raquo;</a>`
+
+    return links
+}
+
 async function render(state) { /////////////////////////////////////////
 
     var pages = {
@@ -2248,7 +2271,7 @@ async function render(state) { /////////////////////////////////////////
                 midpage(
                     tabs(order, '', path),
                     post_list(state.posts, state.ip, state.req.url, state.current_user),
-                    post_pagination(await sql_calc_found_rows(), curpage, `&order=${order}`)
+                    post_pagination(await sql_calc_found_rows(), curpage, `&order=${order}`, state.req.url)
                 )
             )
 
@@ -2678,10 +2701,10 @@ async function render(state) { /////////////////////////////////////////
             let content = html(
                 midpage(
                     h1(`search results for "${s}"`),
-                    post_pagination(found_rows, curpage, `&s=${us}&order=${order}`),
+                    post_pagination(found_rows, curpage, `&s=${us}&order=${order}`, state.req.url),
                     tabs(order, `&s=${us}`, path),
                     post_list(state.posts, state.ip, state.req.url, state.current_user),
-                    post_pagination(found_rows, curpage, `&s=${us}&order=${order}`)
+                    post_pagination(found_rows, curpage, `&s=${us}&order=${order}`, state.req.url)
                 )
             )
 
@@ -2739,7 +2762,7 @@ async function render(state) { /////////////////////////////////////////
                     moderator_announcement,
                     tabs(order, `&topic=${topic}`, path),
                     post_list(state.posts, state.ip, state.req.url, state.current_user),
-                    post_pagination(sql_calc_found_rows(), curpage, `&topic=${topic}&order=${order}`),
+                    post_pagination(sql_calc_found_rows(), curpage, `&topic=${topic}&order=${order}`, state.req.url),
                     topic_moderation(topic, state.current_user)
                 )
             )
@@ -2903,7 +2926,7 @@ async function render(state) { /////////////////////////////////////////
                     render_user_info(u, state.current_user, state.ip),
                     tabs(order, '', path),
                     post_list(state.posts, state.ip, state.req.url, state.current_user),
-                    post_pagination(found_post_rows, curpage, `&order=${order}`),
+                    post_pagination(found_post_rows, curpage, `&order=${order}`, state.req.url),
                     admin_user(u, state.current_user, state.ip)
                 )
             )
@@ -3460,29 +3483,6 @@ async function render(state) { /////////////////////////////////////////
                 })
             }
         }
-    }
-
-    function post_pagination(post_count, curpage, extra) {
-
-        let links    = ''
-        let nextpage = curpage + 1
-        let pages    = Math.floor( (post_count + 20) / 20)
-
-        if (!state.req.url) {
-            console.log('post_pagination() was passed falsey state.req.url')
-            return
-        }
-
-        let path     = URL.parse(state.req.url).pathname
-        let prevpage = curpage - 1
-
-        if (curpage > 1) links = links + `<a href='${path}?page=${prevpage}${extra}'>&laquo; previous</a> &nbsp;`
-
-        links = links + ` page ${curpage} of ${pages} `
-
-        if (curpage < pages) links = links + `&nbsp; <a href='${path}?page=${nextpage}${extra}'>next &raquo;</a>`
-
-        return links
     }
 
     async function post_comment_list(post) {
