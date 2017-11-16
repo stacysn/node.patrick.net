@@ -1276,7 +1276,7 @@ function comment_pagination(comments, url) { // get pagination links for a singl
         var last_link       = `${pathname}${q ? ('?' + q) : ''}#last` // don't include the question mark unless q
     }
     else { // there is a query string, and it includes offset
-        var offset          = intval(_GET('offset'))
+        var offset          = intval(_GET(state.req.url, 'offset'))
         var previous_offset = (offset - 40 > 0) ? offset - 40 : 0
         var next_offset     = (offset + 40 > total - 40) ? total - 40 : offset + 40 // last page will always be 40 comments
 
@@ -1758,6 +1758,11 @@ function comment_search_box() {
     </form><p>`
 }
 
+function _GET(url, parm) { // given a string, return the GET parameter by that name
+    if (!url) return ''
+    return URL.parse(url, true).query[parm]
+}
+
 async function render(state) { /////////////////////////////////////////
 
     var pages = {
@@ -1768,7 +1773,7 @@ async function render(state) { /////////////////////////////////////////
 
         accept_comment : async function() { // insert new comment
 
-            if (!valid_nonce(state.ip, _GET('ts'), _GET('nonce'))) { // do not die, because that will return a whole html page to be appended into the #comment_list slot
+            if (!valid_nonce(state.ip, _GET(state.req.url, 'ts'), _GET(state.req.url, 'nonce'))) { // do not die, because that will return a whole html page to be appended into the #comment_list slot
                 // show values for debugging nonce problems
                 return send_html(200, { err: true, content: popup(invalid_nonce_message()) })
             }
@@ -1823,7 +1828,7 @@ async function render(state) { /////////////////////////////////////////
                                               [comment_id], state)
 
                 send_html(200, JSON.stringify(
-                    { err: false, content: format_comment(state.comment, state.current_user, state.ip, state.req, state.comments, _GET('offset')) }))
+                    { err: false, content: format_comment(state.comment, state.current_user, state.ip, state.req, state.comments, _GET(state.req.url, 'offset')) }))
                     // send html fragment
 
                 comment_mail(state.comment)
@@ -1854,7 +1859,7 @@ async function render(state) { /////////////////////////////////////////
 
         accept_edited_comment : async function() { // update old comment
 
-            if (!valid_nonce(state.ip, _GET('ts'), _GET('nonce'))) return die(invalid_nonce_message())
+            if (!valid_nonce(state.ip, _GET(state.req.url, 'ts'), _GET(state.req.url, 'nonce'))) return die(invalid_nonce_message())
 
             let post_data = await collect_post_data_and_trim(state)
 
@@ -1945,12 +1950,12 @@ async function render(state) { /////////////////////////////////////////
 
         approve_comment : async function() {
 
-            let comment_id = intval(_GET('comment_id'))
+            let comment_id = intval(_GET(state.req.url, 'comment_id'))
 
             if (!comment_id)                        return send_html(200, '')
             if (!state.current_user)                return send_html(200, '')
             if (state.current_user.user_level !== 4) return send_html(200, '')
-            if (!valid_nonce(state.ip, _GET('ts'), _GET('nonce')))                     return send_html(200, '')
+            if (!valid_nonce(state.ip, _GET(state.req.url, 'ts'), _GET(state.req.url, 'nonce')))                     return send_html(200, '')
 
             await query('update comments set comment_approved=1, comment_date=now() where comment_id=?', [comment_id], state)
             await query('update posts set post_modified=now() where post_id=(select comment_post_id from comments where comment_id=?)',
@@ -1961,12 +1966,12 @@ async function render(state) { /////////////////////////////////////////
 
         approve_post : async function() {
 
-            let post_id = intval(_GET('post_id'))
+            let post_id = intval(_GET(state.req.url, 'post_id'))
 
             if (!post_id)                            return send_html(200, '')
             if (!state.current_user)                 return send_html(200, '')
             if (state.current_user.user_level !== 4) return send_html(200, '')
-            if (!valid_nonce(state.ip, _GET('ts'), _GET('nonce')))                      return send_html(200, '')
+            if (!valid_nonce(state.ip, _GET(state.req.url, 'ts'), _GET(state.req.url, 'nonce')))                      return send_html(200, '')
 
             await query('update posts set post_approved=1, post_modified=now() where post_id=?', [post_id], state)
 
@@ -1994,12 +1999,12 @@ async function render(state) { /////////////////////////////////////////
 
         ban_from_topic : async function() {
 
-            if (!valid_nonce(state.ip, _GET('ts'), _GET('nonce'))) return send_html(200, invalid_nonce_message())
+            if (!valid_nonce(state.ip, _GET(state.req.url, 'ts'), _GET(state.req.url, 'nonce'))) return send_html(200, invalid_nonce_message())
 
-            let user_id = intval(_GET('user_id'))
+            let user_id = intval(_GET(state.req.url, 'user_id'))
             if (!user_id) return send_html(200, 'missing user_id')
 
-            let topic = _GET('topic')
+            let topic = _GET(state.req.url, 'topic')
             if (!topic) return send_html(200, 'missing topic')
             
             topic = topic.replace(/\W/, '')
@@ -2019,7 +2024,7 @@ async function render(state) { /////////////////////////////////////////
 
         best : async function() {
 
-            if ('true' === _GET('all')) {
+            if ('true' === _GET(state.req.url, 'all')) {
                 var sql = `select * from comments left join users on user_id=comment_author where comment_likes > 3
                            order by comment_likes desc limit 40`
 
@@ -2092,22 +2097,22 @@ async function render(state) { /////////////////////////////////////////
 
         comments : async function() { // show a list of comments by user, or by comment-frequence, or from a search
 
-            let offset  = intval(_GET('offset'))
+            let offset  = intval(_GET(state.req.url, 'offset'))
             let results = null
             let message = ''
 
-            if (_GET('a')) {      // a is author name
-                let a         = decodeURIComponent(_GET('a').replace(/[^\w %]/, ''))
+            if (_GET(state.req.url, 'a')) {      // a is author name
+                let a         = decodeURIComponent(_GET(state.req.url, 'a').replace(/[^\w %]/, ''))
                 results       = await get_comment_list_by_author(a, offset, 40)
                 message = `<h2>${a}'s comments</h2>`
             }
-            else if (_GET('n')) { // n is number of comments per author, so we can see all comments by one-comment authors, for example
-                let n         = intval(_GET('n'))
+            else if (_GET(state.req.url, 'n')) { // n is number of comments per author, so we can see all comments by one-comment authors, for example
+                let n         = intval(_GET(state.req.url, 'n'))
                 results       = await get_comment_list_by_number(n, offset, 40)
                 message = `<h2>comments by users with ${n} comments</h2>`
             }
-            else if (_GET('s')) { // comment search
-                let s         = _GET('s').replace(/[^\w %]/, '')
+            else if (_GET(state.req.url, 's')) { // comment search
+                let s         = _GET(state.req.url, 's').replace(/[^\w %]/, '')
                 results       = await get_comment_list_by_search(s, offset, 40)
                 message = `<h2>comments that contain "${s}"</h2>`
             }
@@ -2130,11 +2135,11 @@ async function render(state) { /////////////////////////////////////////
 
         delete_comment : async function() { // delete a comment
 
-            let comment_id = intval(_GET('comment_id'))
-            let post_id    = intval(_GET('post_id'))
+            let comment_id = intval(_GET(state.req.url, 'comment_id'))
+            let post_id    = intval(_GET(state.req.url, 'post_id'))
 
             if (!state.current_user)      return send_html(200, '')
-            if (!valid_nonce(state.ip, _GET('ts'), _GET('nonce')))           return send_html(200, '')
+            if (!valid_nonce(state.ip, _GET(state.req.url, 'ts'), _GET(state.req.url, 'nonce')))           return send_html(200, '')
             if (!(comment_id && post_id)) return send_html(200, '')
 
             var topic = (await get_post(post_id)).post_topic
@@ -2156,10 +2161,10 @@ async function render(state) { /////////////////////////////////////////
         delete_post : async function() { // delete a whole post, but not its comments
 
             if (!state.current_user) return die('you must be logged in to delete a post')
-            if (!valid_nonce(state.ip, _GET('ts'), _GET('nonce')))      return die(invalid_nonce_message())
+            if (!valid_nonce(state.ip, _GET(state.req.url, 'ts'), _GET(state.req.url, 'nonce')))      return die(invalid_nonce_message())
 
             var post_id
-            if (post_id = intval(_GET('post_id'))) {
+            if (post_id = intval(_GET(state.req.url, 'post_id'))) {
 
                 let post = await get_post(post_id)
                 if (!post) return die('no such post')
@@ -2185,8 +2190,8 @@ async function render(state) { /////////////////////////////////////////
 
             var user_id = state.current_user ? state.current_user.user_id : await find_or_create_anon()
 
-            if (intval(_GET('comment_id'))) {
-                let comment_id = intval(_GET('comment_id'))
+            if (intval(_GET(state.req.url, 'comment_id'))) {
+                let comment_id = intval(_GET(state.req.url, 'comment_id'))
                 let comment_row = await get_row(`select * from comments where comment_id=?`, [comment_id], state)
 
                 let vote = await get_row(`select commentvote_up, count(*) as c from commentvotes where commentvote_user_id=? and commentvote_comment_id=?`,
@@ -2212,8 +2217,8 @@ async function render(state) { /////////////////////////////////////////
                     await query(`update users set user_pbias=user_pbias-1 where user_id=?`, [comment_row.comment_author], state)
                 }
             }
-            else if (intval(_GET('post_id'))) {
-                let post_id = intval(_GET('post_id'))
+            else if (intval(_GET(state.req.url, 'post_id'))) {
+                let post_id = intval(_GET(state.req.url, 'post_id'))
 
                 let vote = await get_row(`select postvote_down, count(*) as c from postvotes where postvote_user_id=? and postvote_post_id=?`,
                                           [user_id, post_id], state)
@@ -2243,9 +2248,9 @@ async function render(state) { /////////////////////////////////////////
 
         edit_comment : async function () {
 
-            if (!valid_nonce(state.ip, _GET('ts'), _GET('nonce'))) return die(invalid_nonce_message())
+            if (!valid_nonce(state.ip, _GET(state.req.url, 'ts'), _GET(state.req.url, 'nonce'))) return die(invalid_nonce_message())
 
-            let comment_id = intval(_GET('c'))
+            let comment_id = intval(_GET(state.req.url, 'c'))
             state.comment = await get_row(`select * from comments left join users on user_id=comment_author
                                                where comment_id=?`, [comment_id], state)
 
@@ -2264,9 +2269,9 @@ async function render(state) { /////////////////////////////////////////
 
         edit_post : async function () {
 
-            if (!valid_nonce(state.ip, _GET('ts'), _GET('nonce'))) return die(invalid_nonce_message())
+            if (!valid_nonce(state.ip, _GET(state.req.url, 'ts'), _GET(state.req.url, 'nonce'))) return die(invalid_nonce_message())
 
-            let post_id = intval(_GET('p'))
+            let post_id = intval(_GET(state.req.url, 'p'))
             state.post = await get_row(`select * from posts left join users on user_id=post_author where post_id=?`, [post_id], state)
 
             if (!state.post) return send_html(404, `No post with id "${post_id}"`)
@@ -2274,7 +2279,7 @@ async function render(state) { /////////////////////////////////////////
 
                 let content = html(
                     midpage(
-                        post_form(_GET('p'), state.post)
+                        post_form(_GET(state.req.url, 'p'), state.post)
                     )
                 )
 
@@ -2286,7 +2291,7 @@ async function render(state) { /////////////////////////////////////////
 
             let content = html(
                 midpage(
-                    profile_form(state.current_user, state.ip, _GET('updated'))
+                    profile_form(state.current_user, state.ip, _GET(state.req.url, 'updated'))
                 )
             )
 
@@ -2295,14 +2300,14 @@ async function render(state) { /////////////////////////////////////////
 
         follow_topic : async function() { // get or turn off emails of posts in a topic; can be called as ajax or full page
 
-            let ajax  = intval(_GET('ajax'))
-            let topic = _GET('topic').replace(/\W/, '').toLowerCase()
+            let ajax  = intval(_GET(state.req.url, 'ajax'))
+            let topic = _GET(state.req.url, 'topic').replace(/\W/, '').toLowerCase()
 
             if (!topic)              return ajax ? send_html(200, '') : die('topic missing')
             if (!state.current_user) return ajax ? send_html(200, '') : die('must be logged in to follow or unfollow')
-            if (!valid_nonce(state.ip, _GET('ts'), _GET('nonce')))      return ajax ? send_html(200, '') : die(invalid_nonce_message())
+            if (!valid_nonce(state.ip, _GET(state.req.url, 'ts'), _GET(state.req.url, 'nonce')))      return ajax ? send_html(200, '') : die(invalid_nonce_message())
 
-            if (intval(_GET('undo'))) {
+            if (intval(_GET(state.req.url, 'undo'))) {
 
                 await query(`delete from topicwatches where topicwatch_name=? and topicwatch_user_id=?`,
                             [topic, state.current_user.user_id], state)
@@ -2318,14 +2323,14 @@ async function render(state) { /////////////////////////////////////////
 
         follow_user : async function() { // get or turn off emails of a user's new posts; can be called as ajax or full page
 
-            let ajax     = intval(_GET('ajax'))
-            let other_id = intval(_GET('other_id'))
+            let ajax     = intval(_GET(state.req.url, 'ajax'))
+            let other_id = intval(_GET(state.req.url, 'other_id'))
 
             if (!other_id)           return ajax ? send_html(200, '') : die('other_id missing')
             if (!state.current_user) return ajax ? send_html(200, '') : die('must be logged in to follow or unfollow')
-            if (!valid_nonce(state.ip, _GET('ts'), _GET('nonce')))      return ajax ? send_html(200, '') : die(invalid_nonce_message())
+            if (!valid_nonce(state.ip, _GET(state.req.url, 'ts'), _GET(state.req.url, 'nonce')))      return ajax ? send_html(200, '') : die(invalid_nonce_message())
 
-            if (intval(_GET('undo'))) {
+            if (intval(_GET(state.req.url, 'undo'))) {
                 await query(`replace into relationships set rel_i_follow=0, rel_self_id=?, rel_other_id=?`,
                             [state.current_user.user_id, other_id], state)
             }
@@ -2351,11 +2356,11 @@ async function render(state) { /////////////////////////////////////////
 
             var p
 
-            if (p = intval(_GET('p'))) return redirect(`/post/${p}`, 301) // legacy redirect for cases like /?p=1216301
+            if (p = intval(_GET(state.req.url, 'p'))) return redirect(`/post/${p}`, 301) // legacy redirect for cases like /?p=1216301
 
             let current_user_id = state.current_user ? state.current_user.user_id : 0
 
-            let [curpage, slimit, order, order_by] = page(_GET('page'), _GET('order'))
+            let [curpage, slimit, order, order_by] = page(_GET(state.req.url, 'page'), _GET(state.req.url, 'order'))
 
             // left joins to also get each post's viewing and voting data for the current user if there is one
             let sql = `select sql_calc_found_rows * from posts
@@ -2382,12 +2387,12 @@ async function render(state) { /////////////////////////////////////////
 
         ignore : async function() { // ignore a user
 
-            let other_id = intval(_GET('other_id'))
+            let other_id = intval(_GET(state.req.url, 'other_id'))
 
             if (!state.current_user) return send_html(200, '')
-            if (!valid_nonce(state.ip, _GET('ts'), _GET('nonce')))      return send_html(200, '')
+            if (!valid_nonce(state.ip, _GET(state.req.url, 'ts'), _GET(state.req.url, 'nonce')))      return send_html(200, '')
 
-            if (intval(_GET('undo'))) {
+            if (intval(_GET(state.req.url, 'undo'))) {
                 await query(`replace into relationships set rel_i_ban=0, rel_self_id=?, rel_other_id=?`,
                             [state.current_user.user_id, other_id], state)
 
@@ -2407,7 +2412,7 @@ async function render(state) { /////////////////////////////////////////
 
         key_login : async function() {
 
-            let key      = _GET('key')
+            let key      = _GET(state.req.url, 'key')
             let password = get_nonce(Date.now(), state.ip).substring(0, 6)
 
             var email = await get_var('select user_email from users where user_activation_key = ?', [key], state)
@@ -2438,8 +2443,8 @@ async function render(state) { /////////////////////////////////////////
             var user_id   = state.current_user ? state.current_user.user_id   : await find_or_create_anon()
             var user_name = state.current_user ? state.current_user.user_name : ip2anon(state.ip)
 
-            if (intval(_GET('comment_id'))) {
-                let comment_id = intval(_GET('comment_id'))
+            if (intval(_GET(state.req.url, 'comment_id'))) {
+                let comment_id = intval(_GET(state.req.url, 'comment_id'))
 
                 let comment_row = await get_row(`select * from comments where comment_id=?`, [comment_id], state)
 
@@ -2489,8 +2494,8 @@ async function render(state) { /////////////////////////////////////////
                     await query(`update users set user_pbias=user_pbias+1 where user_id=?`, [comment_row.comment_author], state)
                 }
             }
-            else if (intval(_GET('post_id'))) {
-                let post_id = intval(_GET('post_id'))
+            else if (intval(_GET(state.req.url, 'post_id'))) {
+                let post_id = intval(_GET(state.req.url, 'post_id'))
 
                 let vote = await get_row(`select postvote_up, count(*) as c from postvotes where postvote_user_id=? and postvote_post_id=?`,
                                       [user_id, post_id], state)
@@ -2567,7 +2572,7 @@ async function render(state) { /////////////////////////////////////////
             else {
                 var content = html(
                     midpage(
-                        post_form(_GET('p'), state.post)
+                        post_form(_GET(state.req.url, 'p'), state.post)
                     )
                 )
             }
@@ -2577,10 +2582,10 @@ async function render(state) { /////////////////////////////////////////
 
         nuke : async function() { // given a user ID, nuke all his posts, comments, and his ID
 
-            let nuke_id = intval(_GET('nuke_id'))
+            let nuke_id = intval(_GET(state.req.url, 'nuke_id'))
             let u = await get_userrow(nuke_id)
 
-            if (!valid_nonce(state.ip, _GET('ts'), _GET('nonce')))                   return die(invalid_nonce_message())
+            if (!valid_nonce(state.ip, _GET(state.req.url, 'ts'), _GET(state.req.url, 'nonce')))                   return die(invalid_nonce_message())
             if (1 !== state.current_user.user_id) return die('non-admin may not nuke')
             if (1 === nuke_id)                    return die('admin cannot nuke himself')
 
@@ -2608,7 +2613,7 @@ async function render(state) { /////////////////////////////////////////
 
         old : async function() {
 
-            let years_ago = intval(_GET('years_ago'))
+            let years_ago = intval(_GET(state.req.url, 'years_ago'))
 
             let user_id = state.current_user ? state.current_user.user_id : 0
             
@@ -2640,7 +2645,7 @@ async function render(state) { /////////////////////////////////////////
             let post_id         = intval(segments(state.req.url)[2]) // get post's db row number from url, eg 47 from /post/47/slug-goes-here
 
             var c
-            if (c = _GET('c')) { // permalink to a comment
+            if (c = _GET(state.req.url, 'c')) { // permalink to a comment
                 let offset = await cid2offset(post_id, c)
                 return redirect(`/post/${post_id}?offset=${offset}#comment-${c}`)
             }
@@ -2664,7 +2669,7 @@ async function render(state) { /////////////////////////////////////////
 
             if (current_user_id) {
                 state.post.postview_want_email = state.post.postview_want_email || 0 // keep as 1 or 0 from db; set to 0 if null in db
-                if( '0' === _GET('want_email') ) state.post.postview_want_email = 0
+                if( '0' === _GET(state.req.url, 'want_email') ) state.post.postview_want_email = 0
 
                 await query(`replace into postviews set
                              postview_user_id=?, postview_post_id=?, postview_last_view=now(), postview_want_email=?`,
@@ -2781,12 +2786,12 @@ async function render(state) { /////////////////////////////////////////
 
             // if (is_robot()) die('robots may not do searches')
 
-            let s = _GET('s').trim().replace(/[^0-9a-z ]/gi, '') // allow only alphanum and spaces for now
+            let s = _GET(state.req.url, 's').trim().replace(/[^0-9a-z ]/gi, '') // allow only alphanum and spaces for now
             let us = encodeURI(s)
 
             if (!s) return die('You searched for nothing. It was found.')
 
-            let [curpage, slimit, order, order_by] = page(_GET('page'), _GET('order'))
+            let [curpage, slimit, order, order_by] = page(_GET(state.req.url, 'page'), _GET(state.req.url, 'order'))
 
             // These match() requests require the existence of fulltext index:
             //      create fulltext index post_title_content_index on posts (post_title, post_content)
@@ -2816,8 +2821,8 @@ async function render(state) { /////////////////////////////////////////
         since : async function() { // given a post_id and epoch timestamp, redirect to post's first comment after that timestamp
 
             // these will die on replace() if p or when is not defined and that's the right thing to do
-            let p    = intval(_GET('p'))
-            let when = intval(_GET('when'))
+            let p    = intval(_GET(state.req.url, 'p'))
+            let when = intval(_GET(state.req.url, 'when'))
 
             let c = await get_var(`select comment_id from comments
                                        where comment_post_id = ? and comment_approved > 0 and comment_date > from_unixtime(?)
@@ -2836,7 +2841,7 @@ async function render(state) { /////////////////////////////////////////
 
             let user_id = state.current_user ? state.current_user.user_id : 0
             
-            let [curpage, slimit, order, order_by] = page(_GET('page'), _GET('order'))
+            let [curpage, slimit, order, order_by] = page(_GET(state.req.url, 'page'), _GET(state.req.url, 'order'))
 
             let sql = `select sql_calc_found_rows * from posts
                        left join postviews on postview_post_id=post_id and postview_user_id= ?
@@ -2889,9 +2894,9 @@ async function render(state) { /////////////////////////////////////////
 
         uncivil : async function() { // move a comment to comment jail, or a post to post moderation
 
-            let comment_id = intval(_GET('c'))
+            let comment_id = intval(_GET(state.req.url, 'c'))
 
-            if (state.current_user && (state.current_user.user_pbias > 3) && valid_nonce(state.ip, _GET('ts'), _GET('nonce')) && comment_id) {
+            if (state.current_user && (state.current_user.user_pbias > 3) && valid_nonce(state.ip, _GET(state.req.url, 'ts'), _GET(state.req.url, 'nonce')) && comment_id) {
                 await query(`update comments set comment_adhom_reporter=?, comment_adhom_when=now() where comment_id = ?`,
                             [state.current_user.user_id, comment_id], state)
             }
@@ -2901,7 +2906,7 @@ async function render(state) { /////////////////////////////////////////
 
         update_profile : async function() { // accept data from profile_form
 
-            if (!valid_nonce(state.ip, _GET('ts'), _GET('nonce')))              return die(invalid_nonce_message())
+            if (!valid_nonce(state.ip, _GET(state.req.url, 'ts'), _GET(state.req.url, 'nonce')))              return die(invalid_nonce_message())
             if (!state.current_user)         return die('must be logged in to update profile')
 
             let post_data = await collect_post_data_and_trim(state)
@@ -3001,7 +3006,7 @@ async function render(state) { /////////////////////////////////////////
         user : async function() {
 
             let current_user_id = state.current_user ? state.current_user.user_id : 0
-            let [curpage, slimit, order, order_by] = page(_GET('page'), _GET('order'))
+            let [curpage, slimit, order, order_by] = page(_GET(state.req.url, 'page'), _GET(state.req.url, 'order'))
             let user_name = decodeURIComponent(segments(state.req.url)[2]).replace(/[^\w._ -]/g, '') // like /user/Patrick
             let u = await get_row(`select * from users where user_name=?`, [user_name], state)
 
@@ -3038,12 +3043,12 @@ async function render(state) { /////////////////////////////////////////
 
         users : async function() {
 
-            let d  = _GET('d')  ? _GET('d').replace(/[^adesc]/g, '').substring(0,4)  : 'desc' // asc or desc
-            let ob = _GET('ob') ? _GET('ob').replace(/[^a-z_]/g, '').substring(0,32) : 'user_comments' // order by
-            let offset = intval(_GET('offset')) || 0
+            let d  = _GET(state.req.url, 'd')  ? _GET(state.req.url, 'd').replace(/[^adesc]/g, '').substring(0,4)  : 'desc' // asc or desc
+            let ob = _GET(state.req.url, 'ob') ? _GET(state.req.url, 'ob').replace(/[^a-z_]/g, '').substring(0,32) : 'user_comments' // order by
+            let offset = intval(_GET(state.req.url, 'offset')) || 0
             let message = ''
 
-            if ( _GET('unrequited') ) {
+            if ( _GET(state.req.url, 'unrequited') ) {
                 message = `Unrequited Friendship Requests For ${state.current_user.user_name}`
 
                 // 1. Find all those IDs that asked to be friends with user_id.
@@ -3059,8 +3064,8 @@ async function render(state) { /////////////////////////////////////////
                                            where unrequited.rel_self_id = users.user_id and user_id = ? limit 40 offset ${offset}`,
                                           [state.current_user.user_id], state)
             }
-            else if ( _GET('followersof') ) {
-                let followersof = intval(_GET('followersof'))
+            else if ( _GET(state.req.url, 'followersof') ) {
+                let followersof = intval(_GET(state.req.url, 'followersof'))
 
                 message = 'Followers of ' + (await get_userrow(followersof)).user_name
 
@@ -3071,8 +3076,8 @@ async function render(state) { /////////////////////////////////////////
                 // keep followers-count cache in users table correct
                 await query('update users set user_followers=? where user_id=?', [state.users.length, followersof], state);
             }
-            else if ( _GET('following') ) {
-                let following = intval(_GET('following'))
+            else if ( _GET(state.req.url, 'following') ) {
+                let following = intval(_GET(state.req.url, 'following'))
 
                 message = 'Users ' + (await get_userrow(following)).user_name + ' is Following'
 
@@ -3080,8 +3085,8 @@ async function render(state) { /////////////////////////////////////////
                                           (select rel_other_id from relationships where rel_self_id=? and rel_i_follow > 0)
                                            order by ${ob} ${d} limit 40 offset ${offset}`, [following], state)
             }
-            else if ( _GET('friendsof') ) {
-                let friendsof = intval(_GET('friendsof'))
+            else if ( _GET(state.req.url, 'friendsof') ) {
+                let friendsof = intval(_GET(state.req.url, 'friendsof'))
 
                 message = 'Friends of ' + (await get_userrow(friendsof)).user_name
 
@@ -3096,9 +3101,9 @@ async function render(state) { /////////////////////////////////////////
                 await query(`update users set user_friends=? where user_id=?`,
                             [state.users.length, friendsof], state); // Keep friends-count cache correct.
             }
-            else if ( _GET('user_name') ) {
+            else if ( _GET(state.req.url, 'user_name') ) {
 
-                let user_name = _GET('user_name').replace(/[^a-zA-Z0-9._ -]/).substring(0, 40)
+                let user_name = _GET(state.req.url, 'user_name').replace(/[^a-zA-Z0-9._ -]/).substring(0, 40)
                 user_name = user_name.replace('/_/', '\_') // bc _ is single-char wildcard in mysql matching.
 
                 message = `Users With Names Like '${user_name}'`
@@ -3118,7 +3123,7 @@ async function render(state) { /////////////////////////////////////////
                 midpage(
                     h1(message),
                     `<p><a href='${next_page}'>next page &raquo;</a><p>`,
-                    render_user_list(state.users, _GET('d')),
+                    render_user_list(state.users, _GET(state.req.url, 'd')),
                     `<hr><a href='${next_page}'>next page &raquo;</a>`
                 )
             )
@@ -3128,10 +3133,10 @@ async function render(state) { /////////////////////////////////////////
 
         watch : async function() { // toggle a watch from a post
 
-            let post_id = intval(_GET('post_id'))
+            let post_id = intval(_GET(state.req.url, 'post_id'))
 
             if (!state.current_user) return send_html(200, '')
-            if (!valid_nonce(state.ip, _GET('ts'), _GET('nonce')))      return send_html(200, '')
+            if (!valid_nonce(state.ip, _GET(state.req.url, 'ts'), _GET(state.req.url, 'nonce')))      return send_html(200, '')
             if (!post_id)            return send_html(200, '')
 
             let postview_want_email = await get_var(`select postview_want_email from postviews
@@ -3238,7 +3243,7 @@ async function render(state) { /////////////////////////////////////////
         let ret = `<div id='comment_list' >`
         ret = ret +
             (comments.length ? comments.map(item => {
-                return format_comment(item, state.current_user, state.ip, state.req, comments, _GET('offset')) })
+                return format_comment(item, state.current_user, state.ip, state.req, comments, _GET(state.req.url, 'offset')) })
                 .join('') : '<b>no comments found</b>')
         ret = ret + `</div>`
         return ret
@@ -3253,16 +3258,6 @@ async function render(state) { /////////////////////////////////////////
         )
 
         send_html(200, content)
-    }
-
-    function _GET(parm) { // given a string, return the GET parameter by that name
-
-        if (!state.req.url) {
-            console.log('_GET() was passed falsey parm')
-            return
-        }
-
-        return URL.parse(state.req.url, true).query[parm]
     }
 
     async function get_comment_list_by_author(a, start, num) {
@@ -3491,7 +3486,7 @@ async function render(state) { /////////////////////////////////////////
 
         let offset = (post.post_comments - 40 > 0) ? post.post_comments - 40 : 0 // If offset is not set, select the 40 most recent comments.
 
-        if (_GET('offset')) offset = intval(_GET('offset')) // But if offset is set, use that instead.
+        if (_GET(state.req.url, 'offset')) offset = intval(_GET(state.req.url, 'offset')) // But if offset is set, use that instead.
 
         // if this gets too slow as user_uncivil_comments increases, try a left join, or just start deleting old uncivil comments
         let user_id = state.current_user ? state.current_user.user_id : 0
