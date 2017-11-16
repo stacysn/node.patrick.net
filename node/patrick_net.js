@@ -1755,12 +1755,14 @@ async function render(state) { /////////////////////////////////////////
                 return send_html(200, JSON.stringify({ err: true, content: popup('You are posting comments too quickly! Please slow down') }))
             }
             else {
-                //post_data.comment_author = state.current_user ? state.current_user.user_id : await find_or_create_anon()
+                post_data.comment_author = state.current_user ? state.current_user.user_id : await find_or_create_anon()
+                /*
                 if (state.current_user && state.current_user.user_id)
                     post_data.comment_author = state.current_user.user_id
                 else {
                     return send_html(200, JSON.stringify({ err: true, content: popup('anonymous comments have been disabled, please reg/login') }))
                 }
+                */
 
                 let bans = await user_topic_bans(post_data.comment_author)
                 let topic = (await get_post(post_data.comment_post_id)).post_topic
@@ -2594,7 +2596,7 @@ async function render(state) { /////////////////////////////////////////
             let content = html(
                 midpage(
                     h1(`Posts from ${years_ago} year${s} ago`),
-                    post_list(state.posts, state.ip, state.req.url, state.current_user),
+                    post_list(state.posts, state.ip, state.req.url, state.current_user)
                 )
             )
 
@@ -2679,7 +2681,7 @@ async function render(state) { /////////////////////////////////////////
 
             let content = html(
                 midpage(
-                    post_list(state.posts, state.ip, state.req.url, state.current_user),
+                    post_list(state.posts, state.ip, state.req.url, state.current_user)
                 )
             )
 
