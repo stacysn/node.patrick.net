@@ -1379,6 +1379,122 @@ function comment_edit_box(comment, current_user, ip) { // edit existing comment,
     <script type="text/javascript">document.getElementById('ta').focus();</script>`
 }
 
+function post_list(posts, ip, url, current_user) { // format a list of posts from whatever source
+
+    if (posts) {
+        let nonce_parms = create_nonce_parms(ip)
+        let moderation = 0
+
+        if (!url) {
+            console.log('post_list() was passed falsey url')
+            return
+        }
+
+        if (URL.parse(url).pathname.match(/post_moderation/) && (current_user.user_level === 4)) moderation = 1
+        
+        var formatted = posts.map(post => {
+
+            if (!current_user && post.post_title.match(/thunderdome/gi)) return '' // hide thunderdome posts if not logged in
+            if (!current_user && post.post_nsfw)                         return '' // hide porn posts if not logged in
+
+            let net = post.post_likes - post.post_dislikes
+
+            if (current_user) { // user is logged in
+                if (!post.postview_last_view)
+                    var unread = `<a href='${post2path(post)}' ><img src='/content/unread_post.gif' width='45' height='16' title='You never read this one' ></a>`
+                else 
+                    var unread = render_unread_comments_icon(post, post.postview_last_view, current_user) // last view by this user, from left join
+            }
+            else var unread = ''
+
+            let ago           = MOMENT(post.post_modified).fromNow();
+
+            if (post.post_topic)
+                var hashlink      = `in <a href='/topic/${post.post_topic}'>#${post.post_topic}</a>`
+            else
+                var hashlink      = ``
+
+            let imgdiv        = (current_user && current_user.user_hide_post_list_photos) ? '' : get_first_image(post)
+            let arrowbox_html = arrowbox(post)
+            let firstwords    = `<font size='-1'>${first_words(post.post_content, 30)}</font>`
+
+            if (moderation) {
+                var approval_link = `<a href='#' onclick="$.get('/approve_post?post_id=${ post.post_id }&${nonce_parms}', function() { $('#post-${ post.post_id }').remove() }); return false">approve</a>`
+                var delete_link = ` &nbsp; <a href='/delete_post?post_id=${post.post_id}&${nonce_parms}' onClick="javascript:return confirm('Really delete?')" id='delete_post' >delete</a> &nbsp;`
+                var nuke_link = `<a href='/nuke?nuke_id=${post.post_author}&${create_nonce_parms(ip)}' onClick='javascript:return confirm("Really?")' >nuke</a>`
+            }
+            else {
+                var approval_link = ''
+                var delete_link = ''
+                var nuke_link = ''
+            }
+
+            if (post.post_comments) {
+                let s = (post.post_comments === 1) ? '' : 's';
+                let path = post2path(post)
+                // should add commas to post_comments here
+                var latest = `<a href='${path}'>${post.post_comments}&nbsp;comment${s}</a>, latest <a href='${path}#comment-${post.post_latest_comment_id}' >${ago}</a>`
+            }
+            else var latest = `<a href='${post2path(post)}'>Posted ${ago}</a>`
+
+            if (current_user                                 &&
+                current_user.relationships[post.post_author] &&
+                current_user.relationships[post.post_author].rel_i_ban) var hide = `style='display: none'`
+            else var hide = ''
+
+            var link = `<b>${post_link(post)}</b>`
+            let extlinks = get_external_links(post.post_content)
+            if (extlinks && extlinks.length && URL.parse(extlinks[0]).host) {
+                var host = URL.parse(extlinks[0]).host.replace(/www./, '').substring(0, 31)
+                link += ` (<a href='${brandit(extlinks[0])}' target='_blank' title='original story' >${host})</a>`
+            }
+
+            var utz = current_user ? current_user.user_timezone : 'America/Los_Angeles'
+            var date = render_date(post.post_date, utz, 'D MMM YYYY')
+
+            return `<div class='post' id='post-${post.post_id}' ${hide} >${arrowbox_html}${imgdiv}${link}
+            <br>by <a href='/user/${ post.user_name }'>${ post.user_name }</a> ${hashlink} on ${date}&nbsp;
+            ${latest} ${unread} ${approval_link} ${delete_link} ${nuke_link}<br>${firstwords}</div>`
+        })
+    }
+    else formatted = []
+
+    return formatted.join('')
+}
+
+function get_first_image(post) {
+
+    let c = CHEERIO.load(post.post_content)
+
+    if (!c('img').length) return ''
+
+    if (post.post_nsfw)
+        return `<div class='icon' ><a href='${post2path(post)}' ><img src='/images/nsfw.png' border=0 width=100 align=top hspace=5 vspace=5 ></a></div>`
+    else
+        return `<div class='icon' ><a href='${post2path(post)}' ><img src='${c('img').attr('src')}' border=0 width=100 align=top hspace=5 vspace=5 ></a></div>`
+}
+
+function get_external_links(content) {
+
+    let c = CHEERIO.load(content)
+
+    let extlinks = [];
+
+    c('a').each(function(i, elem) {
+
+        if (!c(this).attr('href')) return // sometimes we get an a tag without an href, not sure how, but ignore them
+
+        if (!(['http:', 'https:'].indexOf(URL.parse(c(this).attr('href')).protocol) > -1)) return // ignore invalid protocols
+
+        let host = URL.parse(c(this).attr('href')).host
+        if (new RegExp(CONF.domain).test(host)) return // ignore links back to own domain
+
+        extlinks.push(c(this).attr('href'))
+    });
+
+    return extlinks
+}
+
 async function render(state) { /////////////////////////////////////////
 
     var pages = {
@@ -1993,7 +2109,7 @@ async function render(state) { /////////////////////////////////////////
             let content = html(
                 midpage(
                     tabs(order, '', path),
-                    post_list(),
+                    post_list(state.posts, state.ip, state.req.url, state.current_user),
                     post_pagination(await sql_calc_found_rows(), curpage, `&order=${order}`)
                 )
             )
@@ -2250,7 +2366,7 @@ async function render(state) { /////////////////////////////////////////
             let content = html(
                 midpage(
                     h1(),
-                    post_list()
+                    post_list(state.posts, state.ip, state.req.url, state.current_user),
                 )
             )
 
@@ -2335,7 +2451,7 @@ async function render(state) { /////////////////////////////////////////
 
             let content = html(
                 midpage(
-                    post_list()
+                    post_list(state.posts, state.ip, state.req.url, state.current_user),
                 )
             )
 
@@ -2428,7 +2544,7 @@ async function render(state) { /////////////////////////////////////////
                     h1(),
                     post_pagination(found_rows, curpage, `&s=${us}&order=${order}`),
                     tabs(order, `&s=${us}`, path),
-                    post_list(),
+                    post_list(state.posts, state.ip, state.req.url, state.current_user),
                     post_pagination(found_rows, curpage, `&s=${us}&order=${order}`)
                 )
             )
@@ -2487,7 +2603,7 @@ async function render(state) { /////////////////////////////////////////
                     follow_topic_button(topic),
                     moderator_announcement,
                     tabs(order, `&topic=${topic}`, path),
-                    post_list(),
+                    post_list(state.posts, state.ip, state.req.url, state.current_user),
                     post_pagination(sql_calc_found_rows(), curpage, `&topic=${topic}&order=${order}`),
                     topic_moderation(topic, state.current_user)
                 )
@@ -2653,7 +2769,7 @@ async function render(state) { /////////////////////////////////////////
                 midpage(
                     render_user_info(u, state.current_user, state.ip),
                     tabs(order, '', path),
-                    post_list(),
+                    post_list(state.posts, state.ip, state.req.url, state.current_user),
                     post_pagination(found_post_rows, curpage, `&order=${order}`),
                     admin_user(u, state.current_user, state.ip)
                 )
@@ -3120,39 +3236,6 @@ async function render(state) { /////////////////////////////////////////
         return {comments, total}
     }
 
-    function get_external_links(content) {
-
-        let c = CHEERIO.load(content)
-
-        let extlinks = [];
-
-        c('a').each(function(i, elem) {
-
-            if (!c(this).attr('href')) return // sometimes we get an a tag without an href, not sure how, but ignore them
-
-            if (!(['http:', 'https:'].indexOf(URL.parse(c(this).attr('href')).protocol) > -1)) return // ignore invalid protocols
-
-            let host = URL.parse(c(this).attr('href')).host
-            if (new RegExp(CONF.domain).test(host)) return // ignore links back to own domain
-
-            extlinks.push(c(this).attr('href'))
-        });
-
-        return extlinks
-    }
-
-    function get_first_image(post) {
-
-        let c = CHEERIO.load(post.post_content)
-
-        if (!c('img').length) return ''
-
-        if (post.post_nsfw)
-            return `<div class='icon' ><a href='${post2path(post)}' ><img src='/images/nsfw.png' border=0 width=100 align=top hspace=5 vspace=5 ></a></div>`
-        else
-            return `<div class='icon' ><a href='${post2path(post)}' ><img src='${c('img').attr('src')}' border=0 width=100 align=top hspace=5 vspace=5 ></a></div>`
-    }
-
     async function get_moderator(topic) {
         topic = topic.replace(/\W/, '') // topic names contain only \w chars
         return await get_var('select topic_moderator from topics where topic=?', [topic], state)
@@ -3440,89 +3523,6 @@ async function render(state) { /////////////////////////////////////////
         results.found_rows = found_rows // have to put this after map() above to retain it
 
         return results
-    }
-
-    function post_list() { // format a list of posts from whatever source; pass in only a limited number, because all will display
-
-        if (state.posts) {
-            let nonce_parms = create_nonce_parms(state.ip)
-            let moderation = 0
-
-            if (!state.req.url) {
-                console.log('post_list() was passed falsey state.req.url')
-                return
-            }
-
-            if (URL.parse(state.req.url).pathname.match(/post_moderation/) && (state.current_user.user_level === 4)) moderation = 1
-            
-            var formatted = state.posts.map(post => {
-
-                if (!state.current_user && post.post_title.match(/thunderdome/gi)) return '' // hide thunderdome posts if not logged in
-                if (!state.current_user && post.post_nsfw)                         return '' // hide porn posts if not logged in
-
-                let net = post.post_likes - post.post_dislikes
-
-                if (state.current_user) { // user is logged in
-                    if (!post.postview_last_view)
-                        var unread = `<a href='${post2path(post)}' ><img src='/content/unread_post.gif' width='45' height='16' title='You never read this one' ></a>`
-                    else 
-                        var unread = render_unread_comments_icon(post, post.postview_last_view, state.current_user) // last view by this user, from left join
-                }
-                else var unread = ''
-
-                let ago           = MOMENT(post.post_modified).fromNow();
-
-                if (post.post_topic)
-                    var hashlink      = `in <a href='/topic/${post.post_topic}'>#${post.post_topic}</a>`
-                else
-                    var hashlink      = ``
-
-                let imgdiv        = (state.current_user && state.current_user.user_hide_post_list_photos) ? '' : get_first_image(post)
-                let arrowbox_html = arrowbox(post)
-                let firstwords    = `<font size='-1'>${first_words(post.post_content, 30)}</font>`
-
-                if (moderation) {
-                    var approval_link = `<a href='#' onclick="$.get('/approve_post?post_id=${ post.post_id }&${nonce_parms}', function() { $('#post-${ post.post_id }').remove() }); return false">approve</a>`
-                    var delete_link = ` &nbsp; <a href='/delete_post?post_id=${post.post_id}&${nonce_parms}' onClick="javascript:return confirm('Really delete?')" id='delete_post' >delete</a> &nbsp;`
-                    var nuke_link = `<a href='/nuke?nuke_id=${post.post_author}&${create_nonce_parms(state.ip)}' onClick='javascript:return confirm("Really?")' >nuke</a>`
-                }
-                else {
-                    var approval_link = ''
-                    var delete_link = ''
-                    var nuke_link = ''
-                }
-
-                if (post.post_comments) {
-                    let s = (post.post_comments === 1) ? '' : 's';
-                    let path = post2path(post)
-                    // should add commas to post_comments here
-                    var latest = `<a href='${path}'>${post.post_comments}&nbsp;comment${s}</a>, latest <a href='${path}#comment-${post.post_latest_comment_id}' >${ago}</a>`
-                }
-                else var latest = `<a href='${post2path(post)}'>Posted ${ago}</a>`
-
-                if (state.current_user                                 &&
-                    state.current_user.relationships[post.post_author] &&
-                    state.current_user.relationships[post.post_author].rel_i_ban) var hide = `style='display: none'`
-                else var hide = ''
-
-                var link = `<b>${post_link(post)}</b>`
-                let extlinks = get_external_links(post.post_content)
-                if (extlinks && extlinks.length && URL.parse(extlinks[0]).host) {
-                    var host = URL.parse(extlinks[0]).host.replace(/www./, '').substring(0, 31)
-                    link += ` (<a href='${brandit(extlinks[0])}' target='_blank' title='original story' >${host})</a>`
-                }
-
-                var utz = state.current_user ? state.current_user.user_timezone : 'America/Los_Angeles'
-                var date = render_date(post.post_date, utz, 'D MMM YYYY')
-
-                return `<div class='post' id='post-${post.post_id}' ${hide} >${arrowbox_html}${imgdiv}${link}
-                <br>by <a href='/user/${ post.user_name }'>${ post.user_name }</a> ${hashlink} on ${date}&nbsp;
-                ${latest} ${unread} ${approval_link} ${delete_link} ${nuke_link}<br>${firstwords}</div>`
-            })
-        }
-        else formatted = []
-
-        return formatted.join('')
     }
 
     function redirect(redirect_to, code=303) {
