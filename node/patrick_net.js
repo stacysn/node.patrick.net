@@ -1612,6 +1612,25 @@ function contextual_link(c, current_user, url, ip) { // a link in the comment he
     else return ''
 }
 
+function page(page, order) { // tell homepage, search, userpage, topic which page we are on
+
+    let curpage = Math.floor(page) ? Math.floor(page) : 1
+    let slimit  = (curpage - 1) * 20 + ', 20' // sql limit for pagination of results.
+
+    let orders = { // maps order parm to a posts table column name to order by
+        'active'   : 'post_modified',
+        'comments' : 'post_comments',
+        'likes'    : 'cast(post_likes as signed) - cast(post_dislikes as signed)',
+        'new'      : 'post_date',
+    }
+
+    order = orders[order] ? order : 'active'
+
+    let order_by = 'order by ' + orders[order] + ' desc'
+
+    return [curpage, slimit, order, order_by]
+}
+
 async function render(state) { /////////////////////////////////////////
 
     var pages = {
@@ -2211,7 +2230,7 @@ async function render(state) { /////////////////////////////////////////
 
             let current_user_id = state.current_user ? state.current_user.user_id : 0
 
-            let [curpage, slimit, order, order_by] = page()
+            let [curpage, slimit, order, order_by] = page(_GET('page'), _GET('order'))
 
             // left joins to also get each post's viewing and voting data for the current user if there is one
             let sql = `select sql_calc_found_rows * from posts
@@ -2643,7 +2662,7 @@ async function render(state) { /////////////////////////////////////////
 
             if (!s) return die('You searched for nothing. It was found.')
 
-            let [curpage, slimit, order, order_by] = page()
+            let [curpage, slimit, order, order_by] = page(_GET('page'), _GET('order'))
 
             // These match() requests require the existence of fulltext index:
             //      create fulltext index post_title_content_index on posts (post_title, post_content)
@@ -2694,7 +2713,7 @@ async function render(state) { /////////////////////////////////////////
 
             let user_id = state.current_user ? state.current_user.user_id : 0
             
-            let [curpage, slimit, order, order_by] = page()
+            let [curpage, slimit, order, order_by] = page(_GET('page'), _GET('order'))
 
             let sql = `select sql_calc_found_rows * from posts
                        left join postviews on postview_post_id=post_id and postview_user_id= ?
@@ -2862,7 +2881,7 @@ async function render(state) { /////////////////////////////////////////
         user : async function() {
 
             let current_user_id = state.current_user ? state.current_user.user_id : 0
-            let [curpage, slimit, order, order_by] = page()
+            let [curpage, slimit, order, order_by] = page(_GET('page'), _GET('order'))
             let user_name = decodeURIComponent(segments(state.req.url)[2]).replace(/[^\w._ -]/g, '') // like /user/Patrick
             let u = await get_row(`select * from users where user_name=?`, [user_name], state)
 
@@ -3372,24 +3391,6 @@ async function render(state) { /////////////////////////////////////////
         ] // do not use 'secure' parm with cookie or will be unable to test login in dev, bc dev is http only
 
         send(200, headers, content)
-    }
-
-    function page() { // tell homepage, search, userpage, topic which page we are on
-
-        let curpage = Math.floor(_GET('page')) ? Math.floor(_GET('page')) : 1
-        let slimit  = (curpage - 1) * 20 + ', 20' // sql limit for pagination of results.
-
-        let orders = { // maps _GET('order') parm to a posts table column name to order by
-            'active'   : 'post_modified',
-            'comments' : 'post_comments',
-            'likes'    : 'cast(post_likes as signed) - cast(post_dislikes as signed)',
-            'new'      : 'post_date',
-        }
-
-        let order = orders[_GET('order')] ? _GET('order') : 'active'
-        let order_by = 'order by ' + orders[order] + ' desc'
-
-        return [curpage, slimit, order, order_by]
     }
 
     async function post_mail(p) { // reasons to send out post emails: @user, user following post author, user following post topic
