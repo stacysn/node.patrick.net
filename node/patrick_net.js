@@ -1495,6 +1495,36 @@ function get_external_links(content) {
     return extlinks
 }
 
+function clean_upload_path(path, filename, current_user) {
+
+    if (!current_user) return ''
+
+    // allow only alphanum, dot, dash in image name to mitigate scripting tricks
+    // lowercase upload names so we don't get collisions on stupid case-insensitive Mac fs between eg "This.jpg" and "this.jpg"
+    filename = filename.replace(/[^\w\.-]/gi, '').toLowerCase()
+
+    var ext
+    var matches
+    if (matches = filename.match(/(\.\w{3,4})$/)) ext = matches[1] // include the dot, like .png
+
+    if (filename.length > 128 ) filename = md5(filename) + ext // filename was too long to be backed up, so hash it to shorten it
+
+    // prepend user_id to image so that we know who uploaded it, and so that other users cannot overwrite it
+    filename = `${current_user.user_id}_${filename}`
+
+    /* todo:
+    if (preg_match( '/\.(jpg|jpeg)$/i' , $newname, $matches) && file_exists('/usr/bin/jpegoptim') ) {
+        $output = shell_exec("/usr/bin/jpegoptim $newname 2>&1");  // minimize size of new jpeg
+    }
+
+    if (preg_match( '/\.(png)$/i' , $newname, $matches) && file_exists('/usr/bin/optipng') ) {
+        $output = shell_exec("/usr/bin/optipng $newname 2>&1");  // minimize size of new png
+    }
+    */
+
+    return filename
+}
+
 async function render(state) { /////////////////////////////////////////
 
     var pages = {
@@ -2697,7 +2727,7 @@ async function render(state) { /////////////////////////////////////////
 
                 if (!FS.existsSync(abs_path)) FS.mkdirSync(abs_path)
 
-                let clean_name = clean_upload_path(abs_path, files.image.name)
+                let clean_name = clean_upload_path(abs_path, files.image.name, state.current_user)
 
                 // note that files.image.path includes filename at end
                 FS.rename(files.image.path, `${abs_path}/${clean_name}`, async function (err) {
@@ -2899,36 +2929,6 @@ async function render(state) { /////////////////////////////////////////
 
         return await get_var(`select floor(count(*) / 40) * 40 as o from comments
                               where comment_post_id=? and comment_id < ? order by comment_id`, [post_id, comment_id], state)
-    }
-
-    function clean_upload_path(path, filename) {
-
-        if (!state.current_user) return ''
-
-        // allow only alphanum, dot, dash in image name to mitigate scripting tricks
-        // lowercase upload names so we don't get collisions on stupid case-insensitive Mac fs between eg "This.jpg" and "this.jpg"
-        filename = filename.replace(/[^\w\.-]/gi, '').toLowerCase()
-
-        var ext
-        var matches
-        if (matches = filename.match(/(\.\w{3,4})$/)) ext = matches[1] // include the dot, like .png
-
-        if (filename.length > 128 ) filename = md5(filename) + ext // filename was too long to be backed up, so hash it to shorten it
-
-        // prepend user_id to image so that we know who uploaded it, and so that other users cannot overwrite it
-        filename = `${state.current_user.user_id}_${filename}`
-
-        /* todo:
-        if (preg_match( '/\.(jpg|jpeg)$/i' , $newname, $matches) && file_exists('/usr/bin/jpegoptim') ) {
-            $output = shell_exec("/usr/bin/jpegoptim $newname 2>&1");  // minimize size of new jpeg
-        }
-
-        if (preg_match( '/\.(png)$/i' , $newname, $matches) && file_exists('/usr/bin/optipng') ) {
-            $output = shell_exec("/usr/bin/optipng $newname 2>&1");  // minimize size of new png
-        }
-        */
-
-        return filename
     }
 
     async function comment_mail(c) { // reasons to send out comment emails: @user summons, user watching post
