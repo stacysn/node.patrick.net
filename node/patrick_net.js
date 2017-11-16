@@ -1658,6 +1658,75 @@ function post_pagination(post_count, curpage, extra, url) {
     return links
 }
 
+function footer() {
+    return `
+    <p id='footer' >
+    <center>
+    <a href='/users'>users</a> &nbsp;
+    <a href='/about'>about</a> &nbsp;
+    <a href='/post/1302130/2017-01-28-patnet-improvement-suggestions'>suggestions</a> &nbsp;
+    <a href='https://github.com/killelea/node.${CONF.domain}'>source code</a> &nbsp;
+    <a href='mailto:${ CONF.admin_email }' >contact</a> &nbsp;
+    <br>
+    <a href='/topics'>topics</a> &nbsp;
+    <a href='/best'>best comments</a> &nbsp;
+    <a href='/comment_jail'>comment jail</a> &nbsp;
+    <a href='/old?years_ago=1'>old posts by year</a> &nbsp;
+    <br>
+    <a href='/post/1282720/2015-07-11-ten-reasons-it-s-a-terrible-time-to-buy-an-expensive-house'>10 reasons it's a terrible time to buy</a> &nbsp;
+    <br>
+    <a href='/post/1282721/2015-07-11-eight-groups-who-lie-about-the-housing-market'>8 groups who lie about the housing market</a> &nbsp;
+    <br>
+    <a href='/post/1282722/2015-07-11-37-bogus-arguments-about-housing'>37 bogus arguments about housing</a> &nbsp;
+    <br>
+    <a href='/post/1206569/free-bumper-stickers'>get a free bumper sticker:<br><img src='/images/bumpersticker.png' width=300 ></a>
+    <br>
+    <form method='get' action='/search' ><input name='s' type='text' placeholder='search...' size='20' ></form>
+    </center>
+    <div class='fixed'>
+        <a href='#' title='top of page' >top</a> &nbsp; <a href='#footer' title='bottom of page' >bottom</a> &nbsp; <a href='/' title='home page' >home</a>
+    </div>
+    <script>
+    function like(content) {
+        $.get( "/like?comment_id="+content.split("_")[1], function(data) { document.getElementById(content).innerHTML = data; });
+    }
+    function dislike(content) {
+        $.get( "/dislike?comment_id="+content.split("_")[1], function(data) { document.getElementById(content).innerHTML = data; });
+    }
+    function postlike(content) { // For whole post instead of just one comment.
+        $.get( "/like?post_id="+content.split("_")[1]+"_up", function(data) { document.getElementById(content).innerHTML = data; });
+    }
+    function postdislike(content) { // For whole post instead of just one comment.
+        $.get( "/dislike?post_id="+content.split("_")[1]+"_down", function(data) { document.getElementById(content).innerHTML = data; });
+    }
+    </script>`
+}
+
+function follow_topic_button(t, current_user, ip) { // t is the topic to follow, a \w+ string
+
+    let b = `<button type="button" class="btn btn-default btn-xs" title="get emails of new posts in ${t}" >follow ${t}</button>`
+
+    var unfollow_topic_link = `<span id='unfollow_topic_link' >following<sup>
+                         <a href='#' onclick="$.get('/follow_topic?topic=${t}&undo=1&${create_nonce_parms(ip)}&ajax=1',
+                         function() { document.getElementById('follow').innerHTML = document.getElementById('follow_topic_link').innerHTML }); return false" >x</a></sup></span>`
+
+    var follow_topic_link = `<span id='follow_topic_link' >
+                       <a href='#' title='get emails of new posts in ${t}'
+                       onclick="$.get('/follow_topic?topic=${t}&${create_nonce_parms(ip)}&ajax=1',
+                       function() { document.getElementById('follow').innerHTML = document.getElementById('unfollow_topic_link').innerHTML }); return false" >${b}</a></span>`
+
+    if (current_user
+     && current_user.topics
+     && current_user.topics.indexOf(t) !== -1) {
+        var follow = `<span id='follow' >${unfollow_topic_link}</span>`
+    }
+    else {
+        var follow = `<span id='follow' >${follow_topic_link}</span>`
+    }
+
+    return `<span style='display: none;' > ${follow_topic_link} ${unfollow_topic_link} </span> ${follow}`
+}
+
 async function render(state) { /////////////////////////////////////////
 
     var pages = {
@@ -2211,7 +2280,7 @@ async function render(state) { /////////////////////////////////////////
             }
 
             // either way, output follow button with right state and update this user's follow count
-            ajax ? send_html(200, follow_topic_button(topic)) : die('Follow status updated')
+            ajax ? send_html(200, follow_topic_button(topic, state.current_user, state.ip)) : die('Follow status updated')
         },
 
         follow_user : async function() { // get or turn off emails of a user's new posts; can be called as ajax or full page
@@ -2758,7 +2827,7 @@ async function render(state) { /////////////////////////////////////////
             let content = html(
                 midpage(
                     h1('#' + topic),
-                    follow_topic_button(topic),
+                    follow_topic_button(topic, state.current_user, state.ip),
                     moderator_announcement,
                     tabs(order, `&topic=${topic}`, path),
                     post_list(state.posts, state.ip, state.req.url, state.current_user),
@@ -3161,75 +3230,6 @@ async function render(state) { /////////////////////////////////////////
         )
 
         send_html(200, content)
-    }
-
-    function follow_topic_button(t) { // t is the topic to follow, a \w+ string
-
-        let b = `<button type="button" class="btn btn-default btn-xs" title="get emails of new posts in ${t}" >follow ${t}</button>`
-
-        var unfollow_topic_link = `<span id='unfollow_topic_link' >following<sup>
-                             <a href='#' onclick="$.get('/follow_topic?topic=${t}&undo=1&${create_nonce_parms(state.ip)}&ajax=1',
-                             function() { document.getElementById('follow').innerHTML = document.getElementById('follow_topic_link').innerHTML }); return false" >x</a></sup></span>`
-
-        var follow_topic_link = `<span id='follow_topic_link' >
-                           <a href='#' title='get emails of new posts in ${t}'
-                           onclick="$.get('/follow_topic?topic=${t}&${create_nonce_parms(state.ip)}&ajax=1',
-                           function() { document.getElementById('follow').innerHTML = document.getElementById('unfollow_topic_link').innerHTML }); return false" >${b}</a></span>`
-
-        if (state.current_user
-         && state.current_user.topics
-         && state.current_user.topics.indexOf(t) !== -1) {
-            var follow = `<span id='follow' >${unfollow_topic_link}</span>`
-        }
-        else {
-            var follow = `<span id='follow' >${follow_topic_link}</span>`
-        }
-
-        return `<span style='display: none;' > ${follow_topic_link} ${unfollow_topic_link} </span> ${follow}`
-    }
-
-    function footer() {
-        return `
-        <p id='footer' >
-        <center>
-        <a href='/users'>users</a> &nbsp;
-        <a href='/about'>about</a> &nbsp;
-        <a href='/post/1302130/2017-01-28-patnet-improvement-suggestions'>suggestions</a> &nbsp;
-        <a href='https://github.com/killelea/node.${CONF.domain}'>source code</a> &nbsp;
-        <a href='mailto:${ CONF.admin_email }' >contact</a> &nbsp;
-        <br>
-        <a href='/topics'>topics</a> &nbsp;
-        <a href='/best'>best comments</a> &nbsp;
-        <a href='/comment_jail'>comment jail</a> &nbsp;
-        <a href='/old?years_ago=1'>old posts by year</a> &nbsp;
-        <br>
-        <a href='/post/1282720/2015-07-11-ten-reasons-it-s-a-terrible-time-to-buy-an-expensive-house'>10 reasons it's a terrible time to buy</a> &nbsp;
-        <br>
-        <a href='/post/1282721/2015-07-11-eight-groups-who-lie-about-the-housing-market'>8 groups who lie about the housing market</a> &nbsp;
-        <br>
-        <a href='/post/1282722/2015-07-11-37-bogus-arguments-about-housing'>37 bogus arguments about housing</a> &nbsp;
-        <br>
-        <a href='/post/1206569/free-bumper-stickers'>get a free bumper sticker:<br><img src='/images/bumpersticker.png' width=300 ></a>
-        <br>
-        <form method='get' action='/search' ><input name='s' type='text' placeholder='search...' size='20' ></form>
-        </center>
-        <div class='fixed'>
-            <a href='#' title='top of page' >top</a> &nbsp; <a href='#footer' title='bottom of page' >bottom</a> &nbsp; <a href='/' title='home page' >home</a>
-        </div>
-        <script>
-        function like(content) {
-            $.get( "/like?comment_id="+content.split("_")[1], function(data) { document.getElementById(content).innerHTML = data; });
-        }
-        function dislike(content) {
-            $.get( "/dislike?comment_id="+content.split("_")[1], function(data) { document.getElementById(content).innerHTML = data; });
-        }
-        function postlike(content) { // For whole post instead of just one comment.
-            $.get( "/like?post_id="+content.split("_")[1]+"_up", function(data) { document.getElementById(content).innerHTML = data; });
-        }
-        function postdislike(content) { // For whole post instead of just one comment.
-            $.get( "/dislike?post_id="+content.split("_")[1]+"_down", function(data) { document.getElementById(content).innerHTML = data; });
-        }
-        </script>`
     }
 
     function _GET(parm) { // given a string, return the GET parameter by that name
