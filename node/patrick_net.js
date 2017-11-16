@@ -1748,6 +1748,16 @@ function header(header_data, post, page, current_user, login_failed_email, url) 
         </div>`
 }
 
+function comment_search_box() {
+    return `<form name='searchform' action='/comments' method='get' > 
+      <fieldset> 
+      <input type='text'   name='s'      value='' size='17' /> 
+      <input type='hidden' name='offset' value='0' /> 
+      <input type='submit'               value='Search comments &raquo;' />  
+      </fieldset> 
+    </form><p>`
+}
+
 async function render(state) { /////////////////////////////////////////
 
     var pages = {
@@ -3232,16 +3242,6 @@ async function render(state) { /////////////////////////////////////////
                 .join('') : '<b>no comments found</b>')
         ret = ret + `</div>`
         return ret
-    }
-
-    function comment_search_box() {
-        return `<form name='searchform' action='/comments' method='get' > 
-          <fieldset> 
-          <input type='text'   name='s'      value='' size='17' /> 
-          <input type='hidden' name='offset' value='0' /> 
-          <input type='submit'               value='Search comments &raquo;' />  
-          </fieldset> 
-        </form><p>`
     }
 
     function die(message) {
