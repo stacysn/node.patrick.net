@@ -2007,7 +2007,7 @@ async function render(state) { /////////////////////////////////////////
             let content = html(
                 midpage(
                     m,
-                    comment_list()
+                    comment_list(state.comments)
                 )
             )
 
@@ -2030,7 +2030,7 @@ async function render(state) { /////////////////////////////////////////
                 midpage(
                     h1('Uncivil Comment Jail'),
                     'These comments were marked as uncivil. Patrick will review them and liberate comments which do not deserve to be here. You can edit your comment here to make it more civil and get it out of jail after the edits are reviewed. Comments not freed within 30 days will be deleted.',
-                    comment_list()
+                    comment_list(state.comments)
                 )
             )
 
@@ -2050,7 +2050,7 @@ async function render(state) { /////////////////////////////////////////
             let content = html(
                 midpage(
                     h1('comment moderation'),
-                    comment_list()
+                    comment_list(state.comments)
                 )
             )
 
@@ -2087,7 +2087,7 @@ async function render(state) { /////////////////////////////////////////
                 midpage(
                     h1(message),
                     comment_pagination(state.comments, state.req.url),
-                    comment_list(),
+                    comment_list(state.comments),
                     comment_search_box()
                 )
             )
@@ -2655,7 +2655,7 @@ async function render(state) { /////////////////////////////////////////
                     topic_nav(state.post),
                     post(state.post, state.ip, state.current_user),
                     comment_pagination(state.comments, state.req.url),
-                    comment_list(), // mysql offset is greatest item number to ignore, next item is first returned
+                    comment_list(state.comments), // mysql offset is greatest item number to ignore, next item is first returned
                     comment_pagination(state.comments, state.req.url),
                     comment_box(state.post, state.current_user, state.ip)
                 )
