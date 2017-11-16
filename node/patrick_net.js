@@ -3204,8 +3204,8 @@ async function render(state) { /////////////////////////////////////////
     function comment_list(comments) { // format one page of comments
         let ret = `<div id='comment_list' >`
         ret = ret +
-            (state.comments.length ? state.comments.map(item => {
-                return format_comment(item, state.current_user, state.ip, state.req, state.comments, _GET('offset')) })
+            (comments.length ? comments.map(item => {
+                return format_comment(item, state.current_user, state.ip, state.req, comments, _GET('offset')) })
                 .join('') : '<b>no comments found</b>')
         ret = ret + `</div>`
         return ret
