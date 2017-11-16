@@ -1587,7 +1587,8 @@ async function render(state) { /////////////////////////////////////////
                 state.comment = await get_row('select * from comments left join users on comment_author=user_id where comment_id = ?',
                                               [comment_id], state)
 
-                send_html(200, JSON.stringify({ err: false, content: format_comment(state.comment) })) // send html fragment
+                send_html(200, JSON.stringify({ err: false, content: format_comment(state.comment, state.current_user, state.ip, state.req, state.comments)
+                    })) // send html fragment
 
                 comment_mail(state.comment)
 
@@ -3005,19 +3006,19 @@ async function render(state) { /////////////////////////////////////////
         return user_id
     }
 
-    function format_comment(c) {
+    function format_comment(c, current_user, ip, req, comments) {
 
-        var utz = state.current_user ? state.current_user.user_timezone : 'America/Los_Angeles'
+        var utz = current_user ? current_user.user_timezone : 'America/Los_Angeles'
 
         var comment_dislikes = intval(c.comment_dislikes)
         var comment_likes    = intval(c.comment_likes)
         var date_link        = get_permalink(c, utz)
-        var del              = get_del_link(c, state.current_user, state.ip)
-        var edit             = get_edit_link(c, state.current_user, state.ip)
-        var nuke             = get_nuke_link(c, state.current_user, state.ip, state.req)
+        var del              = get_del_link(c, current_user, ip)
+        var edit             = get_edit_link(c, current_user, ip)
+        var nuke             = get_nuke_link(c, current_user, ip, req)
         var icon             = render_user_icon(c, 0.4, `'align='left' hspace='5' vspace='2'`) // scale image down
         var u                = c.user_name ? `<a href='/user/${c.user_name}'>${c.user_name}</a>` : 'anonymous'
-        var mute             = `<a href='#' onclick="if (confirm('Really ignore ${c.user_name}?')) { $.get('/ignore?other_id=${ c.user_id }&${create_nonce_parms(state.ip)}', function() { $('#comment-${ c.comment_id }').remove() }); return false}; return false" title='ignore ${c.user_name}' >ignore (${c.user_bannedby})</a>`
+        var mute             = `<a href='#' onclick="if (confirm('Really ignore ${c.user_name}?')) { $.get('/ignore?other_id=${ c.user_id }&${create_nonce_parms(ip)}', function() { $('#comment-${ c.comment_id }').remove() }); return false}; return false" title='ignore ${c.user_name}' >ignore (${c.user_bannedby})</a>`
         var clink            = contextual_link(c)
 
         var liketext    = c.commentvote_up   ? 'you like this'    : '&#8593;&nbsp;like';
@@ -3026,9 +3027,9 @@ async function render(state) { /////////////////////////////////////////
         var like    = `<a href='#' id='like_${c.comment_id}' onclick="like('like_${c.comment_id}');return false">${liketext} (${c.comment_likes})</a>`
         var dislike = `<a href='#' id='dislike_${c.comment_id}' onclick="dislike('dislike_${c.comment_id}');return false">${disliketext} (${c.comment_dislikes})</a>`
 
-        if (state.current_user) {
-            if (state.current_user.relationships[c.user_id] &&
-                state.current_user.relationships[c.user_id].rel_i_ban) var hide = `style='display: none'`
+        if (current_user) {
+            if (current_user.relationships[c.user_id] &&
+                current_user.relationships[c.user_id].rel_i_ban) var hide = `style='display: none'`
             else var hide = ''
         }
 
@@ -3041,17 +3042,17 @@ async function render(state) { /////////////////////////////////////////
                       title="select some text then click this to quote" >quote</a>`
 
         // for the last comment in the whole result set (not just last on this page) add an id="last"
-        if (state.comments) { // state.comments may not be defined, for example when we just added one comment
-            var last = (c.row_number === state.comments.found_rows) ? `<span id='last'></span>` : ''
+        if (comments) { // comments may not be defined, for example when we just added one comment
+            var last = (c.row_number === comments.found_rows) ? `<span id='last'></span>` : ''
         }
         else var last = ''
 
-        if (!state.req.url) {
-            console.log('format_comment() was passed falsey state.req.url')
+        if (!req.url) {
+            console.log('format_comment() was passed falsey req.url')
             return
         }
 
-        c.comment_content = (c.comment_adhom_when && !URL.parse(state.req.url).pathname.match(/jail/)) ?
+        c.comment_content = (c.comment_adhom_when && !URL.parse(req.url).pathname.match(/jail/)) ?
                     `<a href='/comment_jail#comment-${c.comment_id}'>this comment has been jailed for incivility</a>` : c.comment_content
 
         return `${last}<div class="comment" id="comment-${c.comment_id}" ${hide} >
@@ -3074,7 +3075,8 @@ async function render(state) { /////////////////////////////////////////
     function comment_list(comments) { // format one page of comments
         let ret = `<div id='comment_list' >`
         ret = ret +
-            (state.comments.length ? state.comments.map(item => { return format_comment(item) }).join('') : '<b>no comments found</b>')
+            (state.comments.length ? state.comments.map(item => { return format_comment(item, state.current_user, state.ip, state.req, state.comments) })
+                .join('') : '<b>no comments found</b>')
         ret = ret + `</div>`
         return ret
     }
