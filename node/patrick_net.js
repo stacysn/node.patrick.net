@@ -1525,6 +1525,93 @@ function clean_upload_path(path, filename, current_user) {
     return filename
 }
 
+function format_comment(c, current_user, ip, req, comments, offset) {
+
+    var utz = current_user ? current_user.user_timezone : 'America/Los_Angeles'
+
+    var comment_dislikes = intval(c.comment_dislikes)
+    var comment_likes    = intval(c.comment_likes)
+    var date_link        = get_permalink(c, utz)
+    var del              = get_del_link(c, current_user, ip)
+    var edit             = get_edit_link(c, current_user, ip)
+    var nuke             = get_nuke_link(c, current_user, ip, req)
+    var icon             = render_user_icon(c, 0.4, `'align='left' hspace='5' vspace='2'`) // scale image down
+    var u                = c.user_name ? `<a href='/user/${c.user_name}'>${c.user_name}</a>` : 'anonymous'
+    var mute             = `<a href='#' onclick="if (confirm('Really ignore ${c.user_name}?')) { $.get('/ignore?other_id=${ c.user_id }&${create_nonce_parms(ip)}', function() { $('#comment-${ c.comment_id }').remove() }); return false}; return false" title='ignore ${c.user_name}' >ignore (${c.user_bannedby})</a>`
+    var clink            = contextual_link(c, current_user, req.url, ip)
+
+    var liketext    = c.commentvote_up   ? 'you like this'    : '&#8593;&nbsp;like';
+    var disliketext = c.commentvote_down ? 'you dislike this' : '&#8595;&nbsp;dislike';
+
+    var like    = `<a href='#' id='like_${c.comment_id}' onclick="like('like_${c.comment_id}');return false">${liketext} (${c.comment_likes})</a>`
+    var dislike = `<a href='#' id='dislike_${c.comment_id}' onclick="dislike('dislike_${c.comment_id}');return false">${disliketext} (${c.comment_dislikes})</a>`
+
+    if (current_user) {
+        if (current_user.relationships[c.user_id] &&
+            current_user.relationships[c.user_id].rel_i_ban) var hide = `style='display: none'`
+        else var hide = ''
+    }
+
+    c.user_name = c.user_name || 'anonymous' // so we don't display 'null' in case the comment is anonymous
+
+    var quote = `<a href="#commentform"
+                  onclick="addquote('${c.comment_post_id}', '${offset}', '${c.comment_id}', '${c.user_name}'); return false;"
+                  title="select some text then click this to quote" >quote</a>`
+
+    // for the last comment in the whole result set (not just last on this page) add an id="last"
+    if (comments) { // comments may not be defined, for example when we just added one comment
+        var last = (c.row_number === comments.found_rows) ? `<span id='last'></span>` : ''
+    }
+    else var last = ''
+
+    if (!req.url) {
+        console.log('format_comment() was passed falsey req.url')
+        return
+    }
+
+    c.comment_content = (c.comment_adhom_when && !URL.parse(req.url).pathname.match(/jail/)) ?
+                `<a href='/comment_jail#comment-${c.comment_id}'>this comment has been jailed for incivility</a>` : c.comment_content
+
+    return `${last}<div class="comment" id="comment-${c.comment_id}" ${hide} >
+    <font size=-1 >
+        ${c.row_number || ''}
+        ${icon}
+        ${u} &nbsp;
+        ${mute} &nbsp;
+        ${date_link} &nbsp;
+        ${like} &nbsp;
+        ${dislike} &nbsp;
+        ${clink} &nbsp;
+        ${quote} &nbsp;
+        ${edit} &nbsp;
+        ${del} &nbsp;
+        ${nuke} &nbsp;
+    </font><p><div id='comment-${c.comment_id}-text'>${ c.comment_content }</div></div>`
+}
+
+function contextual_link(c, current_user, url, ip) { // a link in the comment header that varies by comment context, jail, moderation, etc
+
+    if (!current_user) return ''
+
+    if (!url) {
+        console.log('contextual_link() was passed falsey url')
+        return
+    }
+
+    if (URL.parse(url).pathname.match(/jail/) && (current_user.user_level === 4)) {
+         return `<a href='/liberate?comment_id=${c.comment_id}' >liberate</a>`
+    }
+    
+    if (URL.parse(url).pathname.match(/comment_moderation/) && (current_user.user_level === 4)) {
+        return `<a href='#' onclick="$.get('/approve_comment?comment_id=${ c.comment_id }&${create_nonce_parms(ip)}', function() { $('#comment-${ c.comment_id }').remove() }); return false">approve</a>`
+    }
+
+    if (current_user.user_pbias >= 3 || current_user.user_id === 1) {
+        return `<a href='#' onclick="if (confirm('Really mark as uncivil?')) { $.get('/uncivil?c=${ c.comment_id }&${create_nonce_parms(ip)}', function() { $('#comment-${ c.comment_id }').remove() }); return false}" title='attacks person, not point' >uncivil</a>`
+    }
+    else return ''
+}
+
 async function render(state) { /////////////////////////////////////////
 
     var pages = {
@@ -1587,8 +1674,9 @@ async function render(state) { /////////////////////////////////////////
                 state.comment = await get_row('select * from comments left join users on comment_author=user_id where comment_id = ?',
                                               [comment_id], state)
 
-                send_html(200, JSON.stringify({ err: false, content: format_comment(state.comment, state.current_user, state.ip, state.req, state.comments)
-                    })) // send html fragment
+                send_html(200, JSON.stringify(
+                    { err: false, content: format_comment(state.comment, state.current_user, state.ip, state.req, state.comments, _GET('offset')) }))
+                    // send html fragment
 
                 comment_mail(state.comment)
 
@@ -3006,76 +3094,11 @@ async function render(state) { /////////////////////////////////////////
         return user_id
     }
 
-    function format_comment(c, current_user, ip, req, comments) {
-
-        var utz = current_user ? current_user.user_timezone : 'America/Los_Angeles'
-
-        var comment_dislikes = intval(c.comment_dislikes)
-        var comment_likes    = intval(c.comment_likes)
-        var date_link        = get_permalink(c, utz)
-        var del              = get_del_link(c, current_user, ip)
-        var edit             = get_edit_link(c, current_user, ip)
-        var nuke             = get_nuke_link(c, current_user, ip, req)
-        var icon             = render_user_icon(c, 0.4, `'align='left' hspace='5' vspace='2'`) // scale image down
-        var u                = c.user_name ? `<a href='/user/${c.user_name}'>${c.user_name}</a>` : 'anonymous'
-        var mute             = `<a href='#' onclick="if (confirm('Really ignore ${c.user_name}?')) { $.get('/ignore?other_id=${ c.user_id }&${create_nonce_parms(ip)}', function() { $('#comment-${ c.comment_id }').remove() }); return false}; return false" title='ignore ${c.user_name}' >ignore (${c.user_bannedby})</a>`
-        var clink            = contextual_link(c)
-
-        var liketext    = c.commentvote_up   ? 'you like this'    : '&#8593;&nbsp;like';
-        var disliketext = c.commentvote_down ? 'you dislike this' : '&#8595;&nbsp;dislike';
-
-        var like    = `<a href='#' id='like_${c.comment_id}' onclick="like('like_${c.comment_id}');return false">${liketext} (${c.comment_likes})</a>`
-        var dislike = `<a href='#' id='dislike_${c.comment_id}' onclick="dislike('dislike_${c.comment_id}');return false">${disliketext} (${c.comment_dislikes})</a>`
-
-        if (current_user) {
-            if (current_user.relationships[c.user_id] &&
-                current_user.relationships[c.user_id].rel_i_ban) var hide = `style='display: none'`
-            else var hide = ''
-        }
-
-        var offset = intval(_GET('offset'))
-
-        c.user_name = c.user_name || 'anonymous' // so we don't display 'null' in case the comment is anonymous
-
-        var quote = `<a href="#commentform"
-                      onclick="addquote('${c.comment_post_id}', '${offset}', '${c.comment_id}', '${c.user_name}'); return false;"
-                      title="select some text then click this to quote" >quote</a>`
-
-        // for the last comment in the whole result set (not just last on this page) add an id="last"
-        if (comments) { // comments may not be defined, for example when we just added one comment
-            var last = (c.row_number === comments.found_rows) ? `<span id='last'></span>` : ''
-        }
-        else var last = ''
-
-        if (!req.url) {
-            console.log('format_comment() was passed falsey req.url')
-            return
-        }
-
-        c.comment_content = (c.comment_adhom_when && !URL.parse(req.url).pathname.match(/jail/)) ?
-                    `<a href='/comment_jail#comment-${c.comment_id}'>this comment has been jailed for incivility</a>` : c.comment_content
-
-        return `${last}<div class="comment" id="comment-${c.comment_id}" ${hide} >
-        <font size=-1 >
-            ${c.row_number || ''}
-            ${icon}
-            ${u} &nbsp;
-            ${mute} &nbsp;
-            ${date_link} &nbsp;
-            ${like} &nbsp;
-            ${dislike} &nbsp;
-            ${clink} &nbsp;
-            ${quote} &nbsp;
-            ${edit} &nbsp;
-            ${del} &nbsp;
-            ${nuke} &nbsp;
-        </font><p><div id='comment-${c.comment_id}-text'>${ c.comment_content }</div></div>`
-    }
-
     function comment_list(comments) { // format one page of comments
         let ret = `<div id='comment_list' >`
         ret = ret +
-            (state.comments.length ? state.comments.map(item => { return format_comment(item, state.current_user, state.ip, state.req, state.comments) })
+            (state.comments.length ? state.comments.map(item => {
+                return format_comment(item, state.current_user, state.ip, state.req, state.comments, _GET('offset')) })
                 .join('') : '<b>no comments found</b>')
         ret = ret + `</div>`
         return ret
@@ -3089,29 +3112,6 @@ async function render(state) { /////////////////////////////////////////
           <input type='submit'               value='Search comments &raquo;' />  
           </fieldset> 
         </form><p>`
-    }
-
-    function contextual_link(c) { // a link in the comment header that varies by comment context, jail, moderation, etc
-
-        if (!state.current_user) return ''
-
-        if (!state.req.url) {
-            console.log('contextual_link() was passed falsey state.req.url')
-            return
-        }
-
-        if (URL.parse(state.req.url).pathname.match(/jail/) && (state.current_user.user_level === 4)) {
-             return `<a href='/liberate?comment_id=${c.comment_id}' >liberate</a>`
-        }
-        
-        if (URL.parse(state.req.url).pathname.match(/comment_moderation/) && (state.current_user.user_level === 4)) {
-            return `<a href='#' onclick="$.get('/approve_comment?comment_id=${ c.comment_id }&${create_nonce_parms(state.ip)}', function() { $('#comment-${ c.comment_id }').remove() }); return false">approve</a>`
-        }
-
-        if (state.current_user.user_pbias >= 3 || state.current_user.user_id === 1) {
-            return `<a href='#' onclick="if (confirm('Really mark as uncivil?')) { $.get('/uncivil?c=${ c.comment_id }&${create_nonce_parms(state.ip)}', function() { $('#comment-${ c.comment_id }').remove() }); return false}" title='attacks person, not point' >uncivil</a>`
-        }
-        else return ''
     }
 
     function die(message) {
