@@ -1631,6 +1631,10 @@ function page(page, order) { // tell homepage, search, userpage, topic which pag
     return [curpage, slimit, order, order_by]
 }
 
+function h1(message) {
+    return `<h1 style='display: inline;' >${ message }</h1>`
+}
+
 async function render(state) { /////////////////////////////////////////
 
     var pages = {
@@ -1853,11 +1857,10 @@ async function render(state) { /////////////////////////////////////////
             // left joins to also get each post's viewing and voting data for the current user if there is one
             let sql = `update postviews set postview_want_email=0 where postview_user_id = ?`
             await query(sql, [current_user_id], state)
-            state.message = `All email of new post comments turned off`
 
             var content = html(
                 midpage(
-                    h1()
+                    h1(`All email of new post comments turned off`)
                 )
             )
 
@@ -1931,11 +1934,9 @@ async function render(state) { /////////////////////////////////////////
             let offset = 0
             state.comments = state.comments.map(comment => { comment.row_number = ++offset; return comment })
 
-            state.message = 'Uncivil Comment Jail'
-
             let content = html(
                 midpage(
-                    h1(),
+                    h1('Uncivil Comment Jail'),
                     'These comments were marked as uncivil. Patrick will review them and liberate comments which do not deserve to be here. You can edit your comment here to make it more civil and get it out of jail after the edits are reviewed. Comments not freed within 30 days will be deleted.',
                     comment_list()
                 )
@@ -1954,11 +1955,9 @@ async function render(state) { /////////////////////////////////////////
             let offset = 0
             state.comments = state.comments.map(comment => { comment.row_number = ++offset; return comment })
 
-            state.message = 'comment moderation'
-
             let content = html(
                 midpage(
-                    h1(),
+                    h1('comment moderation'),
                     comment_list()
                 )
             )
@@ -1970,21 +1969,22 @@ async function render(state) { /////////////////////////////////////////
 
             let offset  = intval(_GET('offset'))
             let results = null
+            let message = ''
 
             if (_GET('a')) {      // a is author name
                 let a         = decodeURIComponent(_GET('a').replace(/[^\w %]/, ''))
                 results       = await get_comment_list_by_author(a, offset, 40)
-                state.message = `<h2>${a}'s comments</h2>`
+                message = `<h2>${a}'s comments</h2>`
             }
             else if (_GET('n')) { // n is number of comments per author, so we can see all comments by one-comment authors, for example
                 let n         = intval(_GET('n'))
                 results       = await get_comment_list_by_number(n, offset, 40)
-                state.message = `<h2>comments by users with ${n} comments</h2>`
+                message = `<h2>comments by users with ${n} comments</h2>`
             }
             else if (_GET('s')) { // comment search
                 let s         = _GET('s').replace(/[^\w %]/, '')
                 results       = await get_comment_list_by_search(s, offset, 40)
-                state.message = `<h2>comments that contain "${s}"</h2>`
+                message = `<h2>comments that contain "${s}"</h2>`
             }
             else return send_html(200, `invalid request`)
 
@@ -1993,7 +1993,7 @@ async function render(state) { /////////////////////////////////////////
 
             let content = html(
                 midpage(
-                    h1(),
+                    h1(message),
                     comment_pagination(state.comments, state.req.url),
                     comment_list(),
                     comment_search_box()
@@ -2296,11 +2296,10 @@ async function render(state) { /////////////////////////////////////////
                 login(state, email, password)
             }
             else {
-                state.message = `Darn, that key has already been used. Please try 'forgot password' if you need to log in.`
 
                 let content = html(
                     midpage(
-                        h1(),
+                        h1(`Darn, that key has already been used. Please try 'forgot password' if you need to log in.`),
                         state.text || ''
                     )
                 )
@@ -2499,11 +2498,10 @@ async function render(state) { /////////////////////////////////////////
 
             state.posts = await query(sql, [user_id, user_id], state)
             let s = (years_ago === 1) ? '' : 's'
-            state.message = `Posts from ${years_ago} year${s} ago`
             
             let content = html(
                 midpage(
-                    h1(),
+                    h1(`Posts from ${years_ago} year${s} ago`),
                     post_list(state.posts, state.ip, state.req.url, state.current_user),
                 )
             )
@@ -2608,11 +2606,11 @@ async function render(state) { /////////////////////////////////////////
 
             let post_data = await collect_post_data_and_trim(state)
 
-            state.message = await send_login_link(state, post_data)
+            let message = await send_login_link(state, post_data)
 
             let content = html(
                 midpage(
-                    h1(),
+                    h1(message),
                     state.text || ''
                 )
             )
@@ -2623,29 +2621,30 @@ async function render(state) { /////////////////////////////////////////
         registration : async function() {
 
             let post_data = await collect_post_data_and_trim(state)
+            let message = ''
 
-            if (/\W/.test(post_data.user_name))     state.message = 'Please go back and enter username consisting only of letters'
-            if (!valid_email(post_data.user_email)) state.message = 'Please go back and enter a valid email'
+            if (/\W/.test(post_data.user_name))     message = 'Please go back and enter username consisting only of letters'
+            if (!valid_email(post_data.user_email)) message = 'Please go back and enter a valid email'
 
-            if (!state.message) { // no error yet
+            if (!message) { // no error yet
 
                 if (await get_row('select * from users where user_email = ?', [post_data.user_email], state)) {
-                    state.message = `That email is already registered. Please use the "forgot password" link above.</a>`
+                    message = `That email is already registered. Please use the "forgot password" link above.</a>`
                 }
                 else {
                     if (await get_row('select * from users where user_name = ?', [post_data.user_name], state)) {
-                        state.message = `That user name is already registered. Please choose a different one.</a>`
+                        message = `That user name is already registered. Please choose a different one.</a>`
                     }
                     else {
                         await query('insert into users set user_registered=now(), ?', post_data, state)
-                        state.message = await send_login_link(state, post_data)
+                        message = await send_login_link(state, post_data)
                     }
                 }
             }
 
             let content = html(
                 midpage(
-                `<h2>${state.message}</h2>`,
+                `<h2>${message}</h2>`,
                 state.text || ''
                 )
             )
@@ -2673,13 +2672,12 @@ async function render(state) { /////////////////////////////////////////
 
             state.posts    = await query(sql, [], state)
             let found_rows = sql_calc_found_rows()
-            state.message  = `search results for "${s}"`
 
             let path = URL.parse(state.req.url).pathname // "pathNAME" is url path without ? parms, unlike "path"
 
             let content = html(
                 midpage(
-                    h1(),
+                    h1(`search results for "${s}"`),
                     post_pagination(found_rows, curpage, `&s=${us}&order=${order}`),
                     tabs(order, `&s=${us}`, path),
                     post_list(state.posts, state.ip, state.req.url, state.current_user),
@@ -2722,7 +2720,6 @@ async function render(state) { /////////////////////////////////////////
                        where post_topic = ? and post_approved=1 ${order_by} limit ${slimit}`
 
             state.posts = await query(sql, [user_id, user_id, topic], state)
-            state.message = '#' + topic
             
             var row = await get_row('select * from users, topics where topic=? and topic_moderator=user_id', [topic], state)
 
@@ -2737,7 +2734,7 @@ async function render(state) { /////////////////////////////////////////
 
             let content = html(
                 midpage(
-                    h1(),
+                    h1('#' + topic),
                     follow_topic_button(topic),
                     moderator_announcement,
                     tabs(order, `&topic=${topic}`, path),
@@ -2755,11 +2752,9 @@ async function render(state) { /////////////////////////////////////////
             state.topics = await query(`select post_topic, count(*) as c from posts
                                         where length(post_topic) > 0 group by post_topic having c >=3 order by c desc`, null, state)
 
-            state.message = 'Topics'
-        
             let content = html(
                 midpage(
-                    h1(),
+                    h1('Topics'),
                     topic_list(state.topics)
                 )
             )
@@ -2921,9 +2916,10 @@ async function render(state) { /////////////////////////////////////////
             let d  = _GET('d')  ? _GET('d').replace(/[^adesc]/g, '').substring(0,4)  : 'desc' // asc or desc
             let ob = _GET('ob') ? _GET('ob').replace(/[^a-z_]/g, '').substring(0,32) : 'user_comments' // order by
             let offset = intval(_GET('offset')) || 0
+            let message = ''
 
             if ( _GET('unrequited') ) {
-                state.message = `Unrequited Friendship Requests For ${state.current_user.user_name}`
+                message = `Unrequited Friendship Requests For ${state.current_user.user_name}`
 
                 // 1. Find all those IDs that asked to be friends with user_id.
                 await query('create temporary table unrequited select * from relationships where rel_other_id=? and rel_my_friend > 0',
@@ -2941,7 +2937,7 @@ async function render(state) { /////////////////////////////////////////
             else if ( _GET('followersof') ) {
                 let followersof = intval(_GET('followersof'))
 
-                state.message = 'Followers of ' + (await get_userrow(followersof)).user_name
+                message = 'Followers of ' + (await get_userrow(followersof)).user_name
 
                 state.users = await query(`select sql_calc_found_rows * from users
                     where user_id in (select rel_self_id from relationships where rel_other_id=? and rel_i_follow > 0)
@@ -2953,7 +2949,7 @@ async function render(state) { /////////////////////////////////////////
             else if ( _GET('following') ) {
                 let following = intval(_GET('following'))
 
-                state.message = 'Users ' + (await get_userrow(following)).user_name + ' is Following'
+                message = 'Users ' + (await get_userrow(following)).user_name + ' is Following'
 
                 state.users = await query(`select sql_calc_found_rows * from users where user_id in
                                           (select rel_other_id from relationships where rel_self_id=? and rel_i_follow > 0)
@@ -2962,7 +2958,7 @@ async function render(state) { /////////////////////////////////////////
             else if ( _GET('friendsof') ) {
                 let friendsof = intval(_GET('friendsof'))
 
-                state.message = 'Friends of ' + (await get_userrow(friendsof)).user_name
+                message = 'Friends of ' + (await get_userrow(friendsof)).user_name
 
                 state.users = await query(`select sql_calc_found_rows * from users where user_id in
                                           (select r1.rel_other_id from relationships as r1, relationships as r2 where
@@ -2980,13 +2976,13 @@ async function render(state) { /////////////////////////////////////////
                 let user_name = _GET('user_name').replace(/[^a-zA-Z0-9._ -]/).substring(0, 40)
                 user_name = user_name.replace('/_/', '\_') // bc _ is single-char wildcard in mysql matching.
 
-                state.message = `Users With Names Like '${user_name}'`
+                message = `Users With Names Like '${user_name}'`
 
                 state.users = await query(`select sql_calc_found_rows * from users where user_name like '%${user_name}%'
                                            order by ${ob} ${d} limit 40 offset ${offset}`, [ob, d], state)
             }
             else {
-                state.message = 'users'
+                message = 'users'
                 state.users   = await query(`select sql_calc_found_rows * from users order by ${ob} ${d} limit 40 offset ${offset}`, [], state)
             }
 
@@ -2995,7 +2991,7 @@ async function render(state) { /////////////////////////////////////////
 
             let content = html(
                 midpage(
-                    h1(),
+                    h1(message),
                     `<p><a href='${next_page}'>next page &raquo;</a><p>`,
                     render_user_list(state.users, _GET('d')),
                     `<hr><a href='${next_page}'>next page &raquo;</a>`
@@ -3135,11 +3131,9 @@ async function render(state) { /////////////////////////////////////////
 
     function die(message) {
 
-        state.message = message
-
         let content = html(
             midpage(
-                h1()
+                h1(message)
             )
         )
 
@@ -3270,10 +3264,6 @@ async function render(state) { /////////////////////////////////////////
         return await get_row('select * from users where user_id = ?', [user_id], state)
     }
 
-    function h1() {
-        return `<h1 style='display: inline;' >${ state.message }</h1>`
-    }
-
     function header() {
 
         var hashtag = ''
@@ -3367,11 +3357,10 @@ async function render(state) { /////////////////////////////////////////
                        order by post_modified desc limit 0, 20`
 
             state.posts   = await query(sql, [current_user_id, current_user_id], state)
-            state.message = `Your password is ${ password } and you are now logged in`
 
             var content = html(
                 midpage(
-                    h1()
+                    h1(`Your password is ${ password } and you are now logged in`)
                 )
             )
         }
