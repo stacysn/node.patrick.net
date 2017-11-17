@@ -1911,6 +1911,38 @@ async function get_moderator(topic, db) {
     return await get_var('select topic_moderator from topics where topic=?', [topic], db)
 }
 
+async function post_comment_list(post, url, current_user, db) {
+
+    let offset = (post.post_comments - 40 > 0) ? post.post_comments - 40 : 0 // If offset is not set, select the 40 most recent comments.
+
+    if (_GET(url, 'offset')) offset = intval(_GET(url, 'offset')) // But if offset is set, use that instead.
+
+    // if this gets too slow as user_uncivil_comments increases, try a left join, or just start deleting old uncivil comments
+    let user_id = current_user ? current_user.user_id : 0
+    let sql = `select sql_calc_found_rows * from comments
+               left join users on comment_author=user_id
+               left join commentvotes on (comment_id = commentvote_comment_id and commentvote_user_id = ?)
+               where comment_post_id = ? and comment_approved = 1
+               order by comment_date limit 40 offset ?`
+
+    let results = await query(sql, [user_id, post.post_id, offset], db)
+    let found_rows = await sql_calc_found_rows(db)
+
+    let topic_moderator = await get_moderator(post.post_topic, db)
+
+    // add in the comment row number to the result here for easier pagination info; would be better to do in mysql, but how?
+    // also add in topic_moderator so we can display del link
+    results = results.map(comment => {
+        comment.row_number = ++offset
+        comment.topic_moderator = topic_moderator
+        return comment
+    })
+
+    results.found_rows = found_rows // have to put this after map() above to retain it
+
+    return results
+}
+
 async function render(state) { /////////////////////////////////////////
 
     var pages = {
@@ -2818,7 +2850,7 @@ async function render(state) { /////////////////////////////////////////
 
             if (!state.post.post_approved && current_user_id !== 1) { await repair_referer(state.req, state.db); return die(`That post is waiting for moderation`) }
 
-            state.comments      = await post_comment_list(state.post) // pick up the comment list for this post
+            state.comments      = await post_comment_list(state.post, state.req.url, state.current_user, state.db) // pick up the comment list for this post
             state.post.watchers = await get_var(`select count(*) as c from postviews
                                                        where postview_post_id=? and postview_want_email=1`, [post_id], state.db)
 
@@ -3615,38 +3647,6 @@ async function render(state) { /////////////////////////////////////////
                 })
             }
         }
-    }
-
-    async function post_comment_list(post) {
-
-        let offset = (post.post_comments - 40 > 0) ? post.post_comments - 40 : 0 // If offset is not set, select the 40 most recent comments.
-
-        if (_GET(state.req.url, 'offset')) offset = intval(_GET(state.req.url, 'offset')) // But if offset is set, use that instead.
-
-        // if this gets too slow as user_uncivil_comments increases, try a left join, or just start deleting old uncivil comments
-        let user_id = state.current_user ? state.current_user.user_id : 0
-        let sql = `select sql_calc_found_rows * from comments
-                   left join users on comment_author=user_id
-                   left join commentvotes on (comment_id = commentvote_comment_id and commentvote_user_id = ?)
-                   where comment_post_id = ? and comment_approved = 1
-                   order by comment_date limit 40 offset ?`
-
-        let results = await query(sql, [user_id, post.post_id, offset], state.db)
-        let found_rows = await sql_calc_found_rows(state.db)
-
-        let topic_moderator = await get_moderator(post.post_topic, state.db)
-
-        // add in the comment row number to the result here for easier pagination info; would be better to do in mysql, but how?
-        // also add in topic_moderator so we can display del link
-        results = results.map(comment => {
-            comment.row_number = ++offset
-            comment.topic_moderator = topic_moderator
-            return comment
-        })
-
-        results.found_rows = found_rows // have to put this after map() above to retain it
-
-        return results
     }
 
     if (typeof pages[state.page] === 'function') { // hit the db iff the request is for a valid url
