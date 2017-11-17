@@ -57,7 +57,7 @@ function get_connection_from_pool(state) {
     return new Promise(function(resolve, reject) {
 
         if (LOCKS[state.ip]) {
-            setTimeout(() => { release_connection_to_pool(state.db, state.ip) }, 2000) // don't let lock last for more than two seconds
+            setTimeout(() => { release_connection_to_pool(state) }, 2000) // don't let lock last for more than two seconds
             console.trace()
             return reject('rate limit exceeded')
         }
@@ -76,9 +76,9 @@ function get_connection_from_pool(state) {
     })
 }
 
-function release_connection_to_pool(db, ip) {
-    db && db.release()
-    delete LOCKS[ip]
+function release_connection_to_pool(state) {
+    state.db && state.db.release()
+    delete LOCKS[state.ip]
 }
 
 async function block_countries(state) { // block entire countries like Russia because all comments from there are inevitably spam
@@ -2561,7 +2561,7 @@ async function render(state) { /////////////////////////////////////////
                 ['Set-Cookie'     , `${ CONF.pwcookie   }=_; Expires=${d}; Path=/`]
             ] // do not use 'secure' parm with cookie or will be unable to test login in dev, bc dev is http only
 
-            send(state.res, 200, headers, html)
+            send(200, headers, html)
         },
 
         new_post : async function() {
@@ -3399,7 +3399,7 @@ async function render(state) { /////////////////////////////////////////
             ['Set-Cookie'     , `${pwcookie};   Expires=${decade}; Path=/`]
         ] // do not use 'secure' parm with cookie or will be unable to test login in dev, bc dev is http only
 
-        send(state.res, 200, headers, content)
+        send(200, headers, content)
     }
 
     async function post_mail(p) { // reasons to send out post emails: @user, user following post author, user following post topic
@@ -3524,7 +3524,7 @@ async function render(state) { /////////////////////////////////////////
           'Expires'        : new Date().toUTCString()
         }
 
-        send(state.res, code, headers, message)
+        send(code, headers, message)
     }
 
     async function repair_referer() { // look at referer to a bad post; if it exist, call update_prev_next() on that
@@ -3579,10 +3579,10 @@ async function render(state) { /////////////////////////////////////////
         }
     }
 
-    function send(res, code, headers, content) {
-        res.writeHead(code, headers)
-        res.end(content)
-        release_connection_to_pool(state.db, state.ip)
+    function send(code, headers, content) {
+        state.res.writeHead(code, headers)
+        state.res.end(content)
+        release_connection_to_pool(state)
     }
 
     function send_html(code, html) {
@@ -3595,7 +3595,7 @@ async function render(state) { /////////////////////////////////////////
             'Expires'        : new Date().toUTCString()
         }
 
-        send(state.res, code, headers, html)
+        send(code, headers, html)
     }
 
     async function send_login_link(state, post_data) {
