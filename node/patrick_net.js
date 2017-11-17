@@ -1893,12 +1893,25 @@ async function repair_referer(req, db) { // look at referer to a bad post; if it
     }
 }
 
+function redirect(redirect_to, res, db, ip, code=303) { // put the code at the end; then if it isn't there we get a default
+
+    var message = `Redirecting to ${ redirect_to }`
+
+    var headers =  {
+      'Location'       : redirect_to,
+      'Content-Length' : message.length,
+      'Expires'        : new Date().toUTCString()
+    }
+
+    send(res, code, headers, message, db, ip)
+}
+
 async function render(state) { /////////////////////////////////////////
 
     var pages = {
 
         about : async function() {
-            redirect(`/post/${CONF.about_post_id}`)
+            redirect(`/post/${CONF.about_post_id}`, state.res, state.db, state.ip)
         },
 
         accept_comment : async function() { // insert new comment
@@ -2018,10 +2031,10 @@ async function render(state) { /////////////////////////////////////////
                 // now select the inserted row so that we pick up the comment_post_id
                 state.comment = await get_row('select * from comments where comment_id = ?', [comment_id], state.db)
 
-                if (state.comment.comment_adhom_when) redirect(`/comment_jail#comment-${comment_id}`)
+                if (state.comment.comment_adhom_when) redirect(`/comment_jail#comment-${comment_id}`, state.res, state.db, state.ip)
                 else {
                     let offset = await cid2offset(state.comment.comment_post_id, comment_id)
-                    redirect(`/post/${state.comment.comment_post_id}?offset=${offset}#comment-${comment_id}`)
+                    redirect(`/post/${state.comment.comment_post_id}?offset=${offset}#comment-${comment_id}`, state.res, state.db, state.ip)
                 }
             }
         },
@@ -2078,7 +2091,7 @@ async function render(state) { /////////////////////////////////////////
 
             var post_row = await get_post(p, state.db)
 
-            redirect(post2path(post_row))
+            redirect(post2path(post_row), state.res, state.db, state.ip)
         },
 
         approve_comment : async function() {
@@ -2495,7 +2508,7 @@ async function render(state) { /////////////////////////////////////////
 
             var p
 
-            if (p = intval(_GET(state.req.url, 'p'))) return redirect(`/post/${p}`, 301) // legacy redirect for cases like /?p=1216301
+            if (p = intval(_GET(state.req.url, 'p'))) return redirect(`/post/${p}`, state.res, state.db, state.ip, 301) // legacy redirect for cases like /?p=1216301
 
             let current_user_id = state.current_user ? state.current_user.user_id : 0
 
@@ -2748,7 +2761,7 @@ async function render(state) { /////////////////////////////////////////
             }
             catch(e) { console.log(e) } // try-catch for case where ip is already in nukes table somehow
 
-            redirect(state.req.headers.referer) 
+            redirect(state.req.headers.referer, state.res, state.db, state.ip) 
         },
 
         old : async function() {
@@ -2787,7 +2800,7 @@ async function render(state) { /////////////////////////////////////////
             var c
             if (c = _GET(state.req.url, 'c')) { // permalink to a comment
                 let offset = await cid2offset(post_id, c)
-                return redirect(`/post/${post_id}?offset=${offset}#comment-${c}`)
+                return redirect(`/post/${post_id}?offset=${offset}#comment-${c}`, state.res, state.db, state.ip)
             }
 
             state.post = await get_row(`select * from posts
@@ -2869,7 +2882,7 @@ async function render(state) { /////////////////////////////////////////
             let rand = await get_var(`select round(rand() * (select count(*) from posts)) as r`, [], state.db)
             let p    = await get_var(`select post_id from posts limit 1 offset ?`, [rand], state.db)
 
-            redirect(`/post/${p}`)
+            redirect(`/post/${p}`, state.res, state.db, state.ip)
         },
 
         recoveryemail : async function() {
@@ -2970,7 +2983,7 @@ async function render(state) { /////////////////////////////////////////
 
             let offset = await cid2offset(p, c)
             let post = await get_post(p, state.db)
-            redirect(`${post2path(post)}?offset=${offset}#comment-${c}`)
+            redirect(`${post2path(post)}?offset=${offset}#comment-${c}`, state.res, state.db, state.ip)
         },
 
         topic : async function() {
@@ -3075,7 +3088,7 @@ async function render(state) { /////////////////////////////////////////
                     else                                  return die(`Something went wrong with save`)
                  })
 
-            redirect('/edit_profile?updated=true')
+            redirect('/edit_profile?updated=true', state.res, state.db, state.ip)
         },
 
         upload : async function() {
@@ -3120,7 +3133,7 @@ async function render(state) { /////////////////////////////////////////
                         await query(`update users set user_icon_width  = ? where user_id = ?`, [dims[0],                     id], state.db)
                         await query(`update users set user_icon_height = ? where user_id = ?`, [dims[1],                     id], state.db)
 
-                        return redirect('/edit_profile')
+                        return redirect('/edit_profile', state.res, state.db, state.ip)
                     }
                     else { // uploading image link to post or comment text area
                         if (dims[0] > 600) {
@@ -3634,19 +3647,6 @@ async function render(state) { /////////////////////////////////////////
         results.found_rows = found_rows // have to put this after map() above to retain it
 
         return results
-    }
-
-    function redirect(redirect_to, code=303) {
-
-        var message = `Redirecting to ${ redirect_to }`
-
-        var headers =  {
-          'Location'       : redirect_to,
-          'Content-Length' : message.length,
-          'Expires'        : new Date().toUTCString()
-        }
-
-        send(state.res, code, headers, message, state.db, state.ip)
     }
 
     if (typeof pages[state.page] === 'function') { // hit the db iff the request is for a valid url
