@@ -1783,6 +1783,21 @@ async function user_topic_bans(user_id, db) {
                         where topicwatch_user_id=? and topicwatch_banned_until > now()`, [user_id], db)
 }
 
+async function update_prev_next(post_topic, post_id, db) { // slow, so do this only when post is changed or the prev or next is null
+
+    if (!post_topic || !post_id) return
+
+    let prev = intval(await get_var(`select max(post_id) as prev from posts
+                                     where post_topic=? and post_id < ? and post_approved=1 limit 1`, [post_topic, post_id], db))
+
+    let next = intval(await get_var(`select min(post_id) as next from posts
+                                     where post_topic=? and post_id > ? and post_approved=1 limit 1`, [post_topic, post_id], db))
+
+    await query(`update posts set post_prev_in_topic=?, post_next_in_topic=? where post_id=?`, [prev, next, post_id], db)
+
+    return [prev, next]
+}
+
 async function render(state) { /////////////////////////////////////////
 
     var pages = {
@@ -1961,7 +1976,7 @@ async function render(state) { /////////////////////////////////////////
                 post_mail(p) // reasons to send out post emails: @user, user following post author, user following post topic
             }
 
-            await update_prev_next(post_data.post_topic, p)
+            await update_prev_next(post_data.post_topic, p, state.db)
 
             var post_row = await get_post(p, state.db)
 
@@ -2195,8 +2210,8 @@ async function render(state) { /////////////////////////////////////////
                     let results = await query(`delete from posts where post_id = ?`, [post_id], state.db)
 
                     if (post.post_topic) {
-                        await update_prev_next(post.post_topic, post.post_prev_in_topic)
-                        await update_prev_next(post.post_topic, post.post_next_in_topic)
+                        await update_prev_next(post.post_topic, post.post_prev_in_topic, state.db)
+                        await update_prev_next(post.post_topic, post.post_next_in_topic, state.db)
                     }
 
                     return die(`${results.affectedRows} post deleted`)
@@ -2704,7 +2719,7 @@ async function render(state) { /////////////////////////////////////////
                         state.req.headers.referer.match(/post/))
                    ) {
                     [state.post.post_prev_in_topic, state.post.post_next_in_topic] =
-                        await update_prev_next(state.post.post_topic, state.post.post_id)
+                        await update_prev_next(state.post.post_topic, state.post.post_id, state.db)
                 }
             }
 
@@ -3538,7 +3553,7 @@ async function render(state) { /////////////////////////////////////////
 
             var post = await get_post(referring_post_id, state.db)
 
-            if (post && post.post_topic) await update_prev_next(post.post_topic, post.post_id)
+            if (post && post.post_topic) await update_prev_next(post.post_topic, post.post_id, state.db)
         }
     }
 
@@ -3621,21 +3636,6 @@ async function render(state) { /////////////////////////////////////////
 
     async function sql_calc_found_rows() {
         return await get_var('select found_rows() as f', [], state.db)
-    }
-
-    async function update_prev_next(post_topic, post_id) { // slow, so do this only when post is changed or the prev or next is null
-
-        if (!post_topic || !post_id) return
-
-        let prev = intval(await get_var(`select max(post_id) as prev from posts
-                                         where post_topic=? and post_id < ? and post_approved=1 limit 1`, [post_topic, post_id], state.db))
-
-        let next = intval(await get_var(`select min(post_id) as next from posts
-                                         where post_topic=? and post_id > ? and post_approved=1 limit 1`, [post_topic, post_id], state.db))
-
-        await query(`update posts set post_prev_in_topic=?, post_next_in_topic=? where post_id=?`, [prev, next, post_id], state.db)
-
-        return [prev, next]
     }
 
     if (typeof pages[state.page] === 'function') { // hit the db iff the request is for a valid url
