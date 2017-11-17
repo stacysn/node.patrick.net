@@ -1828,6 +1828,57 @@ function send(res, code, headers, content, db, ip) {
     release_connection_to_pool(db, ip)
 }
 
+function send_html(code, html, res, db, ip) {
+
+    //html = html.replace(/\/\/.*/, ' ') // remove js comments
+    //html = html.replace(/\s+/g, ' ')   // primitive compression. requires that browser js statements end in semicolon!
+
+    var headers =    {
+        'Content-Type'   : 'text/html;charset=utf-8',
+        'Expires'        : new Date().toUTCString()
+    }
+
+    send(res, code, headers, html, db, ip)
+}
+
+async function reset_latest_comment(post_id, db) { // reset post table data about latest comment, esp post_modified time
+
+    if (!post_id) return
+
+    let comment_row = await get_row(`select * from comments where comment_post_id=? and comment_approved > 0
+                                     order by comment_date desc limit 1`, [post_id], db)
+
+    if (comment_row) { // this is at least one comment on this post
+        let post_comments = await get_var(`select count(*) as c from comments where comment_post_id=? and comment_approved=1`,
+                                          [post_id], db)
+
+        let firstwords = first_words(comment_row.comment_content, 40)
+
+        await query(`update posts set
+                     post_modified=?,
+                     post_comments=?,
+                     post_latest_comment_id=?,
+                     post_latest_commenter_id=?,
+                     post_latest_comment_excerpt=?
+                     where post_id=?`,
+                     [comment_row.comment_date,
+                      post_comments,
+                      comment_row.comment_id,
+                      comment_row.comment_author,
+                      firstwords,
+                      post_id], db) // post_modified is necessary for sorting posts by latest comment
+    }
+    else { // there are no comments
+        await query(`update posts set
+                     post_modified=post_date,
+                     post_comments=0,
+                     post_latest_comment_id=0,
+                     post_latest_commenter_id=0,
+                     post_latest_comment_excerpt=''
+                     where post_id=?`, [post_id], db)
+    }
+}
+
 async function render(state) { /////////////////////////////////////////
 
     var pages = {
@@ -2225,7 +2276,7 @@ async function render(state) { /////////////////////////////////////////
             await query(`update users set user_comments=(select count(*) from comments where comment_author = ?) where user_id = ?`,
                         [comment_author, comment_author], state.db)
 
-            await reset_latest_comment(post_id)
+            await reset_latest_comment(post_id, state.db)
 
             send_html(200, '', state.res, state.db, state.ip)
         },
@@ -2671,7 +2722,7 @@ async function render(state) { /////////////////////////////////////////
             for (var i=0; i<rows.length; i++) {
                 let row = rows[i]
                 await query('delete from comments where comment_post_id=? and comment_author=?', [row.comment_post_id, nuke_id], state.db)
-                await reset_latest_comment(row.comment_post_id)
+                await reset_latest_comment(row.comment_post_id, state.db)
             }
             await query('delete from posts     where post_author=?',      [nuke_id], state.db)
             await query('delete from postviews where postview_user_id=?', [nuke_id], state.db)
@@ -3596,57 +3647,6 @@ async function render(state) { /////////////////////////////////////////
 
             if (post && post.post_topic) await update_prev_next(post.post_topic, post.post_id, state.db)
         }
-    }
-
-    async function reset_latest_comment(post_id) { // reset post table data about latest comment, esp post_modified time
-
-        if (!post_id) return
-
-        let comment_row = await get_row(`select * from comments where comment_post_id=? and comment_approved > 0
-                                         order by comment_date desc limit 1`, [post_id], state.db)
-
-        if (comment_row) { // this is at least one comment on this post
-            let post_comments = await get_var(`select count(*) as c from comments where comment_post_id=? and comment_approved=1`,
-                                              [post_id], state.db)
-
-            let firstwords = first_words(comment_row.comment_content, 40)
-
-            await query(`update posts set
-                         post_modified=?,
-                         post_comments=?,
-                         post_latest_comment_id=?,
-                         post_latest_commenter_id=?,
-                         post_latest_comment_excerpt=?
-                         where post_id=?`,
-                         [comment_row.comment_date,
-                          post_comments,
-                          comment_row.comment_id,
-                          comment_row.comment_author,
-                          firstwords,
-                          post_id], state.db) // post_modified is necessary for sorting posts by latest comment
-        }
-        else { // there are no comments
-            await query(`update posts set
-                         post_modified=post_date,
-                         post_comments=0,
-                         post_latest_comment_id=0,
-                         post_latest_commenter_id=0,
-                         post_latest_comment_excerpt=''
-                         where post_id=?`, [post_id], state.db)
-        }
-    }
-
-    function send_html(code, html, res, db, ip) {
-
-        //html = html.replace(/\/\/.*/, ' ') // remove js comments
-        //html = html.replace(/\s+/g, ' ')   // primitive compression. requires that browser js statements end in semicolon!
-
-        var headers =    {
-            'Content-Type'   : 'text/html;charset=utf-8',
-            'Expires'        : new Date().toUTCString()
-        }
-
-        send(res, code, headers, html, db, ip)
     }
 
     if (typeof pages[state.page] === 'function') { // hit the db iff the request is for a valid url
