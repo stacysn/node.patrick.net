@@ -1774,6 +1774,15 @@ function comment_list(comments, current_user, ip, req) { // format one page of c
     return ret
 }
 
+async function get_post(post_id, db) {
+    return await get_row('select * from posts where post_id = ?', [post_id], db)
+}
+
+async function user_topic_bans(user_id, db) {
+    return await query(`select topicwatch_name as topic, topicwatch_banned_until as until from topicwatches
+                        where topicwatch_user_id=? and topicwatch_banned_until > now()`, [user_id], db)
+}
+
 async function render(state) { /////////////////////////////////////////
 
     var pages = {
@@ -1811,8 +1820,8 @@ async function render(state) { /////////////////////////////////////////
                 }
                 */
 
-                let bans = await user_topic_bans(post_data.comment_author)
-                let topic = (await get_post(post_data.comment_post_id)).post_topic
+                let bans = await user_topic_bans(post_data.comment_author, state.db)
+                let topic = (await get_post(post_data.comment_post_id, state.db)).post_topic
                 let message = is_user_banned(bans, topic, state.current_user)
                 if (message) return send_html(200, JSON.stringify({ err: true, content: popup(message) }))
 
@@ -1954,7 +1963,7 @@ async function render(state) { /////////////////////////////////////////
 
             await update_prev_next(post_data.post_topic, p)
 
-            var post_row = await get_post(p)
+            var post_row = await get_post(p, state.db)
 
             redirect(post2path(post_row))
         },
@@ -2028,7 +2037,7 @@ async function render(state) { /////////////////////////////////////////
                                            values (              ?,                  ?, date_add(now(), interval 1 day))
                          on duplicate key update topicwatch_banned_until=date_add(now(), interval 1 day)`, [topic, user_id], state.db)
 
-            let bans = await user_topic_bans(user_id)
+            let bans = await user_topic_bans(user_id, state.db)
             
             return send_html(200, is_user_banned(bans, topic, state.current_user))
         },
@@ -2153,7 +2162,7 @@ async function render(state) { /////////////////////////////////////////
             if (!valid_nonce(state.ip, _GET(state.req.url, 'ts'), _GET(state.req.url, 'nonce')))           return send_html(200, '')
             if (!(comment_id && post_id)) return send_html(200, '')
 
-            var topic = (await get_post(post_id)).post_topic
+            var topic = (await get_post(post_id, state.db)).post_topic
             var topic_moderator = intval(await get_moderator(topic))
 
             var comment_author = await get_var('select comment_author from comments where comment_id=?', [comment_id], state.db)
@@ -2177,7 +2186,7 @@ async function render(state) { /////////////////////////////////////////
             var post_id
             if (post_id = intval(_GET(state.req.url, 'post_id'))) {
 
-                let post = await get_post(post_id)
+                let post = await get_post(post_id, state.db)
                 if (!post) return die('no such post')
 
                 // if it's their own post or if it's admin
@@ -2236,7 +2245,7 @@ async function render(state) { /////////////////////////////////////////
 
                 if (vote.c) { // if they have voted before on this, just return
 
-                    let post_row = await get_post(post_id)
+                    let post_row = await get_post(post_id, state.db)
 
                     return send_html(200, String(post_row.post_dislikes))
                 }
@@ -2246,7 +2255,7 @@ async function render(state) { /////////////////////////////////////////
                 await query(`insert into postvotes (postvote_user_id, postvote_post_id, postvote_down) values (?, ?, 1)
                              on duplicate key update postvote_down=0`, [user_id, post_id], state.db)
 
-                let post_row = await get_post(post_id)
+                let post_row = await get_post(post_id, state.db)
 
                 await query(`update users set user_dislikes=user_dislikes+1 where user_id=?`, [post_row.post_author], state.db)
 
@@ -2512,7 +2521,7 @@ async function render(state) { /////////////////////////////////////////
                                       [user_id, post_id], state.db)
 
                 if (vote && vote.c) { // if they have voted before on this, just return
-                    let post_row = await get_post(post_id)
+                    let post_row = await get_post(post_id, state.db)
                     return send_html(200, String(post_row.post_likes))
                 }
 
@@ -2521,7 +2530,7 @@ async function render(state) { /////////////////////////////////////////
                 await query(`insert into postvotes (postvote_user_id, postvote_post_id, postvote_up) values (?, ?, 1)
                              on duplicate key update postvote_up=0`, [user_id, post_id], state.db)
 
-                let post_row = await get_post(post_id)
+                let post_row = await get_post(post_id, state.db)
 
                 await query(`update users set user_likes=user_likes+1 where user_id=?`, [post_row.post_author], state.db)
 
@@ -2840,7 +2849,7 @@ async function render(state) { /////////////////////////////////////////
                                        order by comment_date limit 1`, [p, when], state.db)
 
             let offset = await cid2offset(p, c)
-            let post = await get_post(p)
+            let post = await get_post(p, state.db)
             redirect(`${post2path(post)}?offset=${offset}#comment-${c}`)
         },
 
@@ -3035,7 +3044,7 @@ async function render(state) { /////////////////////////////////////////
 
             let found_post_rows = await sql_calc_found_rows()
 
-            u.bans = await user_topic_bans(u.user_id)
+            u.bans = await user_topic_bans(u.user_id, state.db)
 
             let path = URL.parse(state.req.url).pathname // "pathNAME" is url path without ? parms, unlike "path"
 
@@ -3178,7 +3187,7 @@ async function render(state) { /////////////////////////////////////////
 
     async function comment_mail(c) { // reasons to send out comment emails: @user summons, user watching post
 
-        let p              = await get_post(c.comment_post_id)
+        let p              = await get_post(c.comment_post_id, state.db)
         let commenter      = c.user_name
         let already_mailed = []
         let offset         = await cid2offset(p.post_id, c.comment_id)
@@ -3298,10 +3307,6 @@ async function render(state) { /////////////////////////////////////////
         return await get_var('select topic_moderator from topics where topic=?', [topic], state.db)
     }
 
-    async function get_post(post_id) {
-        return await get_row('select * from posts where post_id = ?', [post_id], state.db)
-    }
-
     async function get_userrow(user_id) {
         return await get_row('select * from users where user_id = ?', [user_id], state.db)
     }
@@ -3342,11 +3347,6 @@ async function render(state) { /////////////////////////////////////////
                               [ip, ip], state.db)
     }
  
-    async function user_topic_bans(user_id) {
-        return await query(`select topicwatch_name as topic, topicwatch_banned_until as until from topicwatches
-                            where topicwatch_user_id=? and topicwatch_banned_until > now()`, [user_id], state.db)
-    }
-
     async function login(state, email, password) {
 
         var user = await get_row('select * from users where user_email = ? and user_pass = ?', [email, md5(password)], state.db)
@@ -3536,7 +3536,7 @@ async function render(state) { /////////////////////////////////////////
         if (matches = state.req.headers.referer.match(/\/post\/(\d+)/m)) {
             var referring_post_id = intval(matches[1])
 
-            var post = await get_post(referring_post_id)
+            var post = await get_post(referring_post_id, state.db)
 
             if (post && post.post_topic) await update_prev_next(post.post_topic, post.post_id)
         }
