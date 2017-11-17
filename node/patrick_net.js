@@ -84,7 +84,7 @@ function release_connection_to_pool(state) {
 async function block_countries(state) { // block entire countries like Russia because all comments from there are inevitably spam
 
     var evil = await get_var('select country_evil from countries where inet_aton(?) >= country_start and inet_aton(?) <= country_end',
-                                [state.ip, state.ip], state)
+                                [state.ip, state.ip], state.db)
 
     if (evil) throw { code : 403, message : 'permission denied to evil country' }
 }
@@ -93,22 +93,22 @@ async function is_foreign(state) {
 
     var country_name = await get_var(`select country_name from countries
                                       where inet_aton(?) >= country_start and inet_aton(?) <= country_end`,
-                                      [state.ip, state.ip], state)
+                                      [state.ip, state.ip], state.db)
 
     if (country_name !== 'United States') return true
     else                                  return false
 }
 
 async function block_nuked(state) { // block nuked users, usually spammers
-    if (await get_var('select count(*) as c from nukes where nuke_ip = ?', [state.ip], state))
+    if (await get_var('select count(*) as c from nukes where nuke_ip = ?', [state.ip], state.db))
     throw { code : 403, message : 'permission denied to spammy user' }
 }
 
 async function header_data(state) { // data that the page header needs to render
     state.header_data = {
-        comments : await get_var(`select count(*) as c from comments`,           null, state), // int
-        onlines  : await query(`select * from onlines order by online_username`, null, state), // obj
-        tot      : await get_var(`select count(*) as c from users`,              null, state), // int
+        comments : await get_var(`select count(*) as c from comments`,           null, state.db), // int
+        onlines  : await query(`select * from onlines order by online_username`, null, state.db), // obj
+        tot      : await get_var(`select count(*) as c from users`,              null, state.db), // int
     }
 }
 
@@ -159,18 +159,19 @@ async function set_user(state) { // update state with whether they are logged in
             pairs[name] = value
         })
 
-        state.current_user = await get_row('select * from users where user_id = ? and user_pass = ?', [pairs[CONF.usercookie], pairs[CONF.pwcookie]], state)
+        state.current_user = await get_row('select * from users where user_id = ? and user_pass = ?', [pairs[CONF.usercookie], pairs[CONF.pwcookie]],
+        state.db)
 
         if (state.current_user && state.current_user.user_id) {
             state.current_user.is_moderator_of = (await query('select topic from topics where topic_moderator = ?',
-                                                              [state.current_user.user_id], state)).map(row => row.topic)
+                                                              [state.current_user.user_id], state.db)).map(row => row.topic)
             await set_relations(state)
             await set_topics(state)
 
             // update users currently online for display in header
-            await query(`delete from onlines where online_last_view < date_sub(now(), interval 5 minute)`, null, state)
+            await query(`delete from onlines where online_last_view < date_sub(now(), interval 5 minute)`, null, state.db)
             await query(`insert into onlines (online_user_id, online_username, online_last_view) values (?, ?, now())
-                         on duplicate key update online_last_view=now()`, [state.current_user.user_id, state.current_user.user_name], state)
+                         on duplicate key update online_last_view=now()`, [state.current_user.user_id, state.current_user.user_name], state.db)
         }
 
     }
@@ -200,10 +201,10 @@ async function set_relations(state) { // update state object with their relation
                    union
                    select * from (${my_pov}) as t1 right join (${other_pov}) as t2 on t1.rel_other_id = t2.t2_self_id`
 
-        var results2 = await query(sql, Array(4).fill(state.current_user.user_id), state)
+        var results2 = await query(sql, Array(4).fill(state.current_user.user_id), state.db)
         */
 
-        var results = await query(my_pov, [state.current_user.user_id], state)
+        var results = await query(my_pov, [state.current_user.user_id], state.db)
 
         state.current_user.relationships = [] // now renumber results array using user_ids to make later access easy
 
@@ -213,7 +214,7 @@ async function set_relations(state) { // update state object with their relation
 
 async function set_topics(state) { // update state object with their topics they follow
     if (state.current_user) {
-        var results = await query(`select topicwatch_name from topicwatches where topicwatch_user_id=?`, [state.current_user.user_id], state)
+        var results = await query(`select topicwatch_name from topicwatches where topicwatch_user_id=?`, [state.current_user.user_id], state.db)
         state.current_user.topics = results.map(row => row.topicwatch_name)
     }
 }
@@ -518,13 +519,13 @@ function brandit(url) { // add ref=[domain name] to a url
     return url
 }
 
-async function get_row(sql, sql_parms, state) {
-    let results = await query(sql, sql_parms, state)
+async function get_row(sql, sql_parms, db) {
+    let results = await query(sql, sql_parms, db)
     return results.length ? results[0] : null
 }
 
-async function get_var(sql, sql_parms, state) {
-    let results = await query(sql, sql_parms, state)
+async function get_var(sql, sql_parms, db) {
+    let results = await query(sql, sql_parms, db)
     
     if (results.length) {
         let firstkey = Object.keys(results[0])
@@ -533,17 +534,17 @@ async function get_var(sql, sql_parms, state) {
     else return null
 }
 
-function query(sql, sql_parms, state, debug) {
+function query(sql, sql_parms, db, debug) {
 
     return new Promise(function(resolve, reject) {
         var query
 
-        if (!state.db) {
+        if (!db) {
             console.trace()
             return reject('attempt to use db without connection')
         }
 
-        var get_results = function (error, results, fields, timing) { // callback to give to state.db.query()
+        var get_results = function (error, results, fields, timing) { // callback to give to db.query()
 
             if (debug) console.log(query.sql)
 
@@ -553,7 +554,7 @@ function query(sql, sql_parms, state, debug) {
                 return reject(error)
             }
 
-            state.db.queries.push({ // for logging within the html footer
+            db.queries.push({ // for logging within the html footer
                 sql : query.sql,
                 ms  : timing
             })
@@ -561,8 +562,8 @@ function query(sql, sql_parms, state, debug) {
             return resolve(results)
         }
 
-        query = sql_parms ? state.db.query(sql, sql_parms, get_results)
-                          : state.db.query(sql,            get_results)
+        query = sql_parms ? db.query(sql, sql_parms, get_results)
+                          : db.query(sql,            get_results)
     })
 }
 
@@ -1795,7 +1796,7 @@ async function render(state) { /////////////////////////////////////////
             // rate limit comment insertion by user's ip address
             var ago = await get_var(`select (unix_timestamp(now()) - unix_timestamp(user_last_comment_time)) as ago from users
                                      where user_last_comment_time is not null and user_last_comment_ip = ?
-                                     order by user_last_comment_time desc limit 1`, [state.ip], state)
+                                     order by user_last_comment_time desc limit 1`, [state.ip], state.db)
 
             if (ago && ago < 2) { // this ip already commented less than two seconds ago
                 return send_html(200, JSON.stringify({ err: true, content: popup('You are posting comments too quickly! Please slow down') }))
@@ -1824,7 +1825,7 @@ async function render(state) { /////////////////////////////////////////
                 if (state.current_user || (extlink_count === 0)) post_data.comment_approved = 1
 
                 try {
-                    var insert_result = await query('insert into comments set ?', post_data, state)
+                    var insert_result = await query('insert into comments set ?', post_data, state.db)
                 }
                 catch(e) {
                     console.log(`${e} at accept_comment`)
@@ -1835,7 +1836,7 @@ async function render(state) { /////////////////////////////////////////
 
                 // now select the inserted row so that we pick up the comment_date time and user data for displaying the comment
                 state.comment = await get_row('select * from comments left join users on comment_author=user_id where comment_id = ?',
-                                              [comment_id], state)
+                                              [comment_id], state.db)
 
                 send_html(200, JSON.stringify(
                     { err: false, content: format_comment(state.comment, state.current_user, state.ip, state.req, state.comments, _GET(state.req.url, 'offset')) }))
@@ -1846,19 +1847,19 @@ async function render(state) { /////////////////////////////////////////
                 await query(`update posts set post_modified = ?,
                                               post_latest_comment_id = ?,
                                               post_comments=(select count(*) from comments where comment_post_id=?) where post_id = ?`,
-                            [post_data.comment_date, comment_id, post_data.comment_post_id, post_data.comment_post_id], state)
+                            [post_data.comment_date, comment_id, post_data.comment_post_id, post_data.comment_post_id], state.db)
                             // we select the count(*) from comments to make the comment counts self-correcting in case they get off somehow
 
                 if (state.current_user) { // update postviews so that user does not see his own comment as unread
                     await query(`insert into postviews (postview_user_id, postview_post_id, postview_last_view)
                                  values (?, ?, now()) on duplicate key update postview_last_view=now()`,
-                                 [state.current_user.user_id, post_data.comment_post_id], state)
+                                 [state.current_user.user_id, post_data.comment_post_id], state.db)
                 }
 
                 // update comment count whether logged in or anon user
                 await query(`update users set user_last_comment_ip = ?,
                              user_comments=(select count(*) from comments where comment_author = ?)
-                             where user_id = ?`, [state.ip, post_data.comment_author, post_data.comment_author], state)
+                             where user_id = ?`, [state.ip, post_data.comment_author, post_data.comment_author], state.db)
 
                 if (!post_data.comment_approved) { // email moderator if comment not approved
                     mail(CONF.admin_email, 'new comment needs review',
@@ -1877,7 +1878,7 @@ async function render(state) { /////////////////////////////////////////
 
             // rate limit by user's ip address
             var ago = await get_var('select (unix_timestamp(now()) - unix_timestamp(user_last_comment_time)) as ago from users where user_last_comment_time is not null and user_last_comment_ip = ? order by user_last_comment_time desc limit 1',
-                [state.ip], state)
+                [state.ip], state.db)
 
             if (ago && ago < 2) { // this ip already commented less than two seconds ago
                 return die('You are posting comments too quickly! Please slow down')
@@ -1890,10 +1891,10 @@ async function render(state) { /////////////////////////////////////////
  
                 let comment_id = post_data.comment_id
                 await query('update comments set ? where comment_id = ? and (comment_author = ? or 1 = ?)',
-                            [post_data, comment_id, state.current_user.user_id, state.current_user.user_id], state)
+                            [post_data, comment_id, state.current_user.user_id, state.current_user.user_id], state.db)
 
                 // now select the inserted row so that we pick up the comment_post_id
-                state.comment = await get_row('select * from comments where comment_id = ?', [comment_id], state)
+                state.comment = await get_row('select * from comments where comment_id = ?', [comment_id], state.db)
 
                 if (state.comment.comment_adhom_when) redirect(`/comment_jail#comment-${comment_id}`)
                 else {
@@ -1924,7 +1925,7 @@ async function render(state) { /////////////////////////////////////////
 
             if (intval(post_data.post_id)) { // editing old post, do not update post_modified time because it confuses users
                 var p = intval(post_data.post_id)
-                await query('update posts set ? where post_id=?', [post_data, p], state)
+                await query('update posts set ? where post_id=?', [post_data, p], state.db)
             }
             else { // new post
                 post_data.post_author = state.current_user.user_id
@@ -1933,15 +1934,15 @@ async function render(state) { /////////////////////////////////////////
                     return die(`spam rejected`) // new, foreign, and posting link
 
                 var posts_today = await get_var('select count(*) as c from posts where post_author=? and post_date >= curdate()',
-                    [state.current_user.user_id], state)
+                    [state.current_user.user_id], state.db)
 
                 var whole_weeks_registered = await get_var('select floor(datediff(curdate(), user_registered)/7) from users where user_id=?',
-                    [state.current_user.user_id], state)
+                    [state.current_user.user_id], state.db)
 
                 if (posts_today >= MAX_POSTS || posts_today > whole_weeks_registered) return die(`you hit your new post limit for today`)
 
                 try {
-                    var results = await query('insert into posts set ?, post_modified=now()', post_data, state)
+                    var results = await query('insert into posts set ?, post_modified=now()', post_data, state.db)
                 }
                 catch (e) { return die(e) }
 
@@ -1967,9 +1968,9 @@ async function render(state) { /////////////////////////////////////////
             if (state.current_user.user_level !== 4) return send_html(200, '')
             if (!valid_nonce(state.ip, _GET(state.req.url, 'ts'), _GET(state.req.url, 'nonce')))                     return send_html(200, '')
 
-            await query('update comments set comment_approved=1, comment_date=now() where comment_id=?', [comment_id], state)
+            await query('update comments set comment_approved=1, comment_date=now() where comment_id=?', [comment_id], state.db)
             await query('update posts set post_modified=now() where post_id=(select comment_post_id from comments where comment_id=?)',
-                        [comment_id], state)
+                        [comment_id], state.db)
 
             send_html(200, '') // make it disappear from comment_moderation page
         },
@@ -1983,7 +1984,7 @@ async function render(state) { /////////////////////////////////////////
             if (state.current_user.user_level !== 4) return send_html(200, '')
             if (!valid_nonce(state.ip, _GET(state.req.url, 'ts'), _GET(state.req.url, 'nonce')))                      return send_html(200, '')
 
-            await query('update posts set post_approved=1, post_modified=now() where post_id=?', [post_id], state)
+            await query('update posts set post_approved=1, post_modified=now() where post_id=?', [post_id], state.db)
 
             send_html(200, '') // make it disappear from post_moderation page
         },
@@ -1996,7 +1997,7 @@ async function render(state) { /////////////////////////////////////////
 
             // left joins to also get each post's viewing and voting data for the current user if there is one
             let sql = `update postviews set postview_want_email=0 where postview_user_id = ?`
-            await query(sql, [current_user_id], state)
+            await query(sql, [current_user_id], state.db)
 
             var content = html(
                 midpage(
@@ -2025,7 +2026,7 @@ async function render(state) { /////////////////////////////////////////
 
             await query(`insert into topicwatches (topicwatch_name, topicwatch_user_id,         topicwatch_banned_until)
                                            values (              ?,                  ?, date_add(now(), interval 1 day))
-                         on duplicate key update topicwatch_banned_until=date_add(now(), interval 1 day)`, [topic, user_id], state)
+                         on duplicate key update topicwatch_banned_until=date_add(now(), interval 1 day)`, [topic, user_id], state.db)
 
             let bans = await user_topic_bans(user_id)
             
@@ -2047,7 +2048,7 @@ async function render(state) { /////////////////////////////////////////
                 var m = `<h2>best comments in the last week</h2>or view the <a href='/best?all=true'>all-time</a> best comments<p>`
             }
 
-            state.comments = await query(sql, [], state)
+            state.comments = await query(sql, [], state.db)
 
             let offset = 0
             state.comments = state.comments.map(comment => { comment.row_number = ++offset; return comment })
@@ -2065,11 +2066,11 @@ async function render(state) { /////////////////////////////////////////
         comment_jail : async function() { // no pagination, just most recent 80
 
             // comments not freed in 30 days will be deleted
-            await query(`delete from comments where comment_adhom_when < date_sub(now(), interval 30 day)`, [], state)
+            await query(`delete from comments where comment_adhom_when < date_sub(now(), interval 30 day)`, [], state.db)
 
             state.comments = await query(`select sql_calc_found_rows * from comments
                                           left join users on user_id=comment_author
-                                          where comment_adhom_when is not null order by comment_date desc`, [], state)
+                                          where comment_adhom_when is not null order by comment_date desc`, [], state.db)
 
             let offset = 0
             state.comments = state.comments.map(comment => { comment.row_number = ++offset; return comment })
@@ -2090,7 +2091,7 @@ async function render(state) { /////////////////////////////////////////
             if (!state.current_user) return die('you must be logged in to moderate comments')
 
             state.comments = await query(`select * from comments left join users on user_id=comment_author
-                                          where comment_approved = 0`, [], state)
+                                          where comment_approved = 0`, [], state.db)
 
             let offset = 0
             state.comments = state.comments.map(comment => { comment.row_number = ++offset; return comment })
@@ -2155,13 +2156,13 @@ async function render(state) { /////////////////////////////////////////
             var topic = (await get_post(post_id)).post_topic
             var topic_moderator = intval(await get_moderator(topic))
 
-            var comment_author = await get_var('select comment_author from comments where comment_id=?', [comment_id], state)
+            var comment_author = await get_var('select comment_author from comments where comment_id=?', [comment_id], state.db)
 
             await query(`delete from comments where comment_id = ? and (comment_author = ? or 1 = ? or ${topic_moderator}=?)`,
-                        [comment_id, state.current_user.user_id, state.current_user.user_id, state.current_user.user_id], state)
+                        [comment_id, state.current_user.user_id, state.current_user.user_id, state.current_user.user_id], state.db)
 
             await query(`update users set user_comments=(select count(*) from comments where comment_author = ?) where user_id = ?`,
-                        [comment_author, comment_author], state)
+                        [comment_author, comment_author], state.db)
 
             await reset_latest_comment(post_id)
 
@@ -2182,7 +2183,7 @@ async function render(state) { /////////////////////////////////////////
                 // if it's their own post or if it's admin
                 if ((state.current_user.user_id === post.post_author) || (state.current_user.user_id === 1)) {
 
-                    let results = await query(`delete from posts where post_id = ?`, [post_id], state)
+                    let results = await query(`delete from posts where post_id = ?`, [post_id], state.db)
 
                     if (post.post_topic) {
                         await update_prev_next(post.post_topic, post.post_prev_in_topic)
@@ -2202,21 +2203,21 @@ async function render(state) { /////////////////////////////////////////
 
             if (intval(_GET(state.req.url, 'comment_id'))) {
                 let comment_id = intval(_GET(state.req.url, 'comment_id'))
-                let comment_row = await get_row(`select * from comments where comment_id=?`, [comment_id], state)
+                let comment_row = await get_row(`select * from comments where comment_id=?`, [comment_id], state.db)
 
                 let vote = await get_row(`select commentvote_up, count(*) as c from commentvotes where commentvote_user_id=? and commentvote_comment_id=?`,
-                                          [user_id, comment_id], state)
+                                          [user_id, comment_id], state.db)
 
                 if (vote.c) { // already voted on this comment
                     return send_html(200, `&#8595;&nbsp; you dislike this (${comment_row.comment_dislikes})`)
                 }
 
-                await query(`update comments set comment_dislikes=comment_dislikes+1 where comment_id=?`, [comment_id], state)
+                await query(`update comments set comment_dislikes=comment_dislikes+1 where comment_id=?`, [comment_id], state.db)
 
                 await query(`insert into commentvotes (commentvote_user_id, commentvote_comment_id, commentvote_down) values (?, ?, 1)
-                             on duplicate key update commentvote_up=1`, [user_id, comment_id], state)
+                             on duplicate key update commentvote_up=1`, [user_id, comment_id], state.db)
 
-                await query(`update users set user_dislikes=user_dislikes+1 where user_id=?`, [comment_row.comment_author], state)
+                await query(`update users set user_dislikes=user_dislikes+1 where user_id=?`, [comment_row.comment_author], state.db)
 
                 send_html(200, `&#8595;&nbsp;you dislike this (${comment_row.comment_dislikes + 1})`)
 
@@ -2224,14 +2225,14 @@ async function render(state) { /////////////////////////////////////////
 
                 // Now if Patrick was the disliker, then the user gets a bias bump down.
                 if (1 === user_id) {
-                    await query(`update users set user_pbias=user_pbias-1 where user_id=?`, [comment_row.comment_author], state)
+                    await query(`update users set user_pbias=user_pbias-1 where user_id=?`, [comment_row.comment_author], state.db)
                 }
             }
             else if (intval(_GET(state.req.url, 'post_id'))) {
                 let post_id = intval(_GET(state.req.url, 'post_id'))
 
                 let vote = await get_row(`select postvote_down, count(*) as c from postvotes where postvote_user_id=? and postvote_post_id=?`,
-                                          [user_id, post_id], state)
+                                          [user_id, post_id], state.db)
 
                 if (vote.c) { // if they have voted before on this, just return
 
@@ -2240,14 +2241,14 @@ async function render(state) { /////////////////////////////////////////
                     return send_html(200, String(post_row.post_dislikes))
                 }
 
-                await query(`update posts set post_dislikes=post_dislikes+1 where post_id=?`, [post_id], state)
+                await query(`update posts set post_dislikes=post_dislikes+1 where post_id=?`, [post_id], state.db)
 
                 await query(`insert into postvotes (postvote_user_id, postvote_post_id, postvote_down) values (?, ?, 1)
-                             on duplicate key update postvote_down=0`, [user_id, post_id], state)
+                             on duplicate key update postvote_down=0`, [user_id, post_id], state.db)
 
                 let post_row = await get_post(post_id)
 
-                await query(`update users set user_dislikes=user_dislikes+1 where user_id=?`, [post_row.post_author], state)
+                await query(`update users set user_dislikes=user_dislikes+1 where user_id=?`, [post_row.post_author], state.db)
 
                 return send_html(200, String(post_row.post_dislikes))
 
@@ -2262,7 +2263,7 @@ async function render(state) { /////////////////////////////////////////
 
             let comment_id = intval(_GET(state.req.url, 'c'))
             state.comment = await get_row(`select * from comments left join users on user_id=comment_author
-                                               where comment_id=?`, [comment_id], state)
+                                               where comment_id=?`, [comment_id], state.db)
 
             if (!state.comment) return send_html(404, `No comment with id "${comment_id}"`)
             else {
@@ -2282,7 +2283,7 @@ async function render(state) { /////////////////////////////////////////
             if (!valid_nonce(state.ip, _GET(state.req.url, 'ts'), _GET(state.req.url, 'nonce'))) return die(invalid_nonce_message())
 
             let post_id = intval(_GET(state.req.url, 'p'))
-            state.post = await get_row(`select * from posts left join users on user_id=post_author where post_id=?`, [post_id], state)
+            state.post = await get_row(`select * from posts left join users on user_id=post_author where post_id=?`, [post_id], state.db)
 
             if (!state.post) return send_html(404, `No post with id "${post_id}"`)
             else {
@@ -2320,11 +2321,11 @@ async function render(state) { /////////////////////////////////////////
             if (intval(_GET(state.req.url, 'undo'))) {
 
                 await query(`delete from topicwatches where topicwatch_name=? and topicwatch_user_id=?`,
-                            [topic, state.current_user.user_id], state)
+                            [topic, state.current_user.user_id], state.db)
             }
             else {
                 await query(`replace into topicwatches set topicwatch_start=now(), topicwatch_name=?, topicwatch_user_id=?`,
-                            [topic, state.current_user.user_id], state)
+                            [topic, state.current_user.user_id], state.db)
             }
 
             // either way, output follow button with right state and update this user's follow count
@@ -2342,18 +2343,18 @@ async function render(state) { /////////////////////////////////////////
 
             if (intval(_GET(state.req.url, 'undo'))) {
                 await query(`replace into relationships set rel_i_follow=0, rel_self_id=?, rel_other_id=?`,
-                            [state.current_user.user_id, other_id], state)
+                            [state.current_user.user_id, other_id], state.db)
             }
             else {
                 await query(`replace into relationships set rel_i_follow=unix_timestamp(now()), rel_self_ID=?, rel_other_id=?`,
-                            [state.current_user.user_id, other_id], state)
+                            [state.current_user.user_id, other_id], state.db)
             }
 
             // either way, output follow button with right state and update this user's follow count
             ajax ? send_html(200, follow_user_button(await get_userrow(other_id)), state.current_user, state.ip) : die('Follow status updated')
 
             await query(`update users set user_followers=(select count(*) from relationships where rel_i_follow > 0 and rel_other_id=?)
-                         where user_id=?`, [other_id, other_id], state)
+                         where user_id=?`, [other_id, other_id], state.db)
 
             // mail the user who has just been followed
             let u = await get_userrow(other_id)
@@ -2380,7 +2381,7 @@ async function render(state) { /////////////////////////////////////////
                        where post_modified > date_sub(now(), interval 7 day) and post_approved=1
                        ${order_by} limit ${slimit}`
 
-            state.posts = await query(sql, [current_user_id, current_user_id], state)
+            state.posts = await query(sql, [current_user_id, current_user_id], state.db)
 
             let path = URL.parse(state.req.url).pathname // "pathNAME" is url path without ? parms, unlike "path"
 
@@ -2404,20 +2405,20 @@ async function render(state) { /////////////////////////////////////////
 
             if (intval(_GET(state.req.url, 'undo'))) {
                 await query(`replace into relationships set rel_i_ban=0, rel_self_id=?, rel_other_id=?`,
-                            [state.current_user.user_id, other_id], state)
+                            [state.current_user.user_id, other_id], state.db)
 
                 send_html(200, '') // make the user disappear from edit_profile page
             }
             else {
                 await query(`replace into relationships set rel_i_ban=unix_timestamp(now()), rel_self_ID=?, rel_other_ID=?`,
-                            [state.current_user.user_id, other_id], state)
+                            [state.current_user.user_id, other_id], state.db)
 
                 send_html(200, '')
             }
 
             // either way, update this user's ignore count
             await query(`update users set user_bannedby=(select count(*) from relationships where rel_i_ban > 0 and rel_other_id=?)
-                         where user_id=?`, [other_id, other_id], state)
+                         where user_id=?`, [other_id, other_id], state.db)
         },
 
         key_login : async function() {
@@ -2425,13 +2426,13 @@ async function render(state) { /////////////////////////////////////////
             let key      = _GET(state.req.url, 'key')
             let password = get_nonce(Date.now(), state.ip).substring(0, 6)
 
-            var email = await get_var('select user_email from users where user_activation_key = ?', [key], state)
+            var email = await get_var('select user_email from users where user_activation_key = ?', [key], state.db)
 
             if (email) {
 
                 // erase key so it cannot be used again, and set new password
                 await query('update users set user_activation_key=null, user_pass=? where user_activation_key=?',
-                            [md5(password), key], state)
+                            [md5(password), key], state.db)
 
                 login(state, email, password)
             }
@@ -2456,23 +2457,23 @@ async function render(state) { /////////////////////////////////////////
             if (intval(_GET(state.req.url, 'comment_id'))) {
                 let comment_id = intval(_GET(state.req.url, 'comment_id'))
 
-                let comment_row = await get_row(`select * from comments where comment_id=?`, [comment_id], state)
+                let comment_row = await get_row(`select * from comments where comment_id=?`, [comment_id], state.db)
 
                 if (!comment_row) return send_html(200, ``)
 
                 let vote = await get_row(`select commentvote_up, count(*) as c from commentvotes where commentvote_user_id=? and commentvote_comment_id=?`,
-                                          [user_id, comment_id], state)
+                                          [user_id, comment_id], state.db)
 
                 if (vote && vote.c) { // already voted on this
                     return send_html(200, `&#8593;&nbsp; you like this (${comment_row.comment_likes})`) // return so we don't send mails
                 }
                 else {
-                    await query(`update comments set comment_likes=comment_likes+1 where comment_id=?`, [comment_id], state)
+                    await query(`update comments set comment_likes=comment_likes+1 where comment_id=?`, [comment_id], state.db)
 
                     await query(`insert into commentvotes (commentvote_user_id, commentvote_comment_id, commentvote_up) values (?, ?, 1)
-                                 on duplicate key update commentvote_up=1`, [user_id, comment_id], state)
+                                 on duplicate key update commentvote_up=1`, [user_id, comment_id], state.db)
 
-                    await query(`update users set user_likes=user_likes+1 where user_id=?`, [comment_row.comment_author], state)
+                    await query(`update users set user_likes=user_likes+1 where user_id=?`, [comment_row.comment_author], state.db)
 
                     send_html(200, `&#8593;&nbsp;you like this (${comment_row.comment_likes + 1})`) // don't return, send mails
                 }
@@ -2482,7 +2483,7 @@ async function render(state) { /////////////////////////////////////////
                 let offset = await cid2offset(comment_row.comment_post_id, comment_row.comment_id)
                 let comment_url = `https://${CONF.domain}/post/${comment_row.comment_post_id}?offset=${offset}#comment-${comment_row.comment_id}`
 
-                let u = await get_row(`select * from users where user_id=?`, [comment_row.comment_author], state)
+                let u = await get_row(`select * from users where user_id=?`, [comment_row.comment_author], state.db)
 
                 if (intval(u && u.user_summonable)) {
 
@@ -2501,34 +2502,34 @@ async function render(state) { /////////////////////////////////////////
 
                 // Now if Patrick was the liker, then the user gets a bias bump up.
                 if (1 === user_id) {
-                    await query(`update users set user_pbias=user_pbias+1 where user_id=?`, [comment_row.comment_author], state)
+                    await query(`update users set user_pbias=user_pbias+1 where user_id=?`, [comment_row.comment_author], state.db)
                 }
             }
             else if (intval(_GET(state.req.url, 'post_id'))) {
                 let post_id = intval(_GET(state.req.url, 'post_id'))
 
                 let vote = await get_row(`select postvote_up, count(*) as c from postvotes where postvote_user_id=? and postvote_post_id=?`,
-                                      [user_id, post_id], state)
+                                      [user_id, post_id], state.db)
 
                 if (vote && vote.c) { // if they have voted before on this, just return
                     let post_row = await get_post(post_id)
                     return send_html(200, String(post_row.post_likes))
                 }
 
-                await query(`update posts set post_likes=post_likes+1 where post_id=?`, [post_id], state)
+                await query(`update posts set post_likes=post_likes+1 where post_id=?`, [post_id], state.db)
 
                 await query(`insert into postvotes (postvote_user_id, postvote_post_id, postvote_up) values (?, ?, 1)
-                             on duplicate key update postvote_up=0`, [user_id, post_id], state)
+                             on duplicate key update postvote_up=0`, [user_id, post_id], state.db)
 
                 let post_row = await get_post(post_id)
 
-                await query(`update users set user_likes=user_likes+1 where user_id=?`, [post_row.post_author], state)
+                await query(`update users set user_likes=user_likes+1 where user_id=?`, [post_row.post_author], state.db)
 
                 send_html(200, String(post_row.post_likes)) // don't return until we send email
 
                 let post_url = 'https://' + CONF.domain +  post2path(post_row)
 
-                let u = await get_row(`select * from users where user_id=?`, [post_row.post_author], state)
+                let u = await get_row(`select * from users where user_id=?`, [post_row.post_author], state.db)
 
                 if (intval(u && u.user_summonable)) {
 
@@ -2570,7 +2571,7 @@ async function render(state) { /////////////////////////////////////////
 
             // if the user is logged in and has posted MAX_POSTS times today, don't let them post more
             var posts_today = await get_var('select count(*) as c from posts where post_author=? and post_date >= curdate()',
-                                            [state.current_user.user_id], state)
+                                            [state.current_user.user_id], state.db)
 
             if (posts_today >= MAX_POSTS || posts_today > state.current_user.user_comments) {
                 var content = html(
@@ -2601,20 +2602,20 @@ async function render(state) { /////////////////////////////////////////
 
             let country = await ip2country(u.user_last_comment_ip)
 
-            let rows = await query('select distinct comment_post_id from comments where comment_author=?', [nuke_id], state)
+            let rows = await query('select distinct comment_post_id from comments where comment_author=?', [nuke_id], state.db)
 
             for (var i=0; i<rows.length; i++) {
                 let row = rows[i]
-                await query('delete from comments where comment_post_id=? and comment_author=?', [row.comment_post_id, nuke_id], state)
+                await query('delete from comments where comment_post_id=? and comment_author=?', [row.comment_post_id, nuke_id], state.db)
                 await reset_latest_comment(row.comment_post_id)
             }
-            await query('delete from posts     where post_author=?',      [nuke_id], state)
-            await query('delete from postviews where postview_user_id=?', [nuke_id], state)
-            await query('delete from users     where user_id=?',          [nuke_id], state)
+            await query('delete from posts     where post_author=?',      [nuke_id], state.db)
+            await query('delete from postviews where postview_user_id=?', [nuke_id], state.db)
+            await query('delete from users     where user_id=?',          [nuke_id], state.db)
 
             try {
                 await query(`insert into nukes (nuke_date, nuke_email, nuke_username,                nuke_ip,  nuke_country) values
-                           (now(), ?, ?, ?, ?)`, [u.user_email, u.user_name, u.user_last_comment_ip, country], state)
+                           (now(), ?, ?, ?, ?)`, [u.user_email, u.user_name, u.user_last_comment_ip, country], state.db)
             }
             catch(e) { console.log(e) } // try-catch for case where ip is already in nukes table somehow
 
@@ -2636,7 +2637,7 @@ async function render(state) { /////////////////////////////////////////
                         post_date > date_sub(date_sub(now(), interval ${years_ago} year), interval 1 year)
                         order by post_date desc limit 40`
 
-            state.posts = await query(sql, [user_id, user_id], state)
+            state.posts = await query(sql, [user_id, user_id], state.db)
             let s = (years_ago === 1) ? '' : 's'
             
             let content = html(
@@ -2664,7 +2665,7 @@ async function render(state) { /////////////////////////////////////////
                                         left join postvotes on (postvote_post_id=post_id and postvote_user_id=?)
                                         left join postviews on (postview_post_id=post_id and postview_user_id=?)
                                         left join users on user_id=post_author
-                                        where post_id=?`, [current_user_id, current_user_id, post_id], state)
+                                        where post_id=?`, [current_user_id, current_user_id, post_id], state.db)
 
             if (!state.post) { await repair_referer(); return die(`No post with id "${post_id}"`) }
 
@@ -2672,10 +2673,10 @@ async function render(state) { /////////////////////////////////////////
 
             state.comments      = await post_comment_list(state.post) // pick up the comment list for this post
             state.post.watchers = await get_var(`select count(*) as c from postviews
-                                                       where postview_post_id=? and postview_want_email=1`, [post_id], state)
+                                                       where postview_post_id=? and postview_want_email=1`, [post_id], state.db)
 
             state.post.post_views++ // increment here for display and in db on next line as record
-            await query(`update posts set post_views = ? where post_id=?`, [state.post.post_views, post_id], state)
+            await query(`update posts set post_views = ? where post_id=?`, [state.post.post_views, post_id], state.db)
 
             if (current_user_id) {
                 state.post.postview_want_email = state.post.postview_want_email || 0 // keep as 1 or 0 from db; set to 0 if null in db
@@ -2683,7 +2684,7 @@ async function render(state) { /////////////////////////////////////////
 
                 await query(`replace into postviews set
                              postview_user_id=?, postview_post_id=?, postview_last_view=now(), postview_want_email=?`,
-                             [ current_user_id, post_id, state.post.postview_want_email ], state)
+                             [ current_user_id, post_id, state.post.postview_want_email ], state.db)
             }
 
             // if we never set prev|next (null) or did set it to 0 AND are here from a new post referer, then update
@@ -2723,7 +2724,7 @@ async function render(state) { /////////////////////////////////////////
 
             if (!state.current_user) return die('you must be logged in to moderate posts')
 
-            state.posts = await query(`select * from posts left join users on user_id=post_author where post_approved=0`, [], state)
+            state.posts = await query(`select * from posts left join users on user_id=post_author where post_approved=0`, [], state.db)
 
             let content = html(
                 midpage(
@@ -2736,8 +2737,8 @@ async function render(state) { /////////////////////////////////////////
 
         random : async function() {
 
-            let rand = await get_var(`select round(rand() * (select count(*) from posts)) as r`, [], state)
-            let p    = await get_var(`select post_id from posts limit 1 offset ?`, [rand], state)
+            let rand = await get_var(`select round(rand() * (select count(*) from posts)) as r`, [], state.db)
+            let p    = await get_var(`select post_id from posts limit 1 offset ?`, [rand], state.db)
 
             redirect(`/post/${p}`)
         },
@@ -2768,15 +2769,15 @@ async function render(state) { /////////////////////////////////////////
 
             if (!message) { // no error yet
 
-                if (await get_row('select * from users where user_email = ?', [post_data.user_email], state)) {
+                if (await get_row('select * from users where user_email = ?', [post_data.user_email], state.db)) {
                     message = `That email is already registered. Please use the "forgot password" link above.</a>`
                 }
                 else {
-                    if (await get_row('select * from users where user_name = ?', [post_data.user_name], state)) {
+                    if (await get_row('select * from users where user_name = ?', [post_data.user_name], state.db)) {
                         message = `That user name is already registered. Please choose a different one.</a>`
                     }
                     else {
-                        await query('insert into users set user_registered=now(), ?', post_data, state)
+                        await query('insert into users set user_registered=now(), ?', post_data, state.db)
                         message = await send_login_link(state, post_data)
                     }
                 }
@@ -2810,7 +2811,7 @@ async function render(state) { /////////////////////////////////////////
                        left join users on user_id=post_author
                        where match(post_title, post_content) against ('${s}') ${order_by} limit ${slimit}`
 
-            state.posts    = await query(sql, [], state)
+            state.posts    = await query(sql, [], state.db)
             let found_rows = sql_calc_found_rows()
 
             let path = URL.parse(state.req.url).pathname // "pathNAME" is url path without ? parms, unlike "path"
@@ -2836,7 +2837,7 @@ async function render(state) { /////////////////////////////////////////
 
             let c = await get_var(`select comment_id from comments
                                        where comment_post_id = ? and comment_approved > 0 and comment_date > from_unixtime(?)
-                                       order by comment_date limit 1`, [p, when], state)
+                                       order by comment_date limit 1`, [p, when], state.db)
 
             let offset = await cid2offset(p, c)
             let post = await get_post(p)
@@ -2859,9 +2860,9 @@ async function render(state) { /////////////////////////////////////////
                        left join users on user_id=post_author
                        where post_topic = ? and post_approved=1 ${order_by} limit ${slimit}`
 
-            state.posts = await query(sql, [user_id, user_id, topic], state)
+            state.posts = await query(sql, [user_id, user_id, topic], state.db)
             
-            var row = await get_row('select * from users, topics where topic=? and topic_moderator=user_id', [topic], state)
+            var row = await get_row('select * from users, topics where topic=? and topic_moderator=user_id', [topic], state.db)
 
             if (row) {
                 var moderator_announcement = `<br>Moderator is <a href='/user/${row.user_name}'>${row.user_name}</a>.
@@ -2890,7 +2891,7 @@ async function render(state) { /////////////////////////////////////////
         topics : async function () {
 
             state.topics = await query(`select post_topic, count(*) as c from posts
-                                        where length(post_topic) > 0 group by post_topic having c >=3 order by c desc`, null, state)
+                                        where length(post_topic) > 0 group by post_topic having c >=3 order by c desc`, null, state.db)
 
             let content = html(
                 midpage(
@@ -2908,7 +2909,7 @@ async function render(state) { /////////////////////////////////////////
 
             if (state.current_user && (state.current_user.user_pbias > 3) && valid_nonce(state.ip, _GET(state.req.url, 'ts'), _GET(state.req.url, 'nonce')) && comment_id) {
                 await query(`update comments set comment_adhom_reporter=?, comment_adhom_when=now() where comment_id = ?`,
-                            [state.current_user.user_id, comment_id], state)
+                            [state.current_user.user_id, comment_id], state.db)
             }
 
             send_html(200, '') // blank response in all cases
@@ -2940,7 +2941,7 @@ async function render(state) { /////////////////////////////////////////
                  post_data.user_summonable,
                  post_data.user_hide_post_list_photos,
                  post_data.user_aboutyou,
-                 state.current_user.user_id], state).catch(error => {
+                 state.current_user.user_id], state.db).catch(error => {
                     if (error.code.match(/ER_DUP_ENTRY/)) return die(`Sorry, looks like someone already took that email or user name`)
                     else                                  return die(`Something went wrong with save`)
                  })
@@ -2986,9 +2987,9 @@ async function render(state) { /////////////////////////////////////////
                         dims = await getimagesize(`${abs_path}/${clean_name}`) // get the new reduced image dimensions
 
                         let id = state.current_user.user_id
-                        await query(`update users set user_icon        = ? where user_id = ?`, [`${url_path}/${clean_name}`, id], state)
-                        await query(`update users set user_icon_width  = ? where user_id = ?`, [dims[0],                     id], state)
-                        await query(`update users set user_icon_height = ? where user_id = ?`, [dims[1],                     id], state)
+                        await query(`update users set user_icon        = ? where user_id = ?`, [`${url_path}/${clean_name}`, id], state.db)
+                        await query(`update users set user_icon_width  = ? where user_id = ?`, [dims[0],                     id], state.db)
+                        await query(`update users set user_icon_height = ? where user_id = ?`, [dims[1],                     id], state.db)
 
                         return redirect('/edit_profile')
                     }
@@ -3018,7 +3019,7 @@ async function render(state) { /////////////////////////////////////////
             let current_user_id = state.current_user ? state.current_user.user_id : 0
             let [curpage, slimit, order, order_by] = page(_GET(state.req.url, 'page'), _GET(state.req.url, 'order'))
             let user_name = decodeURIComponent(segments(state.req.url)[2]).replace(/[^\w._ -]/g, '') // like /user/Patrick
-            let u = await get_row(`select * from users where user_name=?`, [user_name], state)
+            let u = await get_row(`select * from users where user_name=?`, [user_name], state.db)
 
             if (!u) return die(`no such user: ${user_name}`)
 
@@ -3030,7 +3031,7 @@ async function render(state) { /////////////////////////////////////////
                        where post_approved=1 and user_id=?
                        ${order_by} limit ${slimit}`
 
-            state.posts = await query(sql, [current_user_id, current_user_id, u.user_id], state)
+            state.posts = await query(sql, [current_user_id, current_user_id, u.user_id], state.db)
 
             let found_post_rows = await sql_calc_found_rows()
 
@@ -3063,16 +3064,16 @@ async function render(state) { /////////////////////////////////////////
 
                 // 1. Find all those IDs that asked to be friends with user_id.
                 await query('create temporary table unrequited select * from relationships where rel_other_id=? and rel_my_friend > 0',
-                      [state.current_user.user_id], state)
+                      [state.current_user.user_id], state.db)
 
                 // 2. Subtract all those for which there is the acceptance line.
                 await query(`delete from unrequited where rel_self_id in
                       (select rel_other_id from relationships where rel_self_id=? and rel_my_friend > 0)`,
-                      [state.current_user.user_id], state)
+                      [state.current_user.user_id], state.db)
                 
                 state.users = await query(`select sql_calc_found_rows * from unrequited, users
                                            where unrequited.rel_self_id = users.user_id and user_id = ? limit 40 offset ${offset}`,
-                                          [state.current_user.user_id], state)
+                                          [state.current_user.user_id], state.db)
             }
             else if ( _GET(state.req.url, 'followersof') ) {
                 let followersof = intval(_GET(state.req.url, 'followersof'))
@@ -3081,10 +3082,10 @@ async function render(state) { /////////////////////////////////////////
 
                 state.users = await query(`select sql_calc_found_rows * from users
                     where user_id in (select rel_self_id from relationships where rel_other_id=? and rel_i_follow > 0)
-                    order by ${ob} ${d} limit 40 offset ${offset}`, [followersof, ob, d], state)
+                    order by ${ob} ${d} limit 40 offset ${offset}`, [followersof, ob, d], state.db)
 
                 // keep followers-count cache in users table correct
-                await query('update users set user_followers=? where user_id=?', [state.users.length, followersof], state);
+                await query('update users set user_followers=? where user_id=?', [state.users.length, followersof], state.db)
             }
             else if ( _GET(state.req.url, 'following') ) {
                 let following = intval(_GET(state.req.url, 'following'))
@@ -3093,7 +3094,7 @@ async function render(state) { /////////////////////////////////////////
 
                 state.users = await query(`select sql_calc_found_rows * from users where user_id in
                                           (select rel_other_id from relationships where rel_self_id=? and rel_i_follow > 0)
-                                           order by ${ob} ${d} limit 40 offset ${offset}`, [following], state)
+                                           order by ${ob} ${d} limit 40 offset ${offset}`, [following], state.db)
             }
             else if ( _GET(state.req.url, 'friendsof') ) {
                 let friendsof = intval(_GET(state.req.url, 'friendsof'))
@@ -3106,10 +3107,10 @@ async function render(state) { /////////////////////////////////////////
                                               r1.rel_self_id=r2.rel_other_id and
                                               r2.rel_self_id=r1.rel_other_id and
                                               r1.rel_my_friend > 0 and r2.rel_my_friend > 0)
-                                          order by ${ob} ${d} limit 40 offset ${offset}`, [friendsof, ob, d], state)
+                                          order by ${ob} ${d} limit 40 offset ${offset}`, [friendsof, ob, d], state.db)
 
                 await query(`update users set user_friends=? where user_id=?`,
-                            [state.users.length, friendsof], state); // Keep friends-count cache correct.
+                            [state.users.length, friendsof], state.db) // Keep friends-count cache correct.
             }
             else if ( _GET(state.req.url, 'user_name') ) {
 
@@ -3119,11 +3120,11 @@ async function render(state) { /////////////////////////////////////////
                 message = `Users With Names Like '${user_name}'`
 
                 state.users = await query(`select sql_calc_found_rows * from users where user_name like '%${user_name}%'
-                                           order by ${ob} ${d} limit 40 offset ${offset}`, [ob, d], state)
+                                           order by ${ob} ${d} limit 40 offset ${offset}`, [ob, d], state.db)
             }
             else {
                 message = 'users'
-                state.users   = await query(`select sql_calc_found_rows * from users order by ${ob} ${d} limit 40 offset ${offset}`, [], state)
+                state.users   = await query(`select sql_calc_found_rows * from users order by ${ob} ${d} limit 40 offset ${offset}`, [], state.db)
             }
 
             let next_page = state.req.url.match(/offset=/) ? state.req.url.replace(/offset=\d+/, `offset=${offset + 40}`) :
@@ -3151,14 +3152,14 @@ async function render(state) { /////////////////////////////////////////
 
             let postview_want_email = await get_var(`select postview_want_email from postviews
                                                      where postview_user_id=? and postview_post_id=?`,
-                                                     [state.current_user.user_id, post_id], state)
+                                                     [state.current_user.user_id, post_id], state.db)
 
             if (postview_want_email) var want_email = 0 // invert
             else                     var want_email = 1
 
             await query(`insert into postviews (postview_user_id, postview_post_id, postview_want_email) values (?, ?, ?)
                          on duplicate key update postview_want_email=?`,
-                        [state.current_user.user_id, post_id, want_email, want_email], state)
+                        [state.current_user.user_id, post_id, want_email, want_email], state.db)
 
             send_html(200, render_watch_indicator(want_email))
         },
@@ -3172,7 +3173,7 @@ async function render(state) { /////////////////////////////////////////
     async function cid2offset(post_id, comment_id) { // given a comment_id, find the offset
 
         return await get_var(`select floor(count(*) / 40) * 40 as o from comments
-                              where comment_post_id=? and comment_id < ? order by comment_id`, [post_id, comment_id], state)
+                              where comment_post_id=? and comment_id < ? order by comment_id`, [post_id, comment_id], state.db)
     }
 
     async function comment_mail(c) { // reasons to send out comment emails: @user summons, user watching post
@@ -3188,7 +3189,7 @@ async function render(state) { /////////////////////////////////////////
             let summoned_user_username = matches[1]
             var u
             if (u = await get_row(`select * from users where user_name=? and user_id != ? and user_summonable=1`,
-                                       [summoned_user_username, c.comment_author], state)) {
+                                       [summoned_user_username, c.comment_author], state.db)) {
 
                 let subject  = `New ${CONF.domain} comment by ${commenter} directed at ${summoned_user_username}`
 
@@ -3212,7 +3213,7 @@ async function render(state) { /////////////////////////////////////////
                         group by postview_user_id` // Group by so that user_id is in there only once.
 
         let rows = []
-        if (rows = await query(sql, [c.comment_post_id, c.comment_author], state)) {
+        if (rows = await query(sql, [c.comment_post_id, c.comment_author], state.db)) {
             rows.forEach(async function(row) {
 
                 if (already_mailed[row.postview_user_id]) return
@@ -3238,10 +3239,10 @@ async function render(state) { /////////////////////////////////////////
     async function find_or_create_anon() { // find the user_id derived from this anonymous ip address; if dne, create
 
         var user_id
-        user_id = await get_var('select user_id from users where user_name = ?', [ip2anon(state.ip)], state)
+        user_id = await get_var('select user_id from users where user_name = ?', [ip2anon(state.ip)], state.db)
 
         if (!user_id) {
-            var results = await query('insert into users (user_name, user_registered) values (?, now())', [ip2anon(state.ip)], state)
+            var results = await query('insert into users (user_name, user_registered) values (?, now())', [ip2anon(state.ip)], state.db)
             var user_id = results.insertId
             if (!user_id) throw { code : 500, message : `failed to create anon user ${ip2anon(state.ip)}`, }
         }
@@ -3263,7 +3264,7 @@ async function render(state) { /////////////////////////////////////////
     async function get_comment_list_by_author(a, start, num) {
 
         let comments = await query(`select sql_calc_found_rows * from comments left join users on comment_author=user_id
-                                    where user_name = ? order by comment_date limit ?, ?`, [a, start, num], state)
+                                    where user_name = ? order by comment_date limit ?, ?`, [a, start, num], state.db)
 
         let total = await sql_calc_found_rows()
 
@@ -3274,7 +3275,7 @@ async function render(state) { /////////////////////////////////////////
 
         let comments = await query(`select sql_calc_found_rows * from comments, users force index (user_comments_index)
                                 where comments.comment_author = users.user_id and user_comments = ? order by comment_date desc limit ?, ?`,
-                                    [n, start, num], state)
+                                    [n, start, num], state.db)
 
         let total = await sql_calc_found_rows()
 
@@ -3285,7 +3286,7 @@ async function render(state) { /////////////////////////////////////////
 
         let comments = await query(`select sql_calc_found_rows * from comments left join users on comment_author=user_id
                                     where match(comment_content) against (?)
-                                    order by comment_date desc limit ?, ?`, [s, start, num], state)
+                                    order by comment_date desc limit ?, ?`, [s, start, num], state.db)
 
         let total = await sql_calc_found_rows()
 
@@ -3294,15 +3295,15 @@ async function render(state) { /////////////////////////////////////////
 
     async function get_moderator(topic) {
         topic = topic.replace(/\W/, '') // topic names contain only \w chars
-        return await get_var('select topic_moderator from topics where topic=?', [topic], state)
+        return await get_var('select topic_moderator from topics where topic=?', [topic], state.db)
     }
 
     async function get_post(post_id) {
-        return await get_row('select * from posts where post_id = ?', [post_id], state)
+        return await get_row('select * from posts where post_id = ?', [post_id], state.db)
     }
 
     async function get_userrow(user_id) {
-        return await get_row('select * from users where user_id = ?', [user_id], state)
+        return await get_row('select * from users where user_id = ?', [user_id], state.db)
     }
 
     function html(...args) {
@@ -3338,17 +3339,17 @@ async function render(state) { /////////////////////////////////////////
         ip = ip.replace(/[^0-9\.]/, '')
 
         return await get_var(`select country_name from countries where inet_aton(?) >= country_start and inet_aton(?) <= country_end`,
-                              [ip, ip], state)
+                              [ip, ip], state.db)
     }
  
     async function user_topic_bans(user_id) {
         return await query(`select topicwatch_name as topic, topicwatch_banned_until as until from topicwatches
-                            where topicwatch_user_id=? and topicwatch_banned_until > now()`, [user_id], state)
+                            where topicwatch_user_id=? and topicwatch_banned_until > now()`, [user_id], state.db)
     }
 
     async function login(state, email, password) {
 
-        var user = await get_row('select * from users where user_email = ? and user_pass = ?', [email, md5(password)], state)
+        var user = await get_row('select * from users where user_email = ? and user_pass = ?', [email, md5(password)], state.db)
 
         if (!user) {
             state.login_failed_email = email
@@ -3376,7 +3377,7 @@ async function render(state) { /////////////////////////////////////////
                        where post_modified > date_sub(now(), interval 7 day) and post_approved=1
                        order by post_modified desc limit 0, 20`
 
-            state.posts   = await query(sql, [current_user_id, current_user_id], state)
+            state.posts   = await query(sql, [current_user_id, current_user_id], state.db)
 
             var content = html(
                 midpage(
@@ -3404,7 +3405,7 @@ async function render(state) { /////////////////////////////////////////
 
     async function post_mail(p) { // reasons to send out post emails: @user, user following post author, user following post topic
 
-        var post = await get_row(`select * from posts, users where post_id=? and post_author=user_id`, [p], state) // p is just the post_id
+        var post = await get_row(`select * from posts, users where post_id=? and post_author=user_id`, [p], state.db) // p is just the post_id
 
         var already_mailed = []
 
@@ -3414,7 +3415,7 @@ async function render(state) { /////////////////////////////////////////
             var summoned_user_username = matches[1]
             var u
             if (u = await get_row(`select * from users where user_name=? and user_id != ? and user_summonable=1`,
-                                       [summoned_user_username, post.post_author], state)) {
+                                       [summoned_user_username, post.post_author], state.db)) {
 
                 let subject  = `New ${CONF.domain} post by ${post.user_name} directed at ${summoned_user_username}`
 
@@ -3434,7 +3435,7 @@ async function render(state) { /////////////////////////////////////////
         // now do user follower emails
         var rows = []
         if (rows = await query(`select distinct rel_self_id as user_id from relationships where rel_other_id = ? and rel_i_follow > 0`,
-                               [post.post_author], state)) {
+                               [post.post_author], state.db)) {
             rows.forEach(async function(row) {
 
                 if (already_mailed[row.rel_self_id]) return
@@ -3458,7 +3459,7 @@ async function render(state) { /////////////////////////////////////////
 
         // now do topic follower emails
         if (post.post_topic) {
-            if (rows = await query(`select distinct topicwatch_user_id from topicwatches where topicwatch_name = ?`, [post.post_topic], state)) {
+            if (rows = await query(`select distinct topicwatch_user_id from topicwatches where topicwatch_name = ?`, [post.post_topic], state.db)) {
                 rows.forEach(async function(row) {
 
                     if (already_mailed[row.topicwatch_user_id]) return
@@ -3496,7 +3497,7 @@ async function render(state) { /////////////////////////////////////////
                    where comment_post_id = ? and comment_approved = 1
                    order by comment_date limit 40 offset ?`
 
-        let results = await query(sql, [user_id, post.post_id, offset], state)
+        let results = await query(sql, [user_id, post.post_id, offset], state.db)
         let found_rows = await sql_calc_found_rows()
 
         let topic_moderator = await get_moderator(post.post_topic)
@@ -3546,11 +3547,11 @@ async function render(state) { /////////////////////////////////////////
         if (!post_id) return
 
         let comment_row = await get_row(`select * from comments where comment_post_id=? and comment_approved > 0
-                                         order by comment_date desc limit 1`, [post_id], state) 
+                                         order by comment_date desc limit 1`, [post_id], state.db)
 
         if (comment_row) { // this is at least one comment on this post
             let post_comments = await get_var(`select count(*) as c from comments where comment_post_id=? and comment_approved=1`,
-                                              [post_id], state)
+                                              [post_id], state.db)
 
             let firstwords = first_words(comment_row.comment_content, 40)
 
@@ -3566,7 +3567,7 @@ async function render(state) { /////////////////////////////////////////
                           comment_row.comment_id,
                           comment_row.comment_author,
                           firstwords,
-                          post_id], state) // post_modified is necessary for sorting posts by latest comment
+                          post_id], state.db) // post_modified is necessary for sorting posts by latest comment
         }
         else { // there are no comments
             await query(`update posts set
@@ -3575,7 +3576,7 @@ async function render(state) { /////////////////////////////////////////
                          post_latest_comment_id=0,
                          post_latest_commenter_id=0,
                          post_latest_comment_excerpt=''
-                         where post_id=?`, [post_id], state)
+                         where post_id=?`, [post_id], state.db)
         }
     }
 
@@ -3605,7 +3606,7 @@ async function render(state) { /////////////////////////////////////////
         let key      = get_nonce(Date.now(), state.ip)
         let key_link = `${BASEURL}/key_login?key=${ key }`
 
-        var results = await query('update users set user_activation_key=? where user_email=?', [key, post_data.user_email], state)
+        var results = await query('update users set user_activation_key=? where user_email=?', [key, post_data.user_email], state.db)
 
         if (results.changedRows) {
 
@@ -3619,7 +3620,7 @@ async function render(state) { /////////////////////////////////////////
     }
 
     async function sql_calc_found_rows() {
-        return await get_var('select found_rows() as f', [], state)
+        return await get_var('select found_rows() as f', [], state.db)
     }
 
     async function update_prev_next(post_topic, post_id) { // slow, so do this only when post is changed or the prev or next is null
@@ -3627,12 +3628,12 @@ async function render(state) { /////////////////////////////////////////
         if (!post_topic || !post_id) return
 
         let prev = intval(await get_var(`select max(post_id) as prev from posts
-                                         where post_topic=? and post_id < ? and post_approved=1 limit 1`, [post_topic, post_id], state))
+                                         where post_topic=? and post_id < ? and post_approved=1 limit 1`, [post_topic, post_id], state.db))
 
         let next = intval(await get_var(`select min(post_id) as next from posts
-                                         where post_topic=? and post_id > ? and post_approved=1 limit 1`, [post_topic, post_id], state))
+                                         where post_topic=? and post_id > ? and post_approved=1 limit 1`, [post_topic, post_id], state.db))
 
-        await query(`update posts set post_prev_in_topic=?, post_next_in_topic=? where post_id=?`, [prev, next, post_id], state)
+        await query(`update posts set post_prev_in_topic=?, post_next_in_topic=? where post_id=?`, [prev, next, post_id], state.db)
 
         return [prev, next]
     }
