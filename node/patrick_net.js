@@ -1798,6 +1798,10 @@ async function update_prev_next(post_topic, post_id, db) { // slow, so do this o
     return [prev, next]
 }
 
+async function sql_calc_found_rows(db) {
+    return await get_var('select found_rows() as f', [], db)
+}
+
 async function render(state) { /////////////////////////////////////////
 
     var pages = {
@@ -2413,7 +2417,7 @@ async function render(state) { /////////////////////////////////////////
                 midpage(
                     tabs(order, '', path),
                     post_list(state.posts, state.ip, state.req.url, state.current_user),
-                    post_pagination(await sql_calc_found_rows(), curpage, `&order=${order}`, state.req.url)
+                    post_pagination(await sql_calc_found_rows(state.db), curpage, `&order=${order}`, state.req.url)
                 )
             )
 
@@ -2836,7 +2840,7 @@ async function render(state) { /////////////////////////////////////////
                        where match(post_title, post_content) against ('${s}') ${order_by} limit ${slimit}`
 
             state.posts    = await query(sql, [], state.db)
-            let found_rows = sql_calc_found_rows()
+            let found_rows = sql_calc_found_rows(state.db)
 
             let path = URL.parse(state.req.url).pathname // "pathNAME" is url path without ? parms, unlike "path"
 
@@ -2904,7 +2908,7 @@ async function render(state) { /////////////////////////////////////////
                     moderator_announcement,
                     tabs(order, `&topic=${topic}`, path),
                     post_list(state.posts, state.ip, state.req.url, state.current_user),
-                    post_pagination(sql_calc_found_rows(), curpage, `&topic=${topic}&order=${order}`, state.req.url),
+                    post_pagination(sql_calc_found_rows(state.db), curpage, `&topic=${topic}&order=${order}`, state.req.url),
                     topic_moderation(topic, state.current_user)
                 )
             )
@@ -3057,7 +3061,7 @@ async function render(state) { /////////////////////////////////////////
 
             state.posts = await query(sql, [current_user_id, current_user_id, u.user_id], state.db)
 
-            let found_post_rows = await sql_calc_found_rows()
+            let found_post_rows = await sql_calc_found_rows(state.db)
 
             u.bans = await user_topic_bans(u.user_id, state.db)
 
@@ -3290,7 +3294,7 @@ async function render(state) { /////////////////////////////////////////
         let comments = await query(`select sql_calc_found_rows * from comments left join users on comment_author=user_id
                                     where user_name = ? order by comment_date limit ?, ?`, [a, start, num], state.db)
 
-        let total = await sql_calc_found_rows()
+        let total = await sql_calc_found_rows(state.db)
 
         return {comments : comments, total : total}
     }
@@ -3301,7 +3305,7 @@ async function render(state) { /////////////////////////////////////////
                                 where comments.comment_author = users.user_id and user_comments = ? order by comment_date desc limit ?, ?`,
                                     [n, start, num], state.db)
 
-        let total = await sql_calc_found_rows()
+        let total = await sql_calc_found_rows(state.db)
 
         return {comments, total}
     }
@@ -3312,7 +3316,7 @@ async function render(state) { /////////////////////////////////////////
                                     where match(comment_content) against (?)
                                     order by comment_date desc limit ?, ?`, [s, start, num], state.db)
 
-        let total = await sql_calc_found_rows()
+        let total = await sql_calc_found_rows(state.db)
 
         return {comments, total}
     }
@@ -3513,7 +3517,7 @@ async function render(state) { /////////////////////////////////////////
                    order by comment_date limit 40 offset ?`
 
         let results = await query(sql, [user_id, post.post_id, offset], state.db)
-        let found_rows = await sql_calc_found_rows()
+        let found_rows = await sql_calc_found_rows(state.db)
 
         let topic_moderator = await get_moderator(post.post_topic)
 
@@ -3632,10 +3636,6 @@ async function render(state) { /////////////////////////////////////////
             return `Please check your ${post_data.user_email} email for the login link`
         }
         else return `Could not find user with email ${ post_data.user_email }`
-    }
-
-    async function sql_calc_found_rows() {
-        return await get_var('select found_rows() as f', [], state.db)
     }
 
     if (typeof pages[state.page] === 'function') { // hit the db iff the request is for a valid url
