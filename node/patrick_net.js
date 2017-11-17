@@ -56,7 +56,7 @@ function get_connection_from_pool(state) {
     return new Promise(function(resolve, reject) {
 
         if (LOCKS[state.ip]) {
-            setTimeout(() => { release_connection_to_pool(state) }, 2000) // don't let lock last for more than two seconds
+            setTimeout(() => { release_connection_to_pool(state.db, state.ip) }, 2000) // don't let lock last for more than two seconds
             console.trace()
             return reject('rate limit exceeded')
         }
@@ -76,9 +76,9 @@ function get_connection_from_pool(state) {
     })
 }
 
-function release_connection_to_pool(state) {
-    state.db && state.db.release()
-    delete LOCKS[state.ip]
+function release_connection_to_pool(db, ip) {
+    db && db.release()
+    delete LOCKS[ip]
 }
 
 async function block_countries(state) { // block entire countries like Russia because all comments from there are inevitably spam
@@ -3602,7 +3602,7 @@ async function render(state) { /////////////////////////////////////////
     function send(code, headers, content) {
         state.res.writeHead(code, headers)
         state.res.end(content)
-        release_connection_to_pool(state)
+        release_connection_to_pool(state.db, state.ip)
     }
 
     function send_html(code, html) {
