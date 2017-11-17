@@ -1822,6 +1822,12 @@ async function send_login_link(ip, db, post_data) {
     else return `Could not find user with email ${ post_data.user_email }`
 }
 
+function send(res, code, headers, content, db, ip) {
+    res.writeHead(code, headers)
+    res.end(content)
+    release_connection_to_pool(db, ip)
+}
+
 async function render(state) { /////////////////////////////////////////
 
     var pages = {
@@ -2610,7 +2616,7 @@ async function render(state) { /////////////////////////////////////////
                 ['Set-Cookie'     , `${ CONF.pwcookie   }=_; Expires=${d}; Path=/`]
             ] // do not use 'secure' parm with cookie or will be unable to test login in dev, bc dev is http only
 
-            send(200, headers, html)
+            send(state.res, 200, headers, html, state.db, state.ip)
         },
 
         new_post : async function() {
@@ -3439,7 +3445,7 @@ async function render(state) { /////////////////////////////////////////
             ['Set-Cookie'     , `${pwcookie};   Expires=${decade}; Path=/`]
         ] // do not use 'secure' parm with cookie or will be unable to test login in dev, bc dev is http only
 
-        send(200, headers, content)
+        send(state.res, 200, headers, content, state.db, state.ip)
     }
 
     async function post_mail(p) { // reasons to send out post emails: @user, user following post author, user following post topic
@@ -3564,7 +3570,7 @@ async function render(state) { /////////////////////////////////////////
           'Expires'        : new Date().toUTCString()
         }
 
-        send(code, headers, message)
+        send(state.res, code, headers, message, state.db, state.ip)
     }
 
     async function repair_referer() { // look at referer to a bad post; if it exist, call update_prev_next() on that
@@ -3619,12 +3625,6 @@ async function render(state) { /////////////////////////////////////////
         }
     }
 
-    function send(code, headers, content) {
-        state.res.writeHead(code, headers)
-        state.res.end(content)
-        release_connection_to_pool(state.db, state.ip)
-    }
-
     function send_html(code, html) {
 
         //html = html.replace(/\/\/.*/, ' ') // remove js comments
@@ -3635,7 +3635,7 @@ async function render(state) { /////////////////////////////////////////
             'Expires'        : new Date().toUTCString()
         }
 
-        send(code, headers, html)
+        send(state.res, code, headers, html, state.db, state.ip)
     }
 
     if (typeof pages[state.page] === 'function') { // hit the db iff the request is for a valid url
