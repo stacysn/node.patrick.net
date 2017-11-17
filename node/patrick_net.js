@@ -1802,6 +1802,26 @@ async function sql_calc_found_rows(db) {
     return await get_var('select found_rows() as f', [], db)
 }
 
+async function send_login_link(ip, db, post_data) {
+
+    if (!valid_email(post_data.user_email)) return `Please go back and enter a valid email`
+
+    let key      = get_nonce(Date.now(), ip)
+    let key_link = `${BASEURL}/key_login?key=${ key }`
+
+    var results = await query('update users set user_activation_key=? where user_email=?', [key, post_data.user_email], db)
+
+    if (results.changedRows) {
+
+        let message = `Click here to log in and get your password: <a href='${ key_link }'>${ key_link }</a>`
+
+        mail(post_data.user_email, `Your ${ CONF.domain } login info`, message)
+
+        return `Please check your ${post_data.user_email} email for the login link`
+    }
+    else return `Could not find user with email ${ post_data.user_email }`
+}
+
 async function render(state) { /////////////////////////////////////////
 
     var pages = {
@@ -2775,7 +2795,7 @@ async function render(state) { /////////////////////////////////////////
 
             let post_data = await collect_post_data_and_trim(state)
 
-            let message = await send_login_link(state, post_data)
+            let message = await send_login_link(state.ip, state.db, post_data)
 
             let content = html(
                 midpage(
@@ -2806,7 +2826,7 @@ async function render(state) { /////////////////////////////////////////
                     }
                     else {
                         await query('insert into users set user_registered=now(), ?', post_data, state.db)
-                        message = await send_login_link(state, post_data)
+                        message = await send_login_link(state.ip, state.db, post_data)
                     }
                 }
             }
@@ -3616,26 +3636,6 @@ async function render(state) { /////////////////////////////////////////
         }
 
         send(code, headers, html)
-    }
-
-    async function send_login_link(state, post_data) {
-
-        if (!valid_email(post_data.user_email)) return `Please go back and enter a valid email`
-
-        let key      = get_nonce(Date.now(), state.ip)
-        let key_link = `${BASEURL}/key_login?key=${ key }`
-
-        var results = await query('update users set user_activation_key=? where user_email=?', [key, post_data.user_email], state.db)
-
-        if (results.changedRows) {
-
-            let message = `Click here to log in and get your password: <a href='${ key_link }'>${ key_link }</a>`
-
-            mail(post_data.user_email, `Your ${ CONF.domain } login info`, message)
-
-            return `Please check your ${post_data.user_email} email for the login link`
-        }
-        else return `Could not find user with email ${ post_data.user_email }`
     }
 
     if (typeof pages[state.page] === 'function') { // hit the db iff the request is for a valid url
