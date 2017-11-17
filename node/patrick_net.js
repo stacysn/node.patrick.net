@@ -1906,6 +1906,11 @@ function redirect(redirect_to, res, db, ip, code=303) { // put the code at the e
     send(res, code, headers, message, db, ip)
 }
 
+async function get_moderator(topic, db) {
+    topic = topic.replace(/\W/, '') // topic names contain only \w chars
+    return await get_var('select topic_moderator from topics where topic=?', [topic], db)
+}
+
 async function render(state) { /////////////////////////////////////////
 
     var pages = {
@@ -2158,7 +2163,7 @@ async function render(state) { /////////////////////////////////////////
             
             topic = topic.replace(/\W/, '')
 
-            let topic_moderator = await get_moderator(topic)
+            let topic_moderator = await get_moderator(topic, state.db)
 
             if (state.current_user.user_id !== topic_moderator) return send_html(200, 'non-moderator may not ban', state.res, state.db, state.ip)
 
@@ -2293,7 +2298,7 @@ async function render(state) { /////////////////////////////////////////
             if (!(comment_id && post_id)) return send_html(200, '', state.res, state.db, state.ip)
 
             var topic = (await get_post(post_id, state.db)).post_topic
-            var topic_moderator = intval(await get_moderator(topic))
+            var topic_moderator = intval(await get_moderator(topic, state.db))
 
             var comment_author = await get_var('select comment_author from comments where comment_id=?', [comment_id], state.db)
 
@@ -3436,11 +3441,6 @@ async function render(state) { /////////////////////////////////////////
         return {comments, total}
     }
 
-    async function get_moderator(topic) {
-        topic = topic.replace(/\W/, '') // topic names contain only \w chars
-        return await get_var('select topic_moderator from topics where topic=?', [topic], state.db)
-    }
-
     async function get_userrow(user_id) {
         return await get_row('select * from users where user_id = ?', [user_id], state.db)
     }
@@ -3634,7 +3634,7 @@ async function render(state) { /////////////////////////////////////////
         let results = await query(sql, [user_id, post.post_id, offset], state.db)
         let found_rows = await sql_calc_found_rows(state.db)
 
-        let topic_moderator = await get_moderator(post.post_topic)
+        let topic_moderator = await get_moderator(post.post_topic, state.db)
 
         // add in the comment row number to the result here for easier pagination info; would be better to do in mysql, but how?
         // also add in topic_moderator so we can display del link
