@@ -1879,6 +1879,20 @@ async function reset_latest_comment(post_id, db) { // reset post table data abou
     }
 }
 
+async function repair_referer(req, db) { // look at referer to a bad post; if it exist, call update_prev_next() on that
+
+    if (!req.headers.referer) return
+
+    var matches
+    if (matches = req.headers.referer.match(/\/post\/(\d+)/m)) {
+        var referring_post_id = intval(matches[1])
+
+        var post = await get_post(referring_post_id, db)
+
+        if (post && post.post_topic) await update_prev_next(post.post_topic, post.post_id, db)
+    }
+}
+
 async function render(state) { /////////////////////////////////////////
 
     var pages = {
@@ -2782,9 +2796,9 @@ async function render(state) { /////////////////////////////////////////
                                         left join users on user_id=post_author
                                         where post_id=?`, [current_user_id, current_user_id, post_id], state.db)
 
-            if (!state.post) { await repair_referer(); return die(`No post with id "${post_id}"`) }
+            if (!state.post) { await repair_referer(state.req, state.db); return die(`No post with id "${post_id}"`) }
 
-            if (!state.post.post_approved && current_user_id !== 1) { await repair_referer(); return die(`That post is waiting for moderation`) }
+            if (!state.post.post_approved && current_user_id !== 1) { await repair_referer(state.req, state.db); return die(`That post is waiting for moderation`) }
 
             state.comments      = await post_comment_list(state.post) // pick up the comment list for this post
             state.post.watchers = await get_var(`select count(*) as c from postviews
@@ -3633,20 +3647,6 @@ async function render(state) { /////////////////////////////////////////
         }
 
         send(state.res, code, headers, message, state.db, state.ip)
-    }
-
-    async function repair_referer() { // look at referer to a bad post; if it exist, call update_prev_next() on that
-
-        if (!state.req.headers.referer) return
-
-        var matches
-        if (matches = state.req.headers.referer.match(/\/post\/(\d+)/m)) {
-            var referring_post_id = intval(matches[1])
-
-            var post = await get_post(referring_post_id, state.db)
-
-            if (post && post.post_topic) await update_prev_next(post.post_topic, post.post_id, state.db)
-        }
     }
 
     if (typeof pages[state.page] === 'function') { // hit the db iff the request is for a valid url
