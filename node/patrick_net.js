@@ -43,7 +43,6 @@ function run(req, res) { // handle a single http request
     var state = { // start accumulation of state for this request
         ip      : req.headers['x-forwarded-for'],
         page    : segments(req.url)[1] || 'home',
-        queries : [],
         req     : req,
         res     : res,
         start_t : Date.now(),
@@ -70,6 +69,7 @@ function get_connection_from_pool(state) {
                 reject(err)
             }
             else {
+                db.queries = []
                 resolve(db)
             }
         })
@@ -553,7 +553,7 @@ function query(sql, sql_parms, state, debug) {
                 return reject(error)
             }
 
-            state.queries.push({ // for logging within the html footer
+            state.db.queries.push({ // for logging within the html footer
                 sql : query.sql,
                 ms  : timing
             })
@@ -3327,7 +3327,7 @@ async function render(state) { /////////////////////////////////////////
             </div>
         </body>
         <script async src="/jquery.min.js"></script>
-        ${render_query_times(state.start_t, state.queries)}
+        ${render_query_times(state.start_t, state.db.queries)}
         </html>`
     }
 
