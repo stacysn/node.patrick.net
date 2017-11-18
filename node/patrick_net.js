@@ -2112,6 +2112,20 @@ async function get_comment_list_by_search(s, start, num, db) {
     return {comments, total}
 }
 
+async function find_or_create_anon(db, ip) { // find the user_id derived from this anonymous ip address; if dne, create
+
+    var user_id
+    user_id = await get_var('select user_id from users where user_name = ?', [ip2anon(ip)], db)
+
+    if (!user_id) {
+        var results = await query('insert into users (user_name, user_registered) values (?, now())', [ip2anon(ip)], db)
+        var user_id = results.insertId
+        if (!user_id) throw { code : 500, message : `failed to create anon user ${ip2anon(ip)}`, }
+    }
+
+    return user_id
+}
+
 async function render(state) { /////////////////////////////////////////
 
     var pages = {
@@ -2141,7 +2155,7 @@ async function render(state) { /////////////////////////////////////////
                 state.res, state.db, state.ip)
             }
             else {
-                post_data.comment_author = state.current_user ? state.current_user.user_id : await find_or_create_anon()
+                post_data.comment_author = state.current_user ? state.current_user.user_id : await find_or_create_anon(state.db, state.ip)
                 /*
                 if (state.current_user && state.current_user.user_id)
                     post_data.comment_author = state.current_user.user_id
@@ -2544,7 +2558,7 @@ async function render(state) { /////////////////////////////////////////
 
         dislike : async function() { // given a comment or post, downvote it
 
-            var user_id = state.current_user ? state.current_user.user_id : await find_or_create_anon()
+            var user_id = state.current_user ? state.current_user.user_id : await find_or_create_anon(state.db, state.ip)
 
             if (intval(_GET(state.req.url, 'comment_id'))) {
                 let comment_id = intval(_GET(state.req.url, 'comment_id'))
@@ -2799,7 +2813,7 @@ async function render(state) { /////////////////////////////////////////
 
         like : async function() { // given a comment or post, upvote it
 
-            var user_id   = state.current_user ? state.current_user.user_id   : await find_or_create_anon()
+            var user_id   = state.current_user ? state.current_user.user_id   : await find_or_create_anon(state.db, state.ip)
             var user_name = state.current_user ? state.current_user.user_name : ip2anon(state.ip)
 
             if (intval(_GET(state.req.url, 'comment_id'))) {
@@ -3581,20 +3595,6 @@ async function render(state) { /////////////////////////////////////////
                 already_mailed[u.user_id] ? already_mailed[u.user_id]++ : already_mailed[u.user_id] = 1
             })
         }
-    }
-
-    async function find_or_create_anon() { // find the user_id derived from this anonymous ip address; if dne, create
-
-        var user_id
-        user_id = await get_var('select user_id from users where user_name = ?', [ip2anon(state.ip)], state.db)
-
-        if (!user_id) {
-            var results = await query('insert into users (user_name, user_registered) values (?, now())', [ip2anon(state.ip)], state.db)
-            var user_id = results.insertId
-            if (!user_id) throw { code : 500, message : `failed to create anon user ${ip2anon(state.ip)}`, }
-        }
-
-        return user_id
     }
 
     function die(message) {
