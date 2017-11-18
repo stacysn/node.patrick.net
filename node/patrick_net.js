@@ -2069,6 +2069,13 @@ async function login(email, password, db, login_failed_email, current_user, ip, 
     send(res, 200, headers, content, db, ip)
 }
 
+async function ip2country(ip, db) { // probably a bit slow, so don't overuse this
+    if (!ip) return
+    ip = ip.replace(/[^0-9\.]/, '')
+    return await get_var(`select country_name from countries where inet_aton(?) >= country_start and inet_aton(?) <= country_end`,
+                          [ip, ip], db)
+}
+
 async function render(state) { /////////////////////////////////////////
 
     var pages = {
@@ -2905,7 +2912,7 @@ async function render(state) { /////////////////////////////////////////
             if (1 !== state.current_user.user_id) return die('non-admin may not nuke')
             if (1 === nuke_id)                    return die('admin cannot nuke himself')
 
-            let country = await ip2country(u.user_last_comment_ip)
+            let country = await ip2country(u.user_last_comment_ip, state.ip)
 
             let rows = await query('select distinct comment_post_id from comments where comment_author=?', [nuke_id], state.db)
 
@@ -3627,16 +3634,6 @@ async function render(state) { /////////////////////////////////////////
         </html>`
     }
 
-    async function ip2country(ip) { // probably a bit slow, so don't overuse this
-
-        if (!ip) return
-
-        ip = ip.replace(/[^0-9\.]/, '')
-
-        return await get_var(`select country_name from countries where inet_aton(?) >= country_start and inet_aton(?) <= country_end`,
-                              [ip, ip], state.db)
-    }
- 
     if (typeof pages[state.page] === 'function') { // hit the db iff the request is for a valid url
         try {
             if (state.db = await get_connection_from_pool(state)) {
