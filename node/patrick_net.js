@@ -34,22 +34,9 @@ if (CLUSTER.isMaster && !('dev' === process.env.environment)) { // to keep debug
         console.log(`worker pid ${worker.process.pid} died with code ${code} from signal ${signal}, replacing that worker`)
         CLUSTER.fork()
     })
-} else HTTP.createServer(run).listen(CONF.http_port)
+} else HTTP.createServer(render).listen(CONF.http_port)
 
 // end of top-level code; everything below is in a function
-
-function run(req, res) { // handle a single http request
-
-    var state = { // start accumulation of state for this request
-        ip      : req.headers['x-forwarded-for'],
-        page    : segments(req.url)[1] || 'home',
-        req     : req,
-        res     : res,
-        start_t : Date.now(),
-    }
-
-    render(state)
-}
 
 function get_connection_from_pool(state) {
 
@@ -2191,7 +2178,7 @@ async function cid2offset(post_id, comment_id, db) { // given a comment_id, find
                           where comment_post_id=? and comment_id < ? order by comment_id`, [post_id, comment_id], db)
 }
 
-async function render(state) { /////////////////////////////////////////
+async function render(req, res) { /////////////////////////////////////////
 
     var pages = {
 
@@ -3631,6 +3618,14 @@ async function render(state) { /////////////////////////////////////////
         <script async src="/jquery.min.js"></script>
         ${render_query_times(state.start_t, state.db.queries)}
         </html>`
+    }
+
+    var state = {
+        ip      : req.headers['x-forwarded-for'],
+        page    : segments(req.url)[1] || 'home',
+        req     : req,
+        res     : res,
+        start_t : Date.now(),
     }
 
     if (typeof pages[state.page] === 'function') { // hit the db iff the request is for a valid url
