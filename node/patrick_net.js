@@ -995,9 +995,9 @@ function get_del_link(c, current_user, ip) {
         `<a href='#' onclick="if (confirm('Really delete?')) { $.get('/delete_comment?comment_id=${ c.comment_id }&post_id=${ c.comment_post_id }&${create_nonce_parms(ip)}', function() { $('#comment-${ c.comment_id }').remove() }); return false}">delete</a>` : ''
 }
 
-function profile_form(current_user, ip, updated) {
+function profile_form(current_user, ip, updated, state) {
 
-    if (!current_user) return die('please log in to edit your profile')
+    if (!current_user) return die('please log in to edit your profile', state)
 
     let u = current_user
 
@@ -2206,6 +2206,20 @@ function html(query_times, head, ...args) {
     </html>`
 }
 
+function die(message, state) {
+
+    let content = html(
+        render_query_times(state.res.start_t, state.db.queries),
+        head(CONF.stylesheet, CONF.description, state.post ? state.post.post_title : CONF.domain),
+        header(state.header_data, state.post ? state.post.post_topic : null, state.page, state.current_user, state.login_failed_email, state.req.url),
+        midpage(
+            h1(message)
+        )
+    )
+
+    send_html(200, content, state.res, state.db, state.ip)
+}
+
 async function render(req, res) { /////////////////////////////////////////
 
     var pages = {
@@ -2305,18 +2319,18 @@ async function render(req, res) { /////////////////////////////////////////
 
         accept_edited_comment : async function() { // update old comment
 
-            if (!valid_nonce(state.ip, _GET(state.req.url, 'ts'), _GET(state.req.url, 'nonce'))) return die(invalid_nonce_message())
+            if (!valid_nonce(state.ip, _GET(state.req.url, 'ts'), _GET(state.req.url, 'nonce'))) return die(invalid_nonce_message(), state)
 
             let post_data = await collect_post_data_and_trim(state)
 
-            if (!post_data.comment_content) return die('please go back and enter some content')
+            if (!post_data.comment_content) return die('please go back and enter some content', state)
 
             // rate limit by user's ip address
             var ago = await get_var('select (unix_timestamp(now()) - unix_timestamp(user_last_comment_time)) as ago from users where user_last_comment_time is not null and user_last_comment_ip = ? order by user_last_comment_time desc limit 1',
                 [state.ip], state.db)
 
             if (ago && ago < 2) { // this ip already commented less than two seconds ago
-                return die('You are posting comments too quickly! Please slow down')
+                return die('You are posting comments too quickly! Please slow down', state)
             }
             else {
                 post_data.comment_content  = strip_tags(post_data.comment_content.linkify())
@@ -2341,7 +2355,7 @@ async function render(req, res) { /////////////////////////////////////////
 
         accept_post : async function() { // insert new post or update old post
 
-            if (!state.current_user) return die(`anonymous posts are not allowed`)
+            if (!state.current_user) return die(`anonymous posts are not allowed`, state)
 
             let post_data = await collect_post_data_and_trim(state)
             delete post_data.submit
@@ -2366,7 +2380,7 @@ async function render(req, res) { /////////////////////////////////////////
                 post_data.post_author = state.current_user.user_id
 
                 if ((state.current_user.user_comments < 3) && is_foreign(state) && CHEERIO.load(post_data.post_content)('a').length)
-                    return die(`spam rejected`) // new, foreign, and posting link
+                    return die(`spam rejected`, state) // new, foreign, and posting link
 
                 var posts_today = await get_var('select count(*) as c from posts where post_author=? and post_date >= curdate()',
                     [state.current_user.user_id], state.db)
@@ -2374,15 +2388,15 @@ async function render(req, res) { /////////////////////////////////////////
                 var whole_weeks_registered = await get_var('select floor(datediff(curdate(), user_registered)/7) from users where user_id=?',
                     [state.current_user.user_id], state.db)
 
-                if (posts_today >= MAX_POSTS || posts_today > whole_weeks_registered) return die(`you hit your new post limit for today`)
+                if (posts_today >= MAX_POSTS || posts_today > whole_weeks_registered) return die(`you hit your new post limit for today`, state)
 
                 try {
                     var results = await query('insert into posts set ?, post_modified=now()', post_data, state.db)
                 }
-                catch (e) { return die(e) }
+                catch (e) { return die(e, state) }
 
                 var p = results.insertId
-                if (!p) return die(`failed to insert ${post_data} into posts`)
+                if (!p) return die(`failed to insert ${post_data} into posts`, state)
 
                 post_mail(p, state.db) // reasons to send out post emails: @user, user following post author, user following post topic
             }
@@ -2430,7 +2444,7 @@ async function render(req, res) { /////////////////////////////////////////
 
             var current_user_id = state.current_user ? state.current_user.user_id : 0
 
-            if (!current_user_id) die('must be logged in to stop watching all posts')
+            if (!current_user_id) die('must be logged in to stop watching all posts', state)
 
             // left joins to also get each post's viewing and voting data for the current user if there is one
             let sql = `update postviews set postview_want_email=0 where postview_user_id = ?`
@@ -2535,7 +2549,7 @@ async function render(req, res) { /////////////////////////////////////////
 
         comment_moderation : async function() {
 
-            if (!state.current_user) return die('you must be logged in to moderate comments')
+            if (!state.current_user) return die('you must be logged in to moderate comments', state)
 
             state.comments = await query(`select * from comments left join users on user_id=comment_author
                                           where comment_approved = 0`, [], state.db)
@@ -2625,14 +2639,14 @@ async function render(req, res) { /////////////////////////////////////////
 
         delete_post : async function() { // delete a whole post, but not its comments
 
-            if (!state.current_user) return die('you must be logged in to delete a post')
-            if (!valid_nonce(state.ip, _GET(state.req.url, 'ts'), _GET(state.req.url, 'nonce')))      return die(invalid_nonce_message())
+            if (!state.current_user) return die('you must be logged in to delete a post', state)
+            if (!valid_nonce(state.ip, _GET(state.req.url, 'ts'), _GET(state.req.url, 'nonce')))      return die(invalid_nonce_message(), state)
 
             var post_id
             if (post_id = intval(_GET(state.req.url, 'post_id'))) {
 
                 let post = await get_post(post_id, state.db)
-                if (!post) return die('no such post')
+                if (!post) return die('no such post', state)
 
                 // if it's their own post or if it's admin
                 if ((state.current_user.user_id === post.post_author) || (state.current_user.user_id === 1)) {
@@ -2644,11 +2658,11 @@ async function render(req, res) { /////////////////////////////////////////
                         await update_prev_next(post.post_topic, post.post_next_in_topic, state.db)
                     }
 
-                    return die(`${results.affectedRows} post deleted`)
+                    return die(`${results.affectedRows} post deleted`, state)
                 }
-                else return die('permission to delete post denied')
+                else return die('permission to delete post denied', state)
             }
-            else return die('need a post_id')
+            else return die('need a post_id', state)
         },
 
         dislike : async function() { // given a comment or post, downvote it
@@ -2713,7 +2727,7 @@ async function render(req, res) { /////////////////////////////////////////
 
         edit_comment : async function () {
 
-            if (!valid_nonce(state.ip, _GET(state.req.url, 'ts'), _GET(state.req.url, 'nonce'))) return die(invalid_nonce_message())
+            if (!valid_nonce(state.ip, _GET(state.req.url, 'ts'), _GET(state.req.url, 'nonce'))) return die(invalid_nonce_message(), state)
 
             let comment_id = intval(_GET(state.req.url, 'c'))
             state.comment = await get_row(`select * from comments left join users on user_id=comment_author
@@ -2737,7 +2751,7 @@ async function render(req, res) { /////////////////////////////////////////
 
         edit_post : async function () {
 
-            if (!valid_nonce(state.ip, _GET(state.req.url, 'ts'), _GET(state.req.url, 'nonce'))) return die(invalid_nonce_message())
+            if (!valid_nonce(state.ip, _GET(state.req.url, 'ts'), _GET(state.req.url, 'nonce'))) return die(invalid_nonce_message(), state)
 
             let post_id = intval(_GET(state.req.url, 'p'))
             state.post = await get_row(`select * from posts left join users on user_id=post_author where post_id=?`, [post_id], state.db)
@@ -2777,10 +2791,11 @@ async function render(req, res) { /////////////////////////////////////////
             let ajax  = intval(_GET(state.req.url, 'ajax'))
             let topic = _GET(state.req.url, 'topic').replace(/\W/, '').toLowerCase()
 
-            if (!topic)              return ajax ? send_html(200, '', state.res, state.db, state.ip) : die('topic missing')
-            if (!state.current_user) return ajax ? send_html(200, '', state.res, state.db, state.ip) : die('must be logged in to follow or unfollow')
+            if (!topic)              return ajax ? send_html(200, '', state.res, state.db, state.ip) : die('topic missing', state)
+            if (!state.current_user) return ajax ? send_html(200, '', state.res, state.db, state.ip) : die('must be logged in to follow or unfollow',
+            state)
             if (!valid_nonce(state.ip, _GET(state.req.url, 'ts'), _GET(state.req.url, 'nonce')))      return ajax ? send_html(200, '', state.res,
-            state.db, state.ip) : die(invalid_nonce_message())
+            state.db, state.ip) : die(invalid_nonce_message(), state)
 
             if (intval(_GET(state.req.url, 'undo'))) {
 
@@ -2793,7 +2808,7 @@ async function render(req, res) { /////////////////////////////////////////
             }
 
             // either way, output follow button with right state and update this user's follow count
-            ajax ? send_html(200, follow_topic_button(topic, state.current_user, state.ip), state.res, state.db, state.ip) : die('Follow status updated')
+            ajax ? send_html(200, follow_topic_button(topic, state.current_user, state.ip), state.res, state.db, state.ip) : die('Follow status updated', state)
         },
 
         follow_user : async function() { // get or turn off emails of a user's new posts; can be called as ajax or full page
@@ -2801,10 +2816,11 @@ async function render(req, res) { /////////////////////////////////////////
             let ajax     = intval(_GET(state.req.url, 'ajax'))
             let other_id = intval(_GET(state.req.url, 'other_id'))
 
-            if (!other_id)           return ajax ? send_html(200, '', state.res, state.db, state.ip) : die('other_id missing')
-            if (!state.current_user) return ajax ? send_html(200, '', state.res, state.db, state.ip) : die('must be logged in to follow or unfollow')
+            if (!other_id)           return ajax ? send_html(200, '', state.res, state.db, state.ip) : die('other_id missing', state)
+            if (!state.current_user) return ajax ? send_html(200, '', state.res, state.db, state.ip) : die('must be logged in to follow or unfollow',
+            state)
             if (!valid_nonce(state.ip, _GET(state.req.url, 'ts'), _GET(state.req.url, 'nonce')))      return ajax ? send_html(200, '', state.res,
-            state.db, state.ip) : die(invalid_nonce_message())
+            state.db, state.ip) : die(invalid_nonce_message(), state)
 
             if (intval(_GET(state.req.url, 'undo'))) {
                 await query(`replace into relationships set rel_i_follow=0, rel_self_id=?, rel_other_id=?`,
@@ -2816,7 +2832,8 @@ async function render(req, res) { /////////////////////////////////////////
             }
 
             // either way, output follow button with right state and update this user's follow count
-            ajax ? send_html(200, follow_user_button(await get_userrow(other_id, state.db)), state.current_user, state.ip, state.res, state.db, state.ip) : die('Follow status updated')
+            ajax ? send_html(200, follow_user_button(await get_userrow(other_id, state.db)), state.current_user, state.ip, state.res, state.db,
+            state.ip) : die('Follow status updated', state)
 
             await query(`update users set user_followers=(select count(*) from relationships where rel_i_follow > 0 and rel_other_id=?)
                          where user_id=?`, [other_id, other_id], state.db)
@@ -3040,7 +3057,7 @@ async function render(req, res) { /////////////////////////////////////////
 
         new_post : async function() {
 
-            if (!state.current_user || !state.current_user.user_id) return die('anonymous users may not create posts')
+            if (!state.current_user || !state.current_user.user_id) return die('anonymous users may not create posts', state)
 
             // if the user is logged in and has posted MAX_POSTS times today, don't let them post more
             var posts_today = await get_var('select count(*) as c from posts where post_author=? and post_date >= curdate()',
@@ -3075,9 +3092,10 @@ async function render(req, res) { /////////////////////////////////////////
             let nuke_id = intval(_GET(state.req.url, 'nuke_id'))
             let u = await get_userrow(nuke_id, state.db)
 
-            if (!valid_nonce(state.ip, _GET(state.req.url, 'ts'), _GET(state.req.url, 'nonce')))                   return die(invalid_nonce_message())
-            if (1 !== state.current_user.user_id) return die('non-admin may not nuke')
-            if (1 === nuke_id)                    return die('admin cannot nuke himself')
+            if (!valid_nonce(state.ip, _GET(state.req.url, 'ts'), _GET(state.req.url, 'nonce')))                   return die(invalid_nonce_message(),
+            state)
+            if (1 !== state.current_user.user_id) return die('non-admin may not nuke', state)
+            if (1 === nuke_id)                    return die('admin cannot nuke himself', state)
 
             let country = await ip2country(u.user_last_comment_ip, state.ip)
 
@@ -3149,9 +3167,9 @@ async function render(req, res) { /////////////////////////////////////////
                                         left join users on user_id=post_author
                                         where post_id=?`, [current_user_id, current_user_id, post_id], state.db)
 
-            if (!state.post) { await repair_referer(state.req, state.db); return die(`No post with id "${post_id}"`) }
+            if (!state.post) { await repair_referer(state.req, state.db); return die(`No post with id "${post_id}"`, state) }
 
-            if (!state.post.post_approved && current_user_id !== 1) { await repair_referer(state.req, state.db); return die(`That post is waiting for moderation`) }
+            if (!state.post.post_approved && current_user_id !== 1) { await repair_referer(state.req, state.db); return die(`That post is waiting for moderation`, state) }
 
             state.comments      = await post_comment_list(state.post, state.req.url, state.current_user, state.db) // pick up the comment list for this post
             state.post.watchers = await get_var(`select count(*) as c from postviews
@@ -3205,7 +3223,7 @@ async function render(req, res) { /////////////////////////////////////////
 
         post_moderation : async function () {
 
-            if (!state.current_user) return die('you must be logged in to moderate posts')
+            if (!state.current_user) return die('you must be logged in to moderate posts', state)
 
             state.posts = await query(`select * from posts left join users on user_id=post_author where post_approved=0`, [], state.db)
 
@@ -3287,12 +3305,12 @@ async function render(req, res) { /////////////////////////////////////////
 
         search : async function() {
 
-            // if (is_robot()) die('robots may not do searches')
+            // if (is_robot()) die('robots may not do searches', state)
 
             let s = _GET(state.req.url, 's').trim().replace(/[^0-9a-z ]/gi, '') // allow only alphanum and spaces for now
             let us = encodeURI(s)
 
-            if (!s) return die('You searched for nothing. It was found.')
+            if (!s) return die('You searched for nothing. It was found.', state)
 
             let [curpage, slimit, order, order_by] = page(_GET(state.req.url, 'page'), _GET(state.req.url, 'order'))
 
@@ -3343,7 +3361,7 @@ async function render(req, res) { /////////////////////////////////////////
 
             var topic = segments(state.req.url)[2] // like /topics/housing
 
-            if (!topic) return die('no topic given')
+            if (!topic) return die('no topic given', state)
 
             let user_id = state.current_user ? state.current_user.user_id : 0
             
@@ -3418,18 +3436,19 @@ async function render(req, res) { /////////////////////////////////////////
 
         update_profile : async function() { // accept data from profile_form
 
-            if (!valid_nonce(state.ip, _GET(state.req.url, 'ts'), _GET(state.req.url, 'nonce')))              return die(invalid_nonce_message())
-            if (!state.current_user)         return die('must be logged in to update profile')
+            if (!valid_nonce(state.ip, _GET(state.req.url, 'ts'), _GET(state.req.url, 'nonce')))              return die(invalid_nonce_message(),
+            state)
+            if (!state.current_user)         return die('must be logged in to update profile', state)
 
             let post_data = await collect_post_data_and_trim(state)
 
-            if (/\W/.test(post_data.user_name))     return die('Please go back and enter username consisting only of letters')
-            if (!valid_email(post_data.user_email)) return die('Please go back and enter a valid email')
+            if (/\W/.test(post_data.user_name))     return die('Please go back and enter username consisting only of letters', state)
+            if (!valid_email(post_data.user_email)) return die('Please go back and enter a valid email', state)
 
             post_data.user_summonable            = intval(post_data.user_summonable)
             post_data.user_hide_post_list_photos = intval(post_data.user_hide_post_list_photos)
 
-            if (get_external_links(post_data.user_aboutyou).length) return die('Sorry, no external links allowed in profile')
+            if (get_external_links(post_data.user_aboutyou).length) return die('Sorry, no external links allowed in profile', state)
             post_data.user_aboutyou = strip_tags(post_data.user_aboutyou.linkify()) 
 
             await query(`update users set user_email                 = ?,
@@ -3443,8 +3462,8 @@ async function render(req, res) { /////////////////////////////////////////
                  post_data.user_hide_post_list_photos,
                  post_data.user_aboutyou,
                  state.current_user.user_id], state.db).catch(error => {
-                    if (error.code.match(/ER_DUP_ENTRY/)) return die(`Sorry, looks like someone already took that email or user name`)
-                    else                                  return die(`Something went wrong with save`)
+                    if (error.code.match(/ER_DUP_ENTRY/)) return die(`Sorry, looks like someone already took that email or user name`, state)
+                    else                                  return die(`Something went wrong with save`, state)
                  })
 
             redirect('/edit_profile?updated=true', state.res, state.db, state.ip)
@@ -3452,7 +3471,7 @@ async function render(req, res) { /////////////////////////////////////////
 
         upload : async function() {
 
-            if (!state.current_user) return die('you must be logged in to upload images')
+            if (!state.current_user) return die('you must be logged in to upload images', state)
 
             var form = new FORMIDABLE.IncomingForm()
 
@@ -3480,7 +3499,7 @@ async function render(req, res) { /////////////////////////////////////////
 
                     let addendum = ''
                     let dims     = await getimagesize(`${abs_path}/${clean_name}`).catch(error => { addendum = `"${error}"` })
-                    if (!dims) return die('failed to find image dimensions')
+                    if (!dims) return die('failed to find image dimensions', state)
 
                     if (state.req.headers.referer.match(/edit_profile/)) { // uploading user icon
 
@@ -3522,7 +3541,7 @@ async function render(req, res) { /////////////////////////////////////////
             let user_name = decodeURIComponent(segments(state.req.url)[2]).replace(/[^\w._ -]/g, '') // like /user/Patrick
             let u = await get_row(`select * from users where user_name=?`, [user_name], state.db)
 
-            if (!u) return die(`no such user: ${user_name}`)
+            if (!u) return die(`no such user: ${user_name}`, state)
 
             // left joins to also get each post's viewing and voting data for the current user if there is one
             let sql = `select sql_calc_found_rows * from posts
@@ -3673,20 +3692,6 @@ async function render(req, res) { /////////////////////////////////////////
         },
 
     } // end of pages
-
-    function die(message) {
-
-        let content = html(
-            render_query_times(state.res.start_t, state.db.queries),
-            head(CONF.stylesheet, CONF.description, state.post ? state.post.post_title : CONF.domain),
-            header(state.header_data, state.post ? state.post.post_topic : null, state.page, state.current_user, state.login_failed_email, state.req.url),
-            midpage(
-                h1(message)
-            )
-        )
-
-        send_html(200, content, state.res, state.db, state.ip)
-    }
 
     res.start_t = Date.now()
 
