@@ -2022,6 +2022,53 @@ async function post_mail(p, db) { // reasons to send out post emails: @user, use
         }
     }
 }
+
+async function login(email, password, db, login_failed_email, current_user, ip, page, res) {
+
+    var user = await get_row('select * from users where user_email = ? and user_pass = ?', [email, md5(password)], db)
+
+    if (!user) {
+        login_failed_email = email
+        current_user       = null
+        var user_id              = ''
+        var user_pass            = ''
+    }
+    else {
+        login_failed_email = null
+        current_user       = user
+        var user_id              = current_user.user_id
+        var user_pass            = current_user.user_pass
+    }
+
+    if ('post_login' === page) var content = icon_or_loginprompt(current_user, login_failed_email)
+    if ('key_login'  === page) {
+
+        var current_user_id = current_user ? current_user.user_id : 0
+
+        var content = html(
+            midpage(
+                h1(`Your password is ${ password } and you are now logged in`)
+            )
+        )
+    }
+
+    var usercookie = `${ CONF.usercookie }=${ user_id   }`
+    var pwcookie   = `${ CONF.pwcookie   }=${ user_pass }`
+    var d          = new Date()
+    var decade     = new Date(d.getFullYear()+10, d.getMonth(), d.getDate()).toUTCString()
+
+    // you must use the undocumented "array" feature of writeHead to set multiple cookies, because json
+    var headers = [
+        ['Content-Length' , content.length                            ],
+        ['Content-Type'   , 'text/html'                               ],
+        ['Expires'        , d.toUTCString()                           ],
+        ['Set-Cookie'     , `${usercookie}; Expires=${decade}; Path=/`],
+        ['Set-Cookie'     , `${pwcookie};   Expires=${decade}; Path=/`]
+    ] // do not use 'secure' parm with cookie or will be unable to test login in dev, bc dev is http only
+
+    send(res, 200, headers, content, db, ip)
+}
+
 async function render(state) { /////////////////////////////////////////
 
     var pages = {
@@ -2692,7 +2739,7 @@ async function render(state) { /////////////////////////////////////////
                 await query('update users set user_activation_key=null, user_pass=? where user_activation_key=?',
                             [md5(password), key], state.db)
 
-                login(state, email, password)
+                login(email, password, state.db, state.login_failed_email, state.current_user, state.ip, state.page, state.res)
             }
             else {
 
@@ -2972,10 +3019,8 @@ async function render(state) { /////////////////////////////////////////
         },
 
         post_login : async function() {
-
             let post_data = await collect_post_data_and_trim(state)
-
-            login(state, post_data.email, post_data.password)
+            login(post_data.email, post_data.password, state.db, state.login_failed_email, state.current_user, state.ip, state.page, state.res)
         },
 
         post_moderation : async function () {
@@ -3592,52 +3637,6 @@ async function render(state) { /////////////////////////////////////////
                               [ip, ip], state.db)
     }
  
-    async function login(state, email, password, db, login_failed_email, current_user, page) {
-
-        var user = await get_row('select * from users where user_email = ? and user_pass = ?', [email, md5(password)], state.db)
-
-        if (!user) {
-            state.login_failed_email = email
-            state.current_user       = null
-            var user_id              = ''
-            var user_pass            = ''
-        }
-        else {
-            state.login_failed_email = null
-            state.current_user       = user
-            var user_id              = state.current_user.user_id
-            var user_pass            = state.current_user.user_pass
-        }
-
-        if ('post_login' === state.page) var content = icon_or_loginprompt(state.current_user, state.login_failed_email)
-        if ('key_login'  === state.page) {
-
-            var current_user_id = state.current_user ? state.current_user.user_id : 0
-
-            var content = html(
-                midpage(
-                    h1(`Your password is ${ password } and you are now logged in`)
-                )
-            )
-        }
-
-        var usercookie = `${ CONF.usercookie }=${ user_id   }`
-        var pwcookie   = `${ CONF.pwcookie   }=${ user_pass }`
-        var d          = new Date()
-        var decade     = new Date(d.getFullYear()+10, d.getMonth(), d.getDate()).toUTCString()
-
-        // you must use the undocumented "array" feature of writeHead to set multiple cookies, because json
-        var headers = [
-            ['Content-Length' , content.length                            ],
-            ['Content-Type'   , 'text/html'                               ],
-            ['Expires'        , d.toUTCString()                           ],
-            ['Set-Cookie'     , `${usercookie}; Expires=${decade}; Path=/`],
-            ['Set-Cookie'     , `${pwcookie};   Expires=${decade}; Path=/`]
-        ] // do not use 'secure' parm with cookie or will be unable to test login in dev, bc dev is http only
-
-        send(state.res, 200, headers, content, state.db, state.ip)
-    }
-
     if (typeof pages[state.page] === 'function') { // hit the db iff the request is for a valid url
         try {
             if (state.db = await get_connection_from_pool(state)) {
