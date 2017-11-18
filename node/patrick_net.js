@@ -2032,6 +2032,7 @@ async function login(email, password, db, login_failed_email, current_user, ip, 
         var current_user_id = current_user ? current_user.user_id : 0
 
         var content = html(
+            render_query_times(res.start_t, db.queries),
             head(CONF.stylesheet, CONF.description, post ? post.post_title : CONF.domain),
             header(header_data, post ? post.post_topic : null, page, current_user, login_failed_email, url),
             midpage(
@@ -2422,6 +2423,7 @@ async function render(req, res) { /////////////////////////////////////////
             await query(sql, [current_user_id], state.db)
 
             var content = html(
+                render_query_times(state.res.start_t, state.db.queries),
                 head(CONF.stylesheet, CONF.description, state.post ? state.post.post_title : CONF.domain),
                 header(state.header_data, state.post ? state.post.post_topic : null, state.page, state.current_user, state.login_failed_email, state.req.url),
                 midpage(
@@ -2479,6 +2481,7 @@ async function render(req, res) { /////////////////////////////////////////
             state.comments = state.comments.map(comment => { comment.row_number = ++offset; return comment })
 
             let content = html(
+                render_query_times(state.res.start_t, state.db.queries),
                 head(CONF.stylesheet, CONF.description, state.post ? state.post.post_title : CONF.domain),
                 header(state.header_data, state.post ? state.post.post_topic : null, state.page, state.current_user, state.login_failed_email, state.req.url),
                 midpage(
@@ -2503,6 +2506,7 @@ async function render(req, res) { /////////////////////////////////////////
             state.comments = state.comments.map(comment => { comment.row_number = ++offset; return comment })
 
             let content = html(
+                render_query_times(state.res.start_t, state.db.queries),
                 head(CONF.stylesheet, CONF.description, state.post ? state.post.post_title : CONF.domain),
                 header(state.header_data, state.post ? state.post.post_topic : null, state.page, state.current_user, state.login_failed_email, state.req.url),
                 midpage(
@@ -2526,6 +2530,7 @@ async function render(req, res) { /////////////////////////////////////////
             state.comments = state.comments.map(comment => { comment.row_number = ++offset; return comment })
 
             let content = html(
+                render_query_times(state.res.start_t, state.db.queries),
                 head(CONF.stylesheet, CONF.description, state.post ? state.post.post_title : CONF.domain),
                 header(state.header_data, state.post ? state.post.post_topic : null, state.page, state.current_user, state.login_failed_email, state.req.url),
                 midpage(
@@ -2564,6 +2569,7 @@ async function render(req, res) { /////////////////////////////////////////
             state.comments.found_rows = results.total
 
             let content = html(
+                render_query_times(state.res.start_t, state.db.queries),
                 head(CONF.stylesheet, CONF.description, state.post ? state.post.post_title : CONF.domain),
                 header(state.header_data, state.post ? state.post.post_topic : null, state.page, state.current_user, state.login_failed_email, state.req.url),
                 midpage(
@@ -2703,6 +2709,7 @@ async function render(req, res) { /////////////////////////////////////////
             else {
 
                 let content = html(
+                    render_query_times(state.res.start_t, state.db.queries),
                     head(CONF.stylesheet, CONF.description, state.post ? state.post.post_title : CONF.domain),
                     header(state.header_data, state.post ? state.post.post_topic : null, state.page, state.current_user, state.login_failed_email, state.req.url),
                     midpage(
@@ -2725,6 +2732,7 @@ async function render(req, res) { /////////////////////////////////////////
             else {
 
                 let content = html(
+                    render_query_times(state.res.start_t, state.db.queries),
                     head(CONF.stylesheet, CONF.description, state.post ? state.post.post_title : CONF.domain),
                     header(state.header_data, state.post ? state.post.post_topic : null, state.page, state.current_user, state.login_failed_email, state.req.url),
                     midpage(
@@ -2739,6 +2747,7 @@ async function render(req, res) { /////////////////////////////////////////
         edit_profile : async function() {
 
             let content = html(
+                render_query_times(state.res.start_t, state.db.queries),
                 head(CONF.stylesheet, CONF.description, state.post ? state.post.post_title : CONF.domain),
                 header(state.header_data, state.post ? state.post.post_topic : null, state.page, state.current_user, state.login_failed_email, state.req.url),
                 midpage(
@@ -2828,6 +2837,7 @@ async function render(req, res) { /////////////////////////////////////////
             let path = URL.parse(state.req.url).pathname // "pathNAME" is url path without ? parms, unlike "path"
 
             let content = html(
+                render_query_times(state.res.start_t, state.db.queries),
                 head(CONF.stylesheet, CONF.description, state.post ? state.post.post_title : CONF.domain),
                 header(state.header_data, state.post ? state.post.post_topic : null, state.page, state.current_user, state.login_failed_email, state.req.url),
                 midpage(
@@ -2885,6 +2895,7 @@ async function render(req, res) { /////////////////////////////////////////
             else {
 
                 let content = html(
+                    render_query_times(state.res.start_t, state.db.queries),
                     head(CONF.stylesheet, CONF.description, state.post ? state.post.post_title : CONF.domain),
                     header(state.header_data, state.post ? state.post.post_topic : null, state.page, state.current_user, state.login_failed_email, state.req.url),
                     midpage(
@@ -3023,6 +3034,7 @@ async function render(req, res) { /////////////////////////////////////////
 
             if (posts_today >= MAX_POSTS || posts_today > state.current_user.user_comments) {
                 var content = html(
+                    render_query_times(state.res.start_t, state.db.queries),
                     head(CONF.stylesheet, CONF.description, state.post ? state.post.post_title : CONF.domain),
                     header(state.header_data, state.post ? state.post.post_topic : null, state.page, state.current_user, state.login_failed_email, state.req.url),
                     midpage(
@@ -3032,6 +3044,7 @@ async function render(req, res) { /////////////////////////////////////////
             }
             else {
                 var content = html(
+                    render_query_times(state.res.start_t, state.db.queries),
                     head(CONF.stylesheet, CONF.description, state.post ? state.post.post_title : CONF.domain),
                     header(state.header_data, state.post ? state.post.post_topic : null, state.page, state.current_user, state.login_failed_email, state.req.url),
                     midpage(
@@ -3093,6 +3106,7 @@ async function render(req, res) { /////////////////////////////////////////
             let s = (years_ago === 1) ? '' : 's'
             
             let content = html(
+                render_query_times(state.res.start_t, state.db.queries),
                 head(CONF.stylesheet, CONF.description, state.post ? state.post.post_title : CONF.domain),
                 header(state.header_data, state.post ? state.post.post_topic : null, state.page, state.current_user, state.login_failed_email, state.req.url),
                 midpage(
@@ -3154,6 +3168,7 @@ async function render(req, res) { /////////////////////////////////////////
             }
 
             let content = html(
+                render_query_times(state.res.start_t, state.db.queries),
                 head(CONF.stylesheet, CONF.description, state.post ? state.post.post_title : CONF.domain),
                 header(state.header_data, state.post ? state.post.post_topic : null, state.page, state.current_user, state.login_failed_email, state.req.url),
                 midpage(
@@ -3181,6 +3196,7 @@ async function render(req, res) { /////////////////////////////////////////
             state.posts = await query(`select * from posts left join users on user_id=post_author where post_approved=0`, [], state.db)
 
             let content = html(
+                render_query_times(state.res.start_t, state.db.queries),
                 head(CONF.stylesheet, CONF.description, state.post ? state.post.post_title : CONF.domain),
                 header(state.header_data, state.post ? state.post.post_topic : null, state.page, state.current_user, state.login_failed_email, state.req.url),
                 midpage(
@@ -3206,6 +3222,7 @@ async function render(req, res) { /////////////////////////////////////////
             let message = await send_login_link(state.ip, state.db, post_data)
 
             let content = html(
+                render_query_times(state.res.start_t, state.db.queries),
                 head(CONF.stylesheet, CONF.description, state.post ? state.post.post_title : CONF.domain),
                 header(state.header_data, state.post ? state.post.post_topic : null, state.page, state.current_user, state.login_failed_email, state.req.url),
                 midpage(
@@ -3242,6 +3259,7 @@ async function render(req, res) { /////////////////////////////////////////
             }
 
             let content = html(
+                render_query_times(state.res.start_t, state.db.queries),
                 head(CONF.stylesheet, CONF.description, state.post ? state.post.post_title : CONF.domain),
                 header(state.header_data, state.post ? state.post.post_topic : null, state.page, state.current_user, state.login_failed_email, state.req.url),
                 midpage(
@@ -3277,6 +3295,7 @@ async function render(req, res) { /////////////////////////////////////////
             let path = URL.parse(state.req.url).pathname // "pathNAME" is url path without ? parms, unlike "path"
 
             let content = html(
+                render_query_times(state.res.start_t, state.db.queries),
                 head(CONF.stylesheet, CONF.description, state.post ? state.post.post_title : CONF.domain),
                 header(state.header_data, state.post ? state.post.post_topic : null, state.page, state.current_user, state.login_failed_email, state.req.url),
                 midpage(
@@ -3336,6 +3355,7 @@ async function render(req, res) { /////////////////////////////////////////
             let path = URL.parse(state.req.url).pathname // "pathNAME" is url path without ? parms, unlike "path"
 
             let content = html(
+                render_query_times(state.res.start_t, state.db.queries),
                 head(CONF.stylesheet, CONF.description, state.post ? state.post.post_title : CONF.domain),
                 header(state.header_data, state.post ? state.post.post_topic : null, state.page, state.current_user, state.login_failed_email, state.req.url),
                 midpage(
@@ -3358,6 +3378,7 @@ async function render(req, res) { /////////////////////////////////////////
                                         where length(post_topic) > 0 group by post_topic having c >=3 order by c desc`, null, state.db)
 
             let content = html(
+                render_query_times(state.res.start_t, state.db.queries),
                 head(CONF.stylesheet, CONF.description, state.post ? state.post.post_title : CONF.domain),
                 header(state.header_data, state.post ? state.post.post_topic : null, state.page, state.current_user, state.login_failed_email, state.req.url),
                 midpage(
@@ -3506,6 +3527,7 @@ async function render(req, res) { /////////////////////////////////////////
             let path = URL.parse(state.req.url).pathname // "pathNAME" is url path without ? parms, unlike "path"
 
             let content = html(
+                render_query_times(state.res.start_t, state.db.queries),
                 head(CONF.stylesheet, CONF.description, state.post ? state.post.post_title : CONF.domain),
                 header(state.header_data, state.post ? state.post.post_topic : null, state.page, state.current_user, state.login_failed_email, state.req.url),
                 midpage(
@@ -3599,6 +3621,7 @@ async function render(req, res) { /////////////////////////////////////////
                 state.req.url.match(/\?/) ? state.req.url + '&offset=40' : state.req.url + '?offset=40'
 
             let content = html(
+                render_query_times(state.res.start_t, state.db.queries),
                 head(CONF.stylesheet, CONF.description, state.post ? state.post.post_title : CONF.domain),
                 header(state.header_data, state.post ? state.post.post_topic : null, state.page, state.current_user, state.login_failed_email, state.req.url),
                 midpage(
@@ -3640,6 +3663,7 @@ async function render(req, res) { /////////////////////////////////////////
     function die(message) {
 
         let content = html(
+            render_query_times(state.res.start_t, state.db.queries),
             head(CONF.stylesheet, CONF.description, state.post ? state.post.post_title : CONF.domain),
             header(state.header_data, state.post ? state.post.post_topic : null, state.page, state.current_user, state.login_failed_email, state.req.url),
             midpage(
@@ -3650,9 +3674,9 @@ async function render(req, res) { /////////////////////////////////////////
         send_html(200, content, state.res, state.db, state.ip)
     }
 
-    function html(head, ...args) {
-
+    function html(query_times, head, ...args) {
         return `<!DOCTYPE html><html lang="en">
+        ${ query_times }
         ${ head }
         <body>
             <div class="container" >
@@ -3661,7 +3685,6 @@ async function render(req, res) { /////////////////////////////////////////
             </div>
         </body>
         <script async src="/jquery.min.js"></script>
-        ${render_query_times(state.res.start_t, state.db.queries)}
         </html>`
     }
 
