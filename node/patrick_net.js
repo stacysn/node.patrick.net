@@ -2032,6 +2032,7 @@ async function login(email, password, db, login_failed_email, current_user, ip, 
         var current_user_id = current_user ? current_user.user_id : 0
 
         var content = html(
+            header(state.header_data, state.post ? state.post.post_topic : null, state.page, state.current_user, state.login_failed_email, state.req.url),
             midpage(
                 h1(`Your password is ${ password } and you are now logged in`)
             )
@@ -2408,6 +2409,7 @@ async function render(req, res) { /////////////////////////////////////////
             await query(sql, [current_user_id], state.db)
 
             var content = html(
+                header(state.header_data, state.post ? state.post.post_topic : null, state.page, state.current_user, state.login_failed_email, state.req.url),
                 midpage(
                     h1(`All email of new post comments turned off`)
                 )
@@ -2463,6 +2465,7 @@ async function render(req, res) { /////////////////////////////////////////
             state.comments = state.comments.map(comment => { comment.row_number = ++offset; return comment })
 
             let content = html(
+                header(state.header_data, state.post ? state.post.post_topic : null, state.page, state.current_user, state.login_failed_email, state.req.url),
                 midpage(
                     m,
                     comment_list(state.comments, state.current_user, state.ip, state.req)
@@ -2485,6 +2488,7 @@ async function render(req, res) { /////////////////////////////////////////
             state.comments = state.comments.map(comment => { comment.row_number = ++offset; return comment })
 
             let content = html(
+                header(state.header_data, state.post ? state.post.post_topic : null, state.page, state.current_user, state.login_failed_email, state.req.url),
                 midpage(
                     h1('Uncivil Comment Jail'),
                     'These comments were marked as uncivil. Patrick will review them and liberate comments which do not deserve to be here. You can edit your comment here to make it more civil and get it out of jail after the edits are reviewed. Comments not freed within 30 days will be deleted.',
@@ -2506,6 +2510,7 @@ async function render(req, res) { /////////////////////////////////////////
             state.comments = state.comments.map(comment => { comment.row_number = ++offset; return comment })
 
             let content = html(
+                header(state.header_data, state.post ? state.post.post_topic : null, state.page, state.current_user, state.login_failed_email, state.req.url),
                 midpage(
                     h1('comment moderation'),
                     comment_list(state.comments, state.current_user, state.ip, state.req)
@@ -2542,6 +2547,7 @@ async function render(req, res) { /////////////////////////////////////////
             state.comments.found_rows = results.total
 
             let content = html(
+                header(state.header_data, state.post ? state.post.post_topic : null, state.page, state.current_user, state.login_failed_email, state.req.url),
                 midpage(
                     h1(message),
                     comment_pagination(state.comments, state.req.url),
@@ -2679,6 +2685,7 @@ async function render(req, res) { /////////////////////////////////////////
             else {
 
                 let content = html(
+                    header(state.header_data, state.post ? state.post.post_topic : null, state.page, state.current_user, state.login_failed_email, state.req.url),
                     midpage(
                         comment_edit_box(state.comment, state.current_user, state.ip)
                     )
@@ -2699,6 +2706,7 @@ async function render(req, res) { /////////////////////////////////////////
             else {
 
                 let content = html(
+                    header(state.header_data, state.post ? state.post.post_topic : null, state.page, state.current_user, state.login_failed_email, state.req.url),
                     midpage(
                         post_form(_GET(state.req.url, 'p'), state.post)
                     )
@@ -2711,6 +2719,7 @@ async function render(req, res) { /////////////////////////////////////////
         edit_profile : async function() {
 
             let content = html(
+                header(state.header_data, state.post ? state.post.post_topic : null, state.page, state.current_user, state.login_failed_email, state.req.url),
                 midpage(
                     profile_form(state.current_user, state.ip, _GET(state.req.url, 'updated'))
                 )
@@ -2798,6 +2807,7 @@ async function render(req, res) { /////////////////////////////////////////
             let path = URL.parse(state.req.url).pathname // "pathNAME" is url path without ? parms, unlike "path"
 
             let content = html(
+                header(state.header_data, state.post ? state.post.post_topic : null, state.page, state.current_user, state.login_failed_email, state.req.url),
                 midpage(
                     tabs(order, '', path),
                     post_list(state.posts, state.ip, state.req.url, state.current_user),
@@ -2852,6 +2862,7 @@ async function render(req, res) { /////////////////////////////////////////
             else {
 
                 let content = html(
+                    header(state.header_data, state.post ? state.post.post_topic : null, state.page, state.current_user, state.login_failed_email, state.req.url),
                     midpage(
                         h1(`Darn, that key has already been used. Please try 'forgot password' if you need to log in.`),
                         state.text || ''
@@ -2988,6 +2999,7 @@ async function render(req, res) { /////////////////////////////////////////
 
             if (posts_today >= MAX_POSTS || posts_today > state.current_user.user_comments) {
                 var content = html(
+                    header(state.header_data, state.post ? state.post.post_topic : null, state.page, state.current_user, state.login_failed_email, state.req.url),
                     midpage(
                         `You hit your posting limit for today. Please post more tomorrow!`
                     )
@@ -2995,6 +3007,7 @@ async function render(req, res) { /////////////////////////////////////////
             }
             else {
                 var content = html(
+                    header(state.header_data, state.post ? state.post.post_topic : null, state.page, state.current_user, state.login_failed_email, state.req.url),
                     midpage(
                         post_form(_GET(state.req.url, 'p'), state.post)
                     )
@@ -3054,6 +3067,7 @@ async function render(req, res) { /////////////////////////////////////////
             let s = (years_ago === 1) ? '' : 's'
             
             let content = html(
+                header(state.header_data, state.post ? state.post.post_topic : null, state.page, state.current_user, state.login_failed_email, state.req.url),
                 midpage(
                     h1(`Posts from ${years_ago} year${s} ago`),
                     post_list(state.posts, state.ip, state.req.url, state.current_user)
@@ -3113,6 +3127,7 @@ async function render(req, res) { /////////////////////////////////////////
             }
 
             let content = html(
+                header(state.header_data, state.post ? state.post.post_topic : null, state.page, state.current_user, state.login_failed_email, state.req.url),
                 midpage(
                     topic_nav(state.post),
                     post(state.post, state.ip, state.current_user),
@@ -3138,6 +3153,7 @@ async function render(req, res) { /////////////////////////////////////////
             state.posts = await query(`select * from posts left join users on user_id=post_author where post_approved=0`, [], state.db)
 
             let content = html(
+                header(state.header_data, state.post ? state.post.post_topic : null, state.page, state.current_user, state.login_failed_email, state.req.url),
                 midpage(
                     post_list(state.posts, state.ip, state.req.url, state.current_user)
                 )
@@ -3161,6 +3177,7 @@ async function render(req, res) { /////////////////////////////////////////
             let message = await send_login_link(state.ip, state.db, post_data)
 
             let content = html(
+                header(state.header_data, state.post ? state.post.post_topic : null, state.page, state.current_user, state.login_failed_email, state.req.url),
                 midpage(
                     h1(message),
                     state.text || ''
@@ -3195,6 +3212,7 @@ async function render(req, res) { /////////////////////////////////////////
             }
 
             let content = html(
+                header(state.header_data, state.post ? state.post.post_topic : null, state.page, state.current_user, state.login_failed_email, state.req.url),
                 midpage(
                 `<h2>${message}</h2>`,
                 state.text || ''
@@ -3228,6 +3246,7 @@ async function render(req, res) { /////////////////////////////////////////
             let path = URL.parse(state.req.url).pathname // "pathNAME" is url path without ? parms, unlike "path"
 
             let content = html(
+                header(state.header_data, state.post ? state.post.post_topic : null, state.page, state.current_user, state.login_failed_email, state.req.url),
                 midpage(
                     h1(`search results for "${s}"`),
                     post_pagination(found_rows, curpage, `&s=${us}&order=${order}`, state.req.url),
@@ -3285,6 +3304,7 @@ async function render(req, res) { /////////////////////////////////////////
             let path = URL.parse(state.req.url).pathname // "pathNAME" is url path without ? parms, unlike "path"
 
             let content = html(
+                header(state.header_data, state.post ? state.post.post_topic : null, state.page, state.current_user, state.login_failed_email, state.req.url),
                 midpage(
                     h1('#' + topic),
                     follow_topic_button(topic, state.current_user, state.ip),
@@ -3305,6 +3325,7 @@ async function render(req, res) { /////////////////////////////////////////
                                         where length(post_topic) > 0 group by post_topic having c >=3 order by c desc`, null, state.db)
 
             let content = html(
+                header(state.header_data, state.post ? state.post.post_topic : null, state.page, state.current_user, state.login_failed_email, state.req.url),
                 midpage(
                     h1('Topics'),
                     topic_list(state.topics)
@@ -3451,6 +3472,7 @@ async function render(req, res) { /////////////////////////////////////////
             let path = URL.parse(state.req.url).pathname // "pathNAME" is url path without ? parms, unlike "path"
 
             let content = html(
+                header(state.header_data, state.post ? state.post.post_topic : null, state.page, state.current_user, state.login_failed_email, state.req.url),
                 midpage(
                     render_user_info(u, state.current_user, state.ip),
                     tabs(order, '', path),
@@ -3542,6 +3564,7 @@ async function render(req, res) { /////////////////////////////////////////
                 state.req.url.match(/\?/) ? state.req.url + '&offset=40' : state.req.url + '?offset=40'
 
             let content = html(
+                header(state.header_data, state.post ? state.post.post_topic : null, state.page, state.current_user, state.login_failed_email, state.req.url),
                 midpage(
                     h1(message),
                     `<p><a href='${next_page}'>next page &raquo;</a><p>`,
@@ -3581,6 +3604,7 @@ async function render(req, res) { /////////////////////////////////////////
     function die(message) {
 
         let content = html(
+            header(state.header_data, state.post ? state.post.post_topic : null, state.page, state.current_user, state.login_failed_email, state.req.url),
             midpage(
                 h1(message)
             )
@@ -3604,13 +3628,11 @@ async function render(req, res) { /////////////////////////////////////////
     function html(...args) {
 
         var title = state.post ? state.post.post_title : CONF.domain
-        var topic = state.post ? state.post.post_topic : null
 
         return `<!DOCTYPE html><html lang="en">
         ${ head(CONF.stylesheet, CONF.description, title) }
         <body ${ 'dev' === process.env.environment ? "style='background-color: #dfd;'" : '' } >
             <div class="container" >
-            ${ header(state.header_data, topic, state.page, state.current_user, state.login_failed_email, state.req.url) }
             ${ args.join('') }
             ${ footer() }
             </div>
