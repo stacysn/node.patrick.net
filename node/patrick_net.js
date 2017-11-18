@@ -1980,7 +1980,7 @@ async function post_mail(p, db) { // reasons to send out post emails: @user, use
 
             if (already_mailed[row.rel_self_id]) return
 
-            let u = await get_userrow(row.rel_self_id)
+            let u = await get_userrow(row.rel_self_id, state.db)
 
             if (!u) return
 
@@ -2004,7 +2004,7 @@ async function post_mail(p, db) { // reasons to send out post emails: @user, use
 
                 if (already_mailed[row.topicwatch_user_id]) return
 
-                let u = await get_userrow(row.topicwatch_user_id)
+                let u = await get_userrow(row.topicwatch_user_id, state.db)
 
                 if (!u) return
 
@@ -2074,6 +2074,10 @@ async function ip2country(ip, db) { // probably a bit slow, so don't overuse thi
     ip = ip.replace(/[^0-9\.]/, '')
     return await get_var(`select country_name from countries where inet_aton(?) >= country_start and inet_aton(?) <= country_end`,
                           [ip, ip], db)
+}
+
+async function get_userrow(user_id, db) {
+    return await get_row('select * from users where user_id = ?', [user_id], db)
 }
 
 async function render(state) { /////////////////////////////////////////
@@ -2662,13 +2666,13 @@ async function render(state) { /////////////////////////////////////////
             }
 
             // either way, output follow button with right state and update this user's follow count
-            ajax ? send_html(200, follow_user_button(await get_userrow(other_id)), state.current_user, state.ip, state.res, state.db, state.ip) : die('Follow status updated')
+            ajax ? send_html(200, follow_user_button(await get_userrow(other_id, state.db)), state.current_user, state.ip, state.res, state.db, state.ip) : die('Follow status updated')
 
             await query(`update users set user_followers=(select count(*) from relationships where rel_i_follow > 0 and rel_other_id=?)
                          where user_id=?`, [other_id, other_id], state.db)
 
             // mail the user who has just been followed
-            let u = await get_userrow(other_id)
+            let u = await get_userrow(other_id, state.db)
             mail(u.user_email, `you have a new follower on ${CONF.domain}`,
                 `<a href='https://${CONF.domain}/user/${state.current_user.user_name}'>${state.current_user.user_name}</a> is now following
                  you on ${CONF.domain} and will get emails of your new posts`)
@@ -2906,7 +2910,7 @@ async function render(state) { /////////////////////////////////////////
         nuke : async function() { // given a user ID, nuke all his posts, comments, and his ID
 
             let nuke_id = intval(_GET(state.req.url, 'nuke_id'))
-            let u = await get_userrow(nuke_id)
+            let u = await get_userrow(nuke_id, state.db)
 
             if (!valid_nonce(state.ip, _GET(state.req.url, 'ts'), _GET(state.req.url, 'nonce')))                   return die(invalid_nonce_message())
             if (1 !== state.current_user.user_id) return die('non-admin may not nuke')
@@ -3388,7 +3392,7 @@ async function render(state) { /////////////////////////////////////////
             else if ( _GET(state.req.url, 'followersof') ) {
                 let followersof = intval(_GET(state.req.url, 'followersof'))
 
-                message = 'Followers of ' + (await get_userrow(followersof)).user_name
+                message = 'Followers of ' + (await get_userrow(followersof, state.db)).user_name
 
                 state.users = await query(`select sql_calc_found_rows * from users
                     where user_id in (select rel_self_id from relationships where rel_other_id=? and rel_i_follow > 0)
@@ -3400,7 +3404,7 @@ async function render(state) { /////////////////////////////////////////
             else if ( _GET(state.req.url, 'following') ) {
                 let following = intval(_GET(state.req.url, 'following'))
 
-                message = 'Users ' + (await get_userrow(following)).user_name + ' is Following'
+                message = 'Users ' + (await get_userrow(following, state.db)).user_name + ' is Following'
 
                 state.users = await query(`select sql_calc_found_rows * from users where user_id in
                                           (select rel_other_id from relationships where rel_self_id=? and rel_i_follow > 0)
@@ -3409,7 +3413,7 @@ async function render(state) { /////////////////////////////////////////
             else if ( _GET(state.req.url, 'friendsof') ) {
                 let friendsof = intval(_GET(state.req.url, 'friendsof'))
 
-                message = 'Friends of ' + (await get_userrow(friendsof)).user_name
+                message = 'Friends of ' + (await get_userrow(friendsof, state.db)).user_name
 
                 state.users = await query(`select sql_calc_found_rows * from users where user_id in
                                           (select r1.rel_other_id from relationships as r1, relationships as r2 where
@@ -3529,7 +3533,7 @@ async function render(state) { /////////////////////////////////////////
 
                 if (already_mailed[row.postview_user_id]) return
 
-                let u = await get_userrow(row.postview_user_id)
+                let u = await get_userrow(row.postview_user_id, state.db)
                 if (!u) return
 
                 let subject = `New ${CONF.domain} comment in '${p.post_title}'`
@@ -3602,10 +3606,6 @@ async function render(state) { /////////////////////////////////////////
         let total = await sql_calc_found_rows(state.db)
 
         return {comments, total}
-    }
-
-    async function get_userrow(user_id) {
-        return await get_row('select * from users where user_id = ?', [user_id], state.db)
     }
 
     function html(...args) {
