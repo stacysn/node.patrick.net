@@ -3592,7 +3592,7 @@ async function render(state) { /////////////////////////////////////////
                               [ip, ip], state.db)
     }
  
-    async function login(state, email, password) {
+    async function login(state, email, password, db, login_failed_email, current_user, page) {
 
         var user = await get_row('select * from users where user_email = ? and user_pass = ?', [email, md5(password)], state.db)
 
@@ -3613,16 +3613,6 @@ async function render(state) { /////////////////////////////////////////
         if ('key_login'  === state.page) {
 
             var current_user_id = state.current_user ? state.current_user.user_id : 0
-
-            // left joins to also get each post's viewing and voting data for the current user if there is one
-            let sql = `select sql_calc_found_rows * from posts
-                       left join postviews on postview_post_id=post_id and postview_user_id= ?
-                       left join postvotes on postvote_post_id=post_id and postvote_user_id= ?
-                       left join users     on user_id=post_author
-                       where post_modified > date_sub(now(), interval 7 day) and post_approved=1
-                       order by post_modified desc limit 0, 20`
-
-            state.posts   = await query(sql, [current_user_id, current_user_id], state.db)
 
             var content = html(
                 midpage(
@@ -3647,7 +3637,6 @@ async function render(state) { /////////////////////////////////////////
 
         send(state.res, 200, headers, content, state.db, state.ip)
     }
-
 
     if (typeof pages[state.page] === 'function') { // hit the db iff the request is for a valid url
         try {
