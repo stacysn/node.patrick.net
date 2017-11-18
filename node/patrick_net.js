@@ -2080,6 +2080,38 @@ async function get_userrow(user_id, db) {
     return await get_row('select * from users where user_id = ?', [user_id], db)
 }
 
+async function get_comment_list_by_author(a, start, num, db) {
+
+    let comments = await query(`select sql_calc_found_rows * from comments left join users on comment_author=user_id
+                                where user_name = ? order by comment_date limit ?, ?`, [a, start, num], db)
+
+    let total = await sql_calc_found_rows(db)
+
+    return {comments : comments, total : total}
+}
+
+async function get_comment_list_by_number(n, start, num, db) {
+
+    let comments = await query(`select sql_calc_found_rows * from comments, users force index (user_comments_index)
+                            where comments.comment_author = users.user_id and user_comments = ? order by comment_date desc limit ?, ?`,
+                                [n, start, num], db)
+
+    let total = await sql_calc_found_rows(db)
+
+    return {comments, total}
+}
+
+async function get_comment_list_by_search(s, start, num, db) {
+
+    let comments = await query(`select sql_calc_found_rows * from comments left join users on comment_author=user_id
+                                where match(comment_content) against (?)
+                                order by comment_date desc limit ?, ?`, [s, start, num], db)
+
+    let total = await sql_calc_found_rows(db)
+
+    return {comments, total}
+}
+
 async function render(state) { /////////////////////////////////////////
 
     var pages = {
@@ -2426,17 +2458,17 @@ async function render(state) { /////////////////////////////////////////
 
             if (_GET(state.req.url, 'a')) {      // a is author name
                 let a         = decodeURIComponent(_GET(state.req.url, 'a').replace(/[^\w %]/, ''))
-                results       = await get_comment_list_by_author(a, offset, 40)
+                results       = await get_comment_list_by_author(a, offset, 40, state.db)
                 message = `<h2>${a}'s comments</h2>`
             }
             else if (_GET(state.req.url, 'n')) { // n is number of comments per author, so we can see all comments by one-comment authors, for example
                 let n         = intval(_GET(state.req.url, 'n'))
-                results       = await get_comment_list_by_number(n, offset, 40)
+                results       = await get_comment_list_by_number(n, offset, 40, state.db)
                 message = `<h2>comments by users with ${n} comments</h2>`
             }
             else if (_GET(state.req.url, 's')) { // comment search
                 let s         = _GET(state.req.url, 's').replace(/[^\w %]/, '')
-                results       = await get_comment_list_by_search(s, offset, 40)
+                results       = await get_comment_list_by_search(s, offset, 40, state.db)
                 message = `<h2>comments that contain "${s}"</h2>`
             }
             else return send_html(200, `invalid request`, state.res, state.db, state.ip)
@@ -3574,38 +3606,6 @@ async function render(state) { /////////////////////////////////////////
         )
 
         send_html(200, content, state.res, state.db, state.ip)
-    }
-
-    async function get_comment_list_by_author(a, start, num) {
-
-        let comments = await query(`select sql_calc_found_rows * from comments left join users on comment_author=user_id
-                                    where user_name = ? order by comment_date limit ?, ?`, [a, start, num], state.db)
-
-        let total = await sql_calc_found_rows(state.db)
-
-        return {comments : comments, total : total}
-    }
-
-    async function get_comment_list_by_number(n, start, num) {
-
-        let comments = await query(`select sql_calc_found_rows * from comments, users force index (user_comments_index)
-                                where comments.comment_author = users.user_id and user_comments = ? order by comment_date desc limit ?, ?`,
-                                    [n, start, num], state.db)
-
-        let total = await sql_calc_found_rows(state.db)
-
-        return {comments, total}
-    }
-
-    async function get_comment_list_by_search(s, start, num) {
-
-        let comments = await query(`select sql_calc_found_rows * from comments left join users on comment_author=user_id
-                                    where match(comment_content) against (?)
-                                    order by comment_date desc limit ?, ?`, [s, start, num], state.db)
-
-        let total = await sql_calc_found_rows(state.db)
-
-        return {comments, total}
     }
 
     function html(...args) {
