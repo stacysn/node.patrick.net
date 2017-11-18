@@ -2192,6 +2192,20 @@ function head(stylesheet, description, title) {
     </head>`
 }
 
+function html(query_times, head, ...args) {
+    return `<!DOCTYPE html><html lang="en">
+    ${ query_times }
+    ${ head }
+    <body>
+        <div class="container" >
+        ${ args.join('') }
+        ${ footer() }
+        </div>
+    </body>
+    <script async src="/jquery.min.js"></script>
+    </html>`
+}
+
 async function render(req, res) { /////////////////////////////////////////
 
     var pages = {
@@ -3672,20 +3686,6 @@ async function render(req, res) { /////////////////////////////////////////
         )
 
         send_html(200, content, state.res, state.db, state.ip)
-    }
-
-    function html(query_times, head, ...args) {
-        return `<!DOCTYPE html><html lang="en">
-        ${ query_times }
-        ${ head }
-        <body>
-            <div class="container" >
-            ${ args.join('') }
-            ${ footer() }
-            </div>
-        </body>
-        <script async src="/jquery.min.js"></script>
-        </html>`
     }
 
     res.start_t = Date.now()
