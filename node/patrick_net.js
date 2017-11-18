@@ -2131,7 +2131,7 @@ async function comment_mail(c, db) { // reasons to send out comment emails: @use
     let p              = await get_post(c.comment_post_id, db)
     let commenter      = c.user_name
     let already_mailed = []
-    let offset         = await cid2offset(p.post_id, c.comment_id)
+    let offset         = await cid2offset(p.post_id, c.comment_id, db)
 
     // if comment_content contains a summons like @user, and user is user_summonable, then email user the comment
     var matches
@@ -2184,6 +2184,11 @@ async function comment_mail(c, db) { // reasons to send out comment emails: @use
             already_mailed[u.user_id] ? already_mailed[u.user_id]++ : already_mailed[u.user_id] = 1
         })
     }
+}
+
+async function cid2offset(post_id, comment_id, db) { // given a comment_id, find the offset
+    return await get_var(`select floor(count(*) / 40) * 40 as o from comments
+                          where comment_post_id=? and comment_id < ? order by comment_id`, [post_id, comment_id], db)
 }
 
 async function render(state) { /////////////////////////////////////////
@@ -2313,7 +2318,7 @@ async function render(state) { /////////////////////////////////////////
 
                 if (state.comment.comment_adhom_when) redirect(`/comment_jail#comment-${comment_id}`, state.res, state.db, state.ip)
                 else {
-                    let offset = await cid2offset(state.comment.comment_post_id, comment_id)
+                    let offset = await cid2offset(state.comment.comment_post_id, comment_id, state.db)
                     redirect(`/post/${state.comment.comment_post_id}?offset=${offset}#comment-${comment_id}`, state.res, state.db, state.ip)
                 }
             }
@@ -2902,7 +2907,7 @@ async function render(state) { /////////////////////////////////////////
 
                 // Now mail the comment author that his comment was liked, iff he has user_summonable set
                 // todo: AND if current user has no record of voting on this comment! (to prevent clicking like over and over to annoy author with email)
-                let offset = await cid2offset(comment_row.comment_post_id, comment_row.comment_id)
+                let offset = await cid2offset(comment_row.comment_post_id, comment_row.comment_id, state.db)
                 let comment_url = `https://${CONF.domain}/post/${comment_row.comment_post_id}?offset=${offset}#comment-${comment_row.comment_id}`
 
                 let u = await get_row(`select * from users where user_id=?`, [comment_row.comment_author], state.db)
@@ -3079,7 +3084,7 @@ async function render(state) { /////////////////////////////////////////
 
             var c
             if (c = _GET(state.req.url, 'c')) { // permalink to a comment
-                let offset = await cid2offset(post_id, c)
+                let offset = await cid2offset(post_id, c, state.db)
                 return redirect(`/post/${post_id}?offset=${offset}#comment-${c}`, state.res, state.db, state.ip)
             }
 
@@ -3259,7 +3264,7 @@ async function render(state) { /////////////////////////////////////////
                                        where comment_post_id = ? and comment_approved > 0 and comment_date > from_unixtime(?)
                                        order by comment_date limit 1`, [p, when], state.db)
 
-            let offset = await cid2offset(p, c)
+            let offset = await cid2offset(p, c, state.db)
             let post = await get_post(p, state.db)
             redirect(`${post2path(post)}?offset=${offset}#comment-${c}`, state.res, state.db, state.ip)
         },
@@ -3590,12 +3595,6 @@ async function render(state) { /////////////////////////////////////////
     /////////////////////////////////////////////////////////
     // functions within render(), arranged alphabetically:
     /////////////////////////////////////////////////////////
-
-    async function cid2offset(post_id, comment_id) { // given a comment_id, find the offset
-
-        return await get_var(`select floor(count(*) / 40) * 40 as o from comments
-                              where comment_post_id=? and comment_id < ? order by comment_id`, [post_id, comment_id], state.db)
-    }
 
     function die(message) {
 
