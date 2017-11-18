@@ -2222,7 +2222,7 @@ function die(message, state) {
 
 async function render(req, res) { /////////////////////////////////////////
 
-    var pages = {
+    var routes = {
 
         about : async function() {
             redirect(`/post/${CONF.about_post_id}`, state.res, state.db, state.ip)
@@ -3691,7 +3691,7 @@ async function render(req, res) { /////////////////////////////////////////
             send_html(200, render_watch_indicator(want_email), state.res, state.db, state.ip)
         },
 
-    } // end of pages
+    } // end of routes
 
     res.start_t = Date.now()
 
@@ -3702,14 +3702,14 @@ async function render(req, res) { /////////////////////////////////////////
         res     : res,
     }
 
-    if (typeof pages[state.page] === 'function') { // hit the db iff the request is for a valid url
+    if (typeof routes[state.page] === 'function') { // hit the db iff the request is for a valid url
         try {
             if (state.db = await get_connection_from_pool(state)) {
                 await block_nuked(state)
                 await block_countries(state)
                 await set_user(state)
                 await header_data(state)
-                await pages[state.page](state)
+                await routes[state.page](state)
             }
         }
         catch(e) {
