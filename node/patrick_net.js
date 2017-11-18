@@ -1715,13 +1715,12 @@ function follow_topic_button(t, current_user, ip) { // t is the topic to follow,
     return `<span style='display: none;' > ${follow_topic_link} ${unfollow_topic_link} </span> ${follow}`
 }
 
-function header(header_data, post, page, current_user, login_failed_email, url) {
+function header(header_data, topic, page, current_user, login_failed_email, url) {
 
     var hashtag = ''
 
     // display hashtag in title if we are on a post in that topic, or in the index for that topic
-    if (post && post.post_topic) hashtag =
-        `<a href='/topic/${post.post_topic}'><h1 class='sitename' >#${post.post_topic}</h1></a>`
+    if (topic) hashtag = `<a href='/topic/${topic}'><h1 class='sitename' >#${topic}</h1></a>`
 
     if (page === 'topic') {
         var topic = segments(url)[2] // like /topic/housing
@@ -3579,10 +3578,6 @@ async function render(req, res) { /////////////////////////////////////////
 
     } // end of pages
 
-    /////////////////////////////////////////////////////////
-    // functions within render(), arranged alphabetically:
-    /////////////////////////////////////////////////////////
-
     function die(message) {
 
         let content = html(
@@ -3594,23 +3589,28 @@ async function render(req, res) { /////////////////////////////////////////
         send_html(200, content, state.res, state.db, state.ip)
     }
 
-    function html(...args) {
-
-        var title = state.post ? state.post.post_title : CONF.domain
-
-        return `<!DOCTYPE html><html lang="en">
-        <head>
-        <link href='/${ CONF.stylesheet }' rel='stylesheet' type='text/css' />
+    function head(stylesheet, description, title) {
+        return `<head>
+        <link href='/${ stylesheet }' rel='stylesheet' type='text/css' />
         <link rel='icon' href='/favicon.ico' />
         <meta charset='utf-8' />
-        <meta name='description' content='${ CONF.description }' />
+        <meta name='description' content='${ description }' />
         <meta name='viewport' content='width=device-width, initial-scale=1, shrink-to-fit=no' />
         <title>${ title }</title>
         ${client_side_js()}
-        </head>
+        </head>`
+    }
+
+    function html(...args) {
+
+        var title = state.post ? state.post.post_title : CONF.domain
+        var topic = state.post ? state.post.post_topic : null
+
+        return `<!DOCTYPE html><html lang="en">
+        ${ head(CONF.stylesheet, CONF.description, title) }
         <body ${ 'dev' === process.env.environment ? "style='background-color: #dfd;'" : '' } >
             <div class="container" >
-            ${ header(state.header_data, state.post, state.page, state.current_user, state.login_failed_email, state.req.url) }
+            ${ header(state.header_data, topic, state.page, state.current_user, state.login_failed_email, state.req.url) }
             ${ args.join('') }
             ${ footer() }
             </div>
