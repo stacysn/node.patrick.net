@@ -3616,16 +3616,17 @@ async function render(req, res) { /////////////////////////////////////////
             </div>
         </body>
         <script async src="/jquery.min.js"></script>
-        ${render_query_times(state.start_t, state.db.queries)}
+        ${render_query_times(state.res.start_t, state.db.queries)}
         </html>`
     }
+
+    res.start_t = Date.now()
 
     var state = {
         ip      : req.headers['x-forwarded-for'],
         page    : segments(req.url)[1] || 'home',
         req     : req,
         res     : res,
-        start_t : Date.now(),
     }
 
     if (typeof pages[state.page] === 'function') { // hit the db iff the request is for a valid url
