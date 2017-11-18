@@ -2126,6 +2126,66 @@ async function find_or_create_anon(db, ip) { // find the user_id derived from th
     return user_id
 }
 
+async function comment_mail(c, db) { // reasons to send out comment emails: @user summons, user watching post
+
+    let p              = await get_post(c.comment_post_id, db)
+    let commenter      = c.user_name
+    let already_mailed = []
+    let offset         = await cid2offset(p.post_id, c.comment_id)
+
+    // if comment_content contains a summons like @user, and user is user_summonable, then email user the comment
+    var matches
+    if (matches = c.comment_content.match(/@(\w+)/m)) { // just use the first @user in the comment, not multiple
+        let summoned_user_username = matches[1]
+        var u
+        if (u = await get_row(`select * from users where user_name=? and user_id != ? and user_summonable=1`,
+                                   [summoned_user_username, c.comment_author], db)) {
+
+            let subject  = `New ${CONF.domain} comment by ${commenter} directed at ${summoned_user_username}`
+
+            let notify_message  = `<html><body><head><base href="${BASEURL}" ></head>
+            New comment by ${commenter} in <a href='${BASEURL}${post2path(p)}'>${p.post_title}</a>:<p>
+            <p>${c.comment_content}<p>
+            <p><a href='${BASEURL}${post2path(p)}?offset=${offset}#comment-${c.comment_id}'>Reply</a><p>
+            <font size='-1'>Stop allowing <a href='${BASEURL}/profile'>@user summons</a></font></body></html>`
+
+            if (u.user_email) mail(u.user_email, subject, notify_message) // user_email could be null in db
+
+            // include in already_mailed so we don't duplicate emails below
+            already_mailed[u.user_id] ? already_mailed[u.user_id]++ : already_mailed[u.user_id] = 1
+        }
+    }
+
+    // commenter logged in right now probably doesn't want to get his own comment in email
+    // select all other subscriber user ids and send them the comment by mail
+    let sql = `select postview_user_id, postview_post_id from postviews
+                    where postview_post_id=? and postview_want_email=1 and postview_user_id != ?
+                    group by postview_user_id` // Group by so that user_id is in there only once.
+
+    let rows = []
+    if (rows = await query(sql, [c.comment_post_id, c.comment_author], db)) {
+        rows.forEach(async function(row) {
+
+            if (already_mailed[row.postview_user_id]) return
+
+            let u = await get_userrow(row.postview_user_id, db)
+            if (!u) return
+
+            let subject = `New ${CONF.domain} comment in '${p.post_title}'`
+
+            let notify_message  = `<html><body><head><base href="${BASEURL}" ></head>
+            New comment by ${commenter} in <a href='${BASEURL}${post2path(p)}'>${p.post_title}</a>:<p>
+            <p>${c.comment_content}<p>\r\n\r\n
+            <p><a href='${BASEURL}${post2path(p)}?offset=${offset}#comment-${c.comment_id}'>Reply</a><p>
+            <font size='-1'>Stop watching <a href='${BASEURL}${post2path(p)}?want_email=0'>${p.post_title}</a></font><br>
+            <font size='-1'>Stop watching <a href='${BASEURL}/autowatch?off=true'>all posts</a></font></body></html>`
+
+            mail(u.user_email, subject, notify_message)
+            already_mailed[u.user_id] ? already_mailed[u.user_id]++ : already_mailed[u.user_id] = 1
+        })
+    }
+}
+
 async function render(state) { /////////////////////////////////////////
 
     var pages = {
@@ -2197,7 +2257,7 @@ async function render(state) { /////////////////////////////////////////
                     'offset')) }), state.res, state.db, state.ip)
                     // send html fragment
 
-                comment_mail(state.comment)
+                comment_mail(state.comment, state.db)
 
                 await query(`update posts set post_modified = ?,
                                               post_latest_comment_id = ?,
@@ -3535,66 +3595,6 @@ async function render(state) { /////////////////////////////////////////
 
         return await get_var(`select floor(count(*) / 40) * 40 as o from comments
                               where comment_post_id=? and comment_id < ? order by comment_id`, [post_id, comment_id], state.db)
-    }
-
-    async function comment_mail(c) { // reasons to send out comment emails: @user summons, user watching post
-
-        let p              = await get_post(c.comment_post_id, state.db)
-        let commenter      = c.user_name
-        let already_mailed = []
-        let offset         = await cid2offset(p.post_id, c.comment_id)
-
-        // if comment_content contains a summons like @user, and user is user_summonable, then email user the comment
-        var matches
-        if (matches = c.comment_content.match(/@(\w+)/m)) { // just use the first @user in the comment, not multiple
-            let summoned_user_username = matches[1]
-            var u
-            if (u = await get_row(`select * from users where user_name=? and user_id != ? and user_summonable=1`,
-                                       [summoned_user_username, c.comment_author], state.db)) {
-
-                let subject  = `New ${CONF.domain} comment by ${commenter} directed at ${summoned_user_username}`
-
-                let notify_message  = `<html><body><head><base href="${BASEURL}" ></head>
-                New comment by ${commenter} in <a href='${BASEURL}${post2path(p)}'>${p.post_title}</a>:<p>
-                <p>${c.comment_content}<p>
-                <p><a href='${BASEURL}${post2path(p)}?offset=${offset}#comment-${c.comment_id}'>Reply</a><p>
-                <font size='-1'>Stop allowing <a href='${BASEURL}/profile'>@user summons</a></font></body></html>`
-
-                if (u.user_email) mail(u.user_email, subject, notify_message) // user_email could be null in db
-
-                // include in already_mailed so we don't duplicate emails below
-                already_mailed[u.user_id] ? already_mailed[u.user_id]++ : already_mailed[u.user_id] = 1
-            }
-        }
-
-        // commenter logged in right now probably doesn't want to get his own comment in email
-        // select all other subscriber user ids and send them the comment by mail
-        let sql = `select postview_user_id, postview_post_id from postviews
-                        where postview_post_id=? and postview_want_email=1 and postview_user_id != ?
-                        group by postview_user_id` // Group by so that user_id is in there only once.
-
-        let rows = []
-        if (rows = await query(sql, [c.comment_post_id, c.comment_author], state.db)) {
-            rows.forEach(async function(row) {
-
-                if (already_mailed[row.postview_user_id]) return
-
-                let u = await get_userrow(row.postview_user_id, state.db)
-                if (!u) return
-
-                let subject = `New ${CONF.domain} comment in '${p.post_title}'`
-
-                let notify_message  = `<html><body><head><base href="${BASEURL}" ></head>
-                New comment by ${commenter} in <a href='${BASEURL}${post2path(p)}'>${p.post_title}</a>:<p>
-                <p>${c.comment_content}<p>\r\n\r\n
-                <p><a href='${BASEURL}${post2path(p)}?offset=${offset}#comment-${c.comment_id}'>Reply</a><p>
-                <font size='-1'>Stop watching <a href='${BASEURL}${post2path(p)}?want_email=0'>${p.post_title}</a></font><br>
-                <font size='-1'>Stop watching <a href='${BASEURL}/autowatch?off=true'>all posts</a></font></body></html>`
-
-                mail(u.user_email, subject, notify_message)
-                already_mailed[u.user_id] ? already_mailed[u.user_id]++ : already_mailed[u.user_id] = 1
-            })
-        }
     }
 
     function die(message) {
