@@ -1943,6 +1943,85 @@ async function post_comment_list(post, url, current_user, db) {
     return results
 }
 
+async function post_mail(p, db) { // reasons to send out post emails: @user, user following post author, user following post topic
+
+    var post = await get_row(`select * from posts, users where post_id=? and post_author=user_id`, [p], db) // p is just the post_id
+
+    var already_mailed = []
+
+    // if post_content contains a summons like @user, and user is user_summonable, then email user the post
+    var matches
+    if (matches = post.post_content.match(/@(\w+)/m)) { // just use the first @user in the post, not multiple
+        var summoned_user_username = matches[1]
+        var u
+        if (u = await get_row(`select * from users where user_name=? and user_id != ? and user_summonable=1`,
+                                   [summoned_user_username, post.post_author], db)) {
+
+            let subject  = `New ${CONF.domain} post by ${post.user_name} directed at ${summoned_user_username}`
+
+            let notify_message  = `<html><body><head><base href="${BASEURL}" ></head>
+            New post by ${post.user_name}:  <a href='${BASEURL}${post2path(post)}'>${post.post_title}</a><p>
+            <p>${post.post_content}<p>
+            <p><a href='${BASEURL}${post2path(post)}'>Reply</a><p>
+            <font size='-1'>Stop allowing <a href='${BASEURL}/profile'>@user summons</a></font></body></html>`
+
+            if (u.user_email) mail(u.user_email, subject, notify_message) // user_email could be null in db
+
+            // include in already_mailed so we don't duplicate emails below
+            already_mailed[u.user_id] ? already_mailed[u.user_id]++ : already_mailed[u.user_id] = 1
+        }
+    }
+
+    // now do user follower emails
+    var rows = []
+    if (rows = await query(`select distinct rel_self_id as user_id from relationships where rel_other_id = ? and rel_i_follow > 0`,
+                           [post.post_author], db)) {
+        rows.forEach(async function(row) {
+
+            if (already_mailed[row.rel_self_id]) return
+
+            let u = await get_userrow(row.rel_self_id)
+
+            if (!u) return
+
+            let subject = `New ${CONF.domain} post by ${post.user_name}`
+
+            let notify_message  = `<html><body><head><base href="${BASEURL}" ></head>
+            New post by ${post.user_name}, <a href='${BASEURL}${post2path(post)}'>${post.post_title}</a>:<p>
+            <p>${post.post_content}<p>\r\n\r\n
+            <p><a href='${BASEURL}${post2path(post)}'>Reply</a><p>
+            <font size='-1'>Stop following <a href='${BASEURL}/user/${post.user_name}'>${post.user_name}</a></font><br>`
+
+            mail(u.user_email, subject, notify_message)
+            already_mailed[u.user_id] ? already_mailed[u.user_id]++ : already_mailed[u.user_id] = 1
+        })
+    }
+
+    // now do topic follower emails
+    if (post.post_topic) {
+        if (rows = await query(`select distinct topicwatch_user_id from topicwatches where topicwatch_name = ?`, [post.post_topic], db)) {
+            rows.forEach(async function(row) {
+
+                if (already_mailed[row.topicwatch_user_id]) return
+
+                let u = await get_userrow(row.topicwatch_user_id)
+
+                if (!u) return
+
+                let subject = `New ${CONF.domain} post in ${post.post_topic}`
+
+                let notify_message  = `<html><body><head><base href="${BASEURL}" ></head>
+                New post in ${post.post_topic} by ${post.user_name}, <a href='${BASEURL}${post2path(post)}'>${post.post_title}</a>:<p>
+                <p>${post.post_content}<p>\r\n\r\n
+                <p><a href='${BASEURL}${post2path(post)}'>Reply</a><p>
+                <font size='-1'>Stop following <a href='${BASEURL}/topic/${post.post_topic}'>${post.post_topic}</a></font><br>`
+
+                mail(u.user_email, subject, notify_message)
+                already_mailed[u.user_id] ? already_mailed[u.user_id]++ : already_mailed[u.user_id] = 1
+            })
+        }
+    }
+}
 async function render(state) { /////////////////////////////////////////
 
     var pages = {
@@ -2121,7 +2200,7 @@ async function render(state) { /////////////////////////////////////////
                 var p = results.insertId
                 if (!p) return die(`failed to insert ${post_data} into posts`)
 
-                post_mail(p) // reasons to send out post emails: @user, user following post author, user following post topic
+                post_mail(p, state.db) // reasons to send out post emails: @user, user following post author, user following post topic
             }
 
             await update_prev_next(post_data.post_topic, p, state.db)
@@ -3569,85 +3648,6 @@ async function render(state) { /////////////////////////////////////////
         send(state.res, 200, headers, content, state.db, state.ip)
     }
 
-    async function post_mail(p) { // reasons to send out post emails: @user, user following post author, user following post topic
-
-        var post = await get_row(`select * from posts, users where post_id=? and post_author=user_id`, [p], state.db) // p is just the post_id
-
-        var already_mailed = []
-
-        // if post_content contains a summons like @user, and user is user_summonable, then email user the post
-        var matches
-        if (matches = post.post_content.match(/@(\w+)/m)) { // just use the first @user in the post, not multiple
-            var summoned_user_username = matches[1]
-            var u
-            if (u = await get_row(`select * from users where user_name=? and user_id != ? and user_summonable=1`,
-                                       [summoned_user_username, post.post_author], state.db)) {
-
-                let subject  = `New ${CONF.domain} post by ${post.user_name} directed at ${summoned_user_username}`
-
-                let notify_message  = `<html><body><head><base href="${BASEURL}" ></head>
-                New post by ${post.user_name}:  <a href='${BASEURL}${post2path(post)}'>${post.post_title}</a><p>
-                <p>${post.post_content}<p>
-                <p><a href='${BASEURL}${post2path(post)}'>Reply</a><p>
-                <font size='-1'>Stop allowing <a href='${BASEURL}/profile'>@user summons</a></font></body></html>`
-
-                if (u.user_email) mail(u.user_email, subject, notify_message) // user_email could be null in db
-
-                // include in already_mailed so we don't duplicate emails below
-                already_mailed[u.user_id] ? already_mailed[u.user_id]++ : already_mailed[u.user_id] = 1
-            }
-        }
-
-        // now do user follower emails
-        var rows = []
-        if (rows = await query(`select distinct rel_self_id as user_id from relationships where rel_other_id = ? and rel_i_follow > 0`,
-                               [post.post_author], state.db)) {
-            rows.forEach(async function(row) {
-
-                if (already_mailed[row.rel_self_id]) return
-
-                let u = await get_userrow(row.rel_self_id)
-
-                if (!u) return
-
-                let subject = `New ${CONF.domain} post by ${post.user_name}`
-
-                let notify_message  = `<html><body><head><base href="${BASEURL}" ></head>
-                New post by ${post.user_name}, <a href='${BASEURL}${post2path(post)}'>${post.post_title}</a>:<p>
-                <p>${post.post_content}<p>\r\n\r\n
-                <p><a href='${BASEURL}${post2path(post)}'>Reply</a><p>
-                <font size='-1'>Stop following <a href='${BASEURL}/user/${post.user_name}'>${post.user_name}</a></font><br>`
-
-                mail(u.user_email, subject, notify_message)
-                already_mailed[u.user_id] ? already_mailed[u.user_id]++ : already_mailed[u.user_id] = 1
-            })
-        }
-
-        // now do topic follower emails
-        if (post.post_topic) {
-            if (rows = await query(`select distinct topicwatch_user_id from topicwatches where topicwatch_name = ?`, [post.post_topic], state.db)) {
-                rows.forEach(async function(row) {
-
-                    if (already_mailed[row.topicwatch_user_id]) return
-
-                    let u = await get_userrow(row.topicwatch_user_id)
-
-                    if (!u) return
-
-                    let subject = `New ${CONF.domain} post in ${post.post_topic}`
-
-                    let notify_message  = `<html><body><head><base href="${BASEURL}" ></head>
-                    New post in ${post.post_topic} by ${post.user_name}, <a href='${BASEURL}${post2path(post)}'>${post.post_title}</a>:<p>
-                    <p>${post.post_content}<p>\r\n\r\n
-                    <p><a href='${BASEURL}${post2path(post)}'>Reply</a><p>
-                    <font size='-1'>Stop following <a href='${BASEURL}/topic/${post.post_topic}'>${post.post_topic}</a></font><br>`
-
-                    mail(u.user_email, subject, notify_message)
-                    already_mailed[u.user_id] ? already_mailed[u.user_id]++ : already_mailed[u.user_id] = 1
-                })
-            }
-        }
-    }
 
     if (typeof pages[state.page] === 'function') { // hit the db iff the request is for a valid url
         try {
