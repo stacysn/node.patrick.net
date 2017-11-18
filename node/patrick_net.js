@@ -2009,7 +2009,7 @@ async function post_mail(p, db) { // reasons to send out post emails: @user, use
     }
 }
 
-async function login(email, password, db, login_failed_email, current_user, ip, page, res) {
+async function login(email, password, db, login_failed_email, current_user, ip, page, res, post, header_data, url) {
 
     var user = await get_row('select * from users where user_email = ? and user_pass = ?', [email, md5(password)], db)
 
@@ -2032,8 +2032,8 @@ async function login(email, password, db, login_failed_email, current_user, ip, 
         var current_user_id = current_user ? current_user.user_id : 0
 
         var content = html(
-            head(CONF.stylesheet, CONF.description, state.post ? state.post.post_title : CONF.domain),
-            header(state.header_data, state.post ? state.post.post_topic : null, state.page, state.current_user, state.login_failed_email, state.req.url),
+            head(CONF.stylesheet, CONF.description, post ? post.post_title : CONF.domain),
+            header(header_data, post ? post.post_topic : null, page, current_user, login_failed_email, url),
             midpage(
                 h1(`Your password is ${ password } and you are now logged in`)
             )
@@ -2879,7 +2879,8 @@ async function render(req, res) { /////////////////////////////////////////
                 await query('update users set user_activation_key=null, user_pass=? where user_activation_key=?',
                             [md5(password), key], state.db)
 
-                login(email, password, state.db, state.login_failed_email, state.current_user, state.ip, state.page, state.res)
+                login(email, password, state.db, state.login_failed_email, state.current_user, state.ip, state.page, state.res, state.post,
+                state.header_data, state.req.url)
             }
             else {
 
@@ -3170,7 +3171,7 @@ async function render(req, res) { /////////////////////////////////////////
 
         post_login : async function() {
             let post_data = await collect_post_data_and_trim(state)
-            login(post_data.email, post_data.password, state.db, state.login_failed_email, state.current_user, state.ip, state.page, state.res)
+            login(post_data.email, post_data.password, state.db, state.login_failed_email, state.current_user, state.ip, state.page, state.res, state.post, state.header_data, state.req.url)
         },
 
         post_moderation : async function () {
