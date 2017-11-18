@@ -2178,6 +2178,18 @@ async function cid2offset(post_id, comment_id, db) { // given a comment_id, find
                           where comment_post_id=? and comment_id < ? order by comment_id`, [post_id, comment_id], db)
 }
 
+function head(stylesheet, description, title) {
+    return `<head>
+    <link href='/${ stylesheet }' rel='stylesheet' type='text/css' />
+    <link rel='icon' href='/favicon.ico' />
+    <meta charset='utf-8' />
+    <meta name='description' content='${ description }' />
+    <meta name='viewport' content='width=device-width, initial-scale=1, shrink-to-fit=no' />
+    <title>${ title }</title>
+    ${client_side_js()}
+    </head>`
+}
+
 async function render(req, res) { /////////////////////////////////////////
 
     var pages = {
@@ -3613,24 +3625,10 @@ async function render(req, res) { /////////////////////////////////////////
         send_html(200, content, state.res, state.db, state.ip)
     }
 
-    function head(stylesheet, description, title) {
-        return `<head>
-        <link href='/${ stylesheet }' rel='stylesheet' type='text/css' />
-        <link rel='icon' href='/favicon.ico' />
-        <meta charset='utf-8' />
-        <meta name='description' content='${ description }' />
-        <meta name='viewport' content='width=device-width, initial-scale=1, shrink-to-fit=no' />
-        <title>${ title }</title>
-        ${client_side_js()}
-        </head>`
-    }
-
     function html(...args) {
 
-        var title = state.post ? state.post.post_title : CONF.domain
-
         return `<!DOCTYPE html><html lang="en">
-        ${ head(CONF.stylesheet, CONF.description, title) }
+        ${ head(CONF.stylesheet, CONF.description, state.post ? state.post.post_title : CONF.domain) }
         <body ${ 'dev' === process.env.environment ? "style='background-color: #dfd;'" : '' } >
             <div class="container" >
             ${ args.join('') }
