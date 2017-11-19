@@ -1600,7 +1600,7 @@ function contextual_link(c, current_user, url, ip) { // a link in the comment he
     else return ''
 }
 
-function page(page, order) { // tell homepage, search, userpage, topic which page we are on
+function which_page(page, order) { // tell homepage, search, userpage, topic which page we are on
 
     let curpage = Math.floor(page) ? Math.floor(page) : 1
     let slimit  = (curpage - 1) * 20 + ', 20' // sql limit for pagination of results.
@@ -2224,11 +2224,11 @@ async function render(req, res) { /////////////////////////////////////////
 
     var routes = {
 
-        about : async function() {
+        about : async function(state) {
             redirect(`/post/${CONF.about_post_id}`, state.res, state.db, state.ip)
         },
 
-        accept_comment : async function() { // insert new comment
+        accept_comment : async function(state) { // insert new comment
 
             if (!valid_nonce(state.ip, _GET(state.req.url, 'ts'), _GET(state.req.url, 'nonce'))) { // do not die, because that will return a whole html page to be appended into the #comment_list slot
                 // show values for debugging nonce problems
@@ -2317,7 +2317,7 @@ async function render(req, res) { /////////////////////////////////////////
             }
         },
 
-        accept_edited_comment : async function() { // update old comment
+        accept_edited_comment : async function(state) { // update old comment
 
             if (!valid_nonce(state.ip, _GET(state.req.url, 'ts'), _GET(state.req.url, 'nonce'))) return die(invalid_nonce_message(), state)
 
@@ -2353,7 +2353,7 @@ async function render(req, res) { /////////////////////////////////////////
             }
         },
 
-        accept_post : async function() { // insert new post or update old post
+        accept_post : async function(state) { // insert new post or update old post
 
             if (!state.current_user) return die(`anonymous posts are not allowed`, state)
 
@@ -2408,7 +2408,7 @@ async function render(req, res) { /////////////////////////////////////////
             redirect(post2path(post_row), state.res, state.db, state.ip)
         },
 
-        approve_comment : async function() {
+        approve_comment : async function(state) {
 
             let comment_id = intval(_GET(state.req.url, 'comment_id'))
 
@@ -2425,7 +2425,7 @@ async function render(req, res) { /////////////////////////////////////////
             send_html(200, '', state.res, state.db, state.ip) // make it disappear from comment_moderation page
         },
 
-        approve_post : async function() {
+        approve_post : async function(state) {
 
             let post_id = intval(_GET(state.req.url, 'post_id'))
 
@@ -2440,7 +2440,7 @@ async function render(req, res) { /////////////////////////////////////////
             send_html(200, '', state.res, state.db, state.ip) // make it disappear from post_moderation page
         },
 
-        autowatch : async function() {
+        autowatch : async function(state) {
 
             var current_user_id = state.current_user ? state.current_user.user_id : 0
 
@@ -2462,7 +2462,7 @@ async function render(req, res) { /////////////////////////////////////////
             return send_html(200, content, state.res, state.db, state.ip)
         },
 
-        ban_from_topic : async function() {
+        ban_from_topic : async function(state) {
 
             if (!valid_nonce(state.ip, _GET(state.req.url, 'ts'), _GET(state.req.url, 'nonce'))) return send_html(200, invalid_nonce_message(),
             state.res, state.db, state.ip)
@@ -2488,7 +2488,7 @@ async function render(req, res) { /////////////////////////////////////////
             return send_html(200, is_user_banned(bans, topic, state.current_user), state.res, state.db, state.ip)
         },
 
-        best : async function() {
+        best : async function(state) {
 
             if ('true' === _GET(state.req.url, 'all')) {
                 var sql = `select * from comments left join users on user_id=comment_author where comment_likes > 3
@@ -2521,7 +2521,7 @@ async function render(req, res) { /////////////////////////////////////////
             return send_html(200, content, state.res, state.db, state.ip)
         },
 
-        comment_jail : async function() { // no pagination, just most recent 80
+        comment_jail : async function(state) { // no pagination, just most recent 80
 
             // comments not freed in 30 days will be deleted
             await query(`delete from comments where comment_adhom_when < date_sub(now(), interval 30 day)`, [], state.db)
@@ -2547,7 +2547,7 @@ async function render(req, res) { /////////////////////////////////////////
             return send_html(200, content, state.res, state.db, state.ip)
         },
 
-        comment_moderation : async function() {
+        comment_moderation : async function(state) {
 
             if (!state.current_user) return die('you must be logged in to moderate comments', state)
 
@@ -2570,7 +2570,7 @@ async function render(req, res) { /////////////////////////////////////////
             return send_html(200, content, state.res, state.db, state.ip)
         },
 
-        comments : async function() { // show a list of comments by user, or by comment-frequence, or from a search
+        comments : async function(state) { // show a list of comments by user, or by comment-frequence, or from a search
 
             let offset  = intval(_GET(state.req.url, 'offset'))
             let results = null
@@ -2611,7 +2611,7 @@ async function render(req, res) { /////////////////////////////////////////
             return send_html(200, content, state.res, state.db, state.ip)
         },
 
-        delete_comment : async function() { // delete a comment
+        delete_comment : async function(state) { // delete a comment
 
             let comment_id = intval(_GET(state.req.url, 'comment_id'))
             let post_id    = intval(_GET(state.req.url, 'post_id'))
@@ -2637,7 +2637,7 @@ async function render(req, res) { /////////////////////////////////////////
             send_html(200, '', state.res, state.db, state.ip)
         },
 
-        delete_post : async function() { // delete a whole post, but not its comments
+        delete_post : async function(state) { // delete a whole post, but not its comments
 
             if (!state.current_user) return die('you must be logged in to delete a post', state)
             if (!valid_nonce(state.ip, _GET(state.req.url, 'ts'), _GET(state.req.url, 'nonce')))      return die(invalid_nonce_message(), state)
@@ -2665,7 +2665,7 @@ async function render(req, res) { /////////////////////////////////////////
             else return die('need a post_id', state)
         },
 
-        dislike : async function() { // given a comment or post, downvote it
+        dislike : async function(state) { // given a comment or post, downvote it
 
             var user_id = state.current_user ? state.current_user.user_id : await find_or_create_anon(state.db, state.ip)
 
@@ -2725,7 +2725,7 @@ async function render(req, res) { /////////////////////////////////////////
             else return send_html(200, '', state.res, state.db, state.ip) // send empty string if no comment_id or post_id
         },
 
-        edit_comment : async function () {
+        edit_comment : async function (state) {
 
             if (!valid_nonce(state.ip, _GET(state.req.url, 'ts'), _GET(state.req.url, 'nonce'))) return die(invalid_nonce_message(), state)
 
@@ -2749,7 +2749,7 @@ async function render(req, res) { /////////////////////////////////////////
             }
         },
 
-        edit_post : async function () {
+        edit_post : async function (state) {
 
             if (!valid_nonce(state.ip, _GET(state.req.url, 'ts'), _GET(state.req.url, 'nonce'))) return die(invalid_nonce_message(), state)
 
@@ -2772,7 +2772,7 @@ async function render(req, res) { /////////////////////////////////////////
             }
         },
 
-        edit_profile : async function() {
+        edit_profile : async function(state) {
 
             let content = html(
                 render_query_times(state.res.start_t, state.db.queries),
@@ -2786,7 +2786,7 @@ async function render(req, res) { /////////////////////////////////////////
             send_html(200, content, state.res, state.db, state.ip)
         },
 
-        follow_topic : async function() { // get or turn off emails of posts in a topic; can be called as ajax or full page
+        follow_topic : async function(state) { // get or turn off emails of posts in a topic; can be called as ajax or full page
 
             let ajax  = intval(_GET(state.req.url, 'ajax'))
             let topic = _GET(state.req.url, 'topic').replace(/\W/, '').toLowerCase()
@@ -2811,7 +2811,7 @@ async function render(req, res) { /////////////////////////////////////////
             ajax ? send_html(200, follow_topic_button(topic, state.current_user, state.ip), state.res, state.db, state.ip) : die('Follow status updated', state)
         },
 
-        follow_user : async function() { // get or turn off emails of a user's new posts; can be called as ajax or full page
+        follow_user : async function(state) { // get or turn off emails of a user's new posts; can be called as ajax or full page
 
             let ajax     = intval(_GET(state.req.url, 'ajax'))
             let other_id = intval(_GET(state.req.url, 'other_id'))
@@ -2845,7 +2845,7 @@ async function render(req, res) { /////////////////////////////////////////
                  you on ${CONF.domain} and will get emails of your new posts`)
         },
 
-        home : async function () {
+        home : async function (state) {
 
             var p
 
@@ -2853,7 +2853,7 @@ async function render(req, res) { /////////////////////////////////////////
 
             let current_user_id = state.current_user ? state.current_user.user_id : 0
 
-            let [curpage, slimit, order, order_by] = page(_GET(state.req.url, 'page'), _GET(state.req.url, 'order'))
+            let [curpage, slimit, order, order_by] = which_page(_GET(state.req.url, 'page'), _GET(state.req.url, 'order'))
 
             // left joins to also get each post's viewing and voting data for the current user if there is one
             let sql = `select sql_calc_found_rows * from posts
@@ -2881,7 +2881,7 @@ async function render(req, res) { /////////////////////////////////////////
             send_html(200, content, state.res, state.db, state.ip)
         },
 
-        ignore : async function() { // ignore a user
+        ignore : async function(state) { // ignore a user
 
             let other_id = intval(_GET(state.req.url, 'other_id'))
 
@@ -2907,7 +2907,7 @@ async function render(req, res) { /////////////////////////////////////////
                          where user_id=?`, [other_id, other_id], state.db)
         },
 
-        key_login : async function() {
+        key_login : async function(state) {
 
             let key      = _GET(state.req.url, 'key')
             let password = get_nonce(Date.now(), state.ip).substring(0, 6)
@@ -2939,7 +2939,7 @@ async function render(req, res) { /////////////////////////////////////////
             }
         },
 
-        like : async function() { // given a comment or post, upvote it
+        like : async function(state) { // given a comment or post, upvote it
 
             var user_id   = state.current_user ? state.current_user.user_id   : await find_or_create_anon(state.db, state.ip)
             var user_name = state.current_user ? state.current_user.user_name : ip2anon(state.ip)
@@ -3038,7 +3038,7 @@ async function render(req, res) { /////////////////////////////////////////
             else return send_html(200, '', state.res, state.db, state.ip) // send empty string if no comment_id or post_id
         },
 
-        logout : async function() {
+        logout : async function(state) {
 
             state.current_user = null
             var d              = new Date()
@@ -3055,7 +3055,7 @@ async function render(req, res) { /////////////////////////////////////////
             send(state.res, 200, headers, html, state.db, state.ip)
         },
 
-        new_post : async function() {
+        new_post : async function(state) {
 
             if (!state.current_user || !state.current_user.user_id) return die('anonymous users may not create posts', state)
 
@@ -3087,7 +3087,7 @@ async function render(req, res) { /////////////////////////////////////////
             send_html(200, content, state.res, state.db, state.ip)
         },
 
-        nuke : async function() { // given a user ID, nuke all his posts, comments, and his ID
+        nuke : async function(state) { // given a user ID, nuke all his posts, comments, and his ID
 
             let nuke_id = intval(_GET(state.req.url, 'nuke_id'))
             let u = await get_userrow(nuke_id, state.db)
@@ -3119,7 +3119,7 @@ async function render(req, res) { /////////////////////////////////////////
             redirect(state.req.headers.referer, state.res, state.db, state.ip) 
         },
 
-        old : async function() {
+        old : async function(state) {
 
             let years_ago = intval(_GET(state.req.url, 'years_ago'))
 
@@ -3150,7 +3150,7 @@ async function render(req, res) { /////////////////////////////////////////
             send_html(200, content, state.res, state.db, state.ip)
         },
 
-        post : async function() { // show a single post and its comments
+        post : async function(state) { // show a single post and its comments
 
             let current_user_id = state.current_user ? state.current_user.user_id : 0
             let post_id         = intval(segments(state.req.url)[2]) // get post's db row number from url, eg 47 from /post/47/slug-goes-here
@@ -3216,12 +3216,12 @@ async function render(req, res) { /////////////////////////////////////////
             send_html(200, content, state.res, state.db, state.ip)
         },
 
-        post_login : async function() {
+        post_login : async function(state) {
             let post_data = await collect_post_data_and_trim(state)
             login(post_data.email, post_data.password, state.db, state.login_failed_email, state.current_user, state.ip, state.page, state.res, state.post, state.header_data, state.req.url)
         },
 
-        post_moderation : async function () {
+        post_moderation : async function (state) {
 
             if (!state.current_user) return die('you must be logged in to moderate posts', state)
 
@@ -3239,7 +3239,7 @@ async function render(req, res) { /////////////////////////////////////////
             send_html(200, content, state.res, state.db, state.ip)
         },
 
-        random : async function() {
+        random : async function(state) {
 
             let rand = await get_var(`select round(rand() * (select count(*) from posts)) as r`, [], state.db)
             let p    = await get_var(`select post_id from posts limit 1 offset ?`, [rand], state.db)
@@ -3247,7 +3247,7 @@ async function render(req, res) { /////////////////////////////////////////
             redirect(`/post/${p}`, state.res, state.db, state.ip)
         },
 
-        recoveryemail : async function() {
+        recoveryemail : async function(state) {
 
             let post_data = await collect_post_data_and_trim(state)
 
@@ -3266,7 +3266,7 @@ async function render(req, res) { /////////////////////////////////////////
             send_html(200, content, state.res, state.db, state.ip)
         },
 
-        registration : async function() {
+        registration : async function(state) {
 
             let post_data = await collect_post_data_and_trim(state)
             let message = ''
@@ -3303,7 +3303,7 @@ async function render(req, res) { /////////////////////////////////////////
             send_html(200, content, state.res, state.db, state.ip)
         },
 
-        search : async function() {
+        search : async function(state) {
 
             // if (is_robot()) die('robots may not do searches', state)
 
@@ -3312,7 +3312,7 @@ async function render(req, res) { /////////////////////////////////////////
 
             if (!s) return die('You searched for nothing. It was found.', state)
 
-            let [curpage, slimit, order, order_by] = page(_GET(state.req.url, 'page'), _GET(state.req.url, 'order'))
+            let [curpage, slimit, order, order_by] = which_page(_GET(state.req.url, 'page'), _GET(state.req.url, 'order'))
 
             // These match() requests require the existence of fulltext index:
             //      create fulltext index post_title_content_index on posts (post_title, post_content)
@@ -3342,7 +3342,7 @@ async function render(req, res) { /////////////////////////////////////////
             send_html(200, content, state.res, state.db, state.ip)
         },
 
-        since : async function() { // given a post_id and epoch timestamp, redirect to post's first comment after that timestamp
+        since : async function(state) { // given a post_id and epoch timestamp, redirect to post's first comment after that timestamp
 
             // these will die on replace() if p or when is not defined and that's the right thing to do
             let p    = intval(_GET(state.req.url, 'p'))
@@ -3357,7 +3357,7 @@ async function render(req, res) { /////////////////////////////////////////
             redirect(`${post2path(post)}?offset=${offset}#comment-${c}`, state.res, state.db, state.ip)
         },
 
-        topic : async function() {
+        topic : async function(state) {
 
             var topic = segments(state.req.url)[2] // like /topics/housing
 
@@ -3365,7 +3365,7 @@ async function render(req, res) { /////////////////////////////////////////
 
             let user_id = state.current_user ? state.current_user.user_id : 0
             
-            let [curpage, slimit, order, order_by] = page(_GET(state.req.url, 'page'), _GET(state.req.url, 'order'))
+            let [curpage, slimit, order, order_by] = which_page(_GET(state.req.url, 'page'), _GET(state.req.url, 'order'))
 
             let sql = `select sql_calc_found_rows * from posts
                        left join postviews on postview_post_id=post_id and postview_user_id= ?
@@ -3404,7 +3404,7 @@ async function render(req, res) { /////////////////////////////////////////
             send_html(200, content, state.res, state.db, state.ip)
         },
 
-        topics : async function () {
+        topics : async function (state) {
 
             state.topics = await query(`select post_topic, count(*) as c from posts
                                         where length(post_topic) > 0 group by post_topic having c >=3 order by c desc`, null, state.db)
@@ -3422,7 +3422,7 @@ async function render(req, res) { /////////////////////////////////////////
             send_html(200, content, state.res, state.db, state.ip)
         },
 
-        uncivil : async function() { // move a comment to comment jail, or a post to post moderation
+        uncivil : async function(state) { // move a comment to comment jail, or a post to post moderation
 
             let comment_id = intval(_GET(state.req.url, 'c'))
 
@@ -3434,7 +3434,7 @@ async function render(req, res) { /////////////////////////////////////////
             send_html(200, '', state.res, state.db, state.ip) // blank response in all cases
         },
 
-        update_profile : async function() { // accept data from profile_form
+        update_profile : async function(state) { // accept data from profile_form
 
             if (!valid_nonce(state.ip, _GET(state.req.url, 'ts'), _GET(state.req.url, 'nonce')))              return die(invalid_nonce_message(),
             state)
@@ -3469,7 +3469,7 @@ async function render(req, res) { /////////////////////////////////////////
             redirect('/edit_profile?updated=true', state.res, state.db, state.ip)
         },
 
-        upload : async function() {
+        upload : async function(state) {
 
             if (!state.current_user) return die('you must be logged in to upload images', state)
 
@@ -3534,10 +3534,10 @@ async function render(req, res) { /////////////////////////////////////////
             })
         },
 
-        user : async function() {
+        user : async function(state) {
 
             let current_user_id = state.current_user ? state.current_user.user_id : 0
-            let [curpage, slimit, order, order_by] = page(_GET(state.req.url, 'page'), _GET(state.req.url, 'order'))
+            let [curpage, slimit, order, order_by] = which_page(_GET(state.req.url, 'page'), _GET(state.req.url, 'order'))
             let user_name = decodeURIComponent(segments(state.req.url)[2]).replace(/[^\w._ -]/g, '') // like /user/Patrick
             let u = await get_row(`select * from users where user_name=?`, [user_name], state.db)
 
@@ -3575,7 +3575,7 @@ async function render(req, res) { /////////////////////////////////////////
             send_html(200, content, state.res, state.db, state.ip)
         },
 
-        users : async function() {
+        users : async function(state) {
 
             let d  = _GET(state.req.url, 'd')  ? _GET(state.req.url, 'd').replace(/[^adesc]/g, '').substring(0,4)  : 'desc' // asc or desc
             let ob = _GET(state.req.url, 'ob') ? _GET(state.req.url, 'ob').replace(/[^a-z_]/g, '').substring(0,32) : 'user_comments' // order by
@@ -3668,7 +3668,7 @@ async function render(req, res) { /////////////////////////////////////////
             send_html(200, content, state.res, state.db, state.ip)
         },
 
-        watch : async function() { // toggle a watch from a post
+        watch : async function(state) { // toggle a watch from a post
 
             let post_id = intval(_GET(state.req.url, 'post_id'))
 
@@ -3693,23 +3693,26 @@ async function render(req, res) { /////////////////////////////////////////
 
     } // end of routes
 
-    res.start_t = Date.now()
+    var page = segments(req.url)[1] || 'home'
 
-    var state = {
-        ip      : req.headers['x-forwarded-for'],
-        page    : segments(req.url)[1] || 'home',
-        req     : req,
-        res     : res,
-    }
+    if (typeof routes[page] === 'function') { // hit the db iff the request is for a valid url
 
-    if (typeof routes[state.page] === 'function') { // hit the db iff the request is for a valid url
+        res.start_t = Date.now()
+
+        var state = {
+            ip      : req.headers['x-forwarded-for'],
+            page    : segments(req.url)[1] || 'home',
+            req     : req,
+            res     : res,
+        }
+
         try {
             if (state.db = await get_connection_from_pool(state)) {
                 await block_nuked(state)
                 await block_countries(state)
                 await set_user(state)
                 await header_data(state)
-                await routes[state.page](state)
+                await routes[page](state)
             }
         }
         catch(e) {
