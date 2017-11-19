@@ -2524,10 +2524,10 @@ var routes = {
             var m = `<h2>best comments in the last week</h2>or view the <a href='/best?all=true'>all-time</a> best comments<p>`
         }
 
-        context.comments = await query(sql, [], context.db)
+        let comments = await query(sql, [], context.db)
 
         let offset = 0
-        context.comments = context.comments.map(comment => { comment.row_number = ++offset; return comment })
+        comments = comments.map(comment => { comment.row_number = ++offset; return comment })
 
         let content = html(
             render_query_times(context.res.start_time, context.db.queries),
@@ -2535,7 +2535,7 @@ var routes = {
             header(context.header_data, context.post ? context.post.post_topic : null, context.page, context.current_user, context.login_failed_email, context.req.url),
             midpage(
                 m,
-                comment_list(context.comments, context.current_user, context.ip, context.req)
+                comment_list(comments, context.current_user, context.ip, context.req)
             )
         )
 
