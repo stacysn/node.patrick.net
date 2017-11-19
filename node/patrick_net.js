@@ -34,52 +34,50 @@ if (CLUSTER.isMaster && !('dev' === process.env.environment)) { // to keep debug
     })
 } else HTTP.createServer(render).listen(CONF.http_port)
 
-// end of top-level code; everything below is in a function
-
 async function render(req, res) {
 
-    var page = segments(req.url)[1] || 'home'
+    res.start_t = Date.now()
 
-    if (typeof routes[page] === 'function') { // hit the db iff the request is for a valid url
+    const ip   = req.headers['x-forwarded-for']
+    const page = segments(req.url)[1] || 'home'
 
-        res.start_t = Date.now()
+    if (typeof routes[page] !== 'function') return bail(res, 404, `${page} was not found`)
 
-        var context = {
-            ip      : req.headers['x-forwarded-for'],
-            page    : segments(req.url)[1] || 'home',
-            req     : req,
-            res     : res,
-        }
+    const db = await get_connection_from_pool(ip)
 
-        try {
-            if (context.db = await get_connection_from_pool(context)) {
-                await block_nuked(context)
-                await block_countries(context)
-                await set_user(context)
-                await header_data(context)
-                await routes[page](context)
-            }
-        }
-        catch(e) {
-            var message = e.message || e.toString()
-            console.error(`${Date()} pid:${PROCESS.pid} ${context.ip} ${context.req.url} failed in render with error: ${message} ${e.stack}`)
-            return send_html(intval(e.code) || 500, `node server says: ${message}`, context.res, context.db, context.ip, context.res, context.db, context.ip)
-        }
+    if (!db)                           return bail(res, 500, 'failed to get db connection from pool')
+    if (await blocked(db, ip))         return bail(res, 403, 'ip address blocked')
+    if (await block_countries(db, ip)) return bail(res, 403, 'permission denied to evil country')
+
+    const context = { db, ip, page, req, res }
+
+    try {
+        context.current_user = await get_user(context)
+        context.header_data  = await header_data(context)
+        await routes[page](context)
     }
-    else return send_html(404, `${context.page} was not found`, context.res, context.db, context.ip, context.res, context.db, context.ip)
+    catch(e) {
+        var message = e.message || e.toString()
+        console.error(`${Date()} pid:${PROCESS.pid} ${context.ip} ${context.req.url} failed in render with error: ${message} ${e.stack}`)
+        return send_html(intval(e.code) || 500, `node server says: ${message}`, context.res, context.db, context.ip, context.res, context.db, context.ip)
+    }
 }
 
-function get_connection_from_pool(context) {
+function bail(res, code, message) {
+    res.writeHead(code, { 'Content-Type' : 'text/plain' })
+    res.end(message)
+}
+
+function get_connection_from_pool(ip) {
 
     return new Promise(function(resolve, reject) {
 
-        if (LOCKS[context.ip]) {
-            setTimeout(() => { release_connection_to_pool(context.db, context.ip) }, 2000) // don't let lock last for more than two seconds
+        if (LOCKS[ip]) {
             console.trace()
             return reject('rate limit exceeded')
         }
 
-        LOCKS[context.ip] = Date.now() // set a database lock for this ip; each ip is allowed only one outstanding connection at a time
+        LOCKS[ip] = Date.now() // set a database lock for this ip; each ip is allowed only one outstanding connection at a time
 
         POOL.getConnection(function(err, db) {
             if (err) {
@@ -88,6 +86,7 @@ function get_connection_from_pool(context) {
             }
             else {
                 db.queries = []
+                setTimeout((db, ip) => { release_connection_to_pool(db, ip) }, 2000) // don't let lock last for more than two seconds
                 resolve(db)
             }
         })
@@ -95,35 +94,30 @@ function get_connection_from_pool(context) {
 }
 
 function release_connection_to_pool(db, ip) {
-    db && db.release()
+    if (db) db.release()
     delete LOCKS[ip]
 }
 
-async function block_countries(context) { // block entire countries like Russia because all comments from there are inevitably spam
-
-    var evil = await get_var('select country_evil from countries where inet_aton(?) >= country_start and inet_aton(?) <= country_end',
-                                [context.ip, context.ip], context.db)
-
-    if (evil) throw { code : 403, message : 'permission denied to evil country' }
+async function block_countries(db, ip) { // block entire countries like Russia because all comments from there are inevitably spam
+    return await get_var('select country_evil from countries where inet_aton(?) >= country_start and inet_aton(?) <= country_end',
+        [ip, ip], db) ? true : false
 }
 
 async function is_foreign(context) {
 
-    var country_name = await get_var(`select country_name from countries
-                                      where inet_aton(?) >= country_start and inet_aton(?) <= country_end`,
-                                      [context.ip, context.ip], context.db)
+    var country_name = await get_var(`select country_name from countries where inet_aton(?) >= country_start and inet_aton(?) <= country_end`,
+                                     [context.ip, context.ip], context.db)
 
     if (country_name !== 'United States') return true
     else                                  return false
 }
 
-async function block_nuked(context) { // block nuked users, usually spammers
-    if (await get_var('select count(*) as c from nukes where nuke_ip = ?', [context.ip], context.db))
-    throw { code : 403, message : 'permission denied to spammy user' }
+async function blocked(db, ip) { // was the ip nuked in the past?
+    return (await get_var('select count(*) as c from nukes where nuke_ip = ?', [ip], db)) ? true : false
 }
 
 async function header_data(context) { // data that the page header needs to render
-    context.header_data = {
+    return {
         comments : await get_var(`select count(*) as c from comments`,           null, context.db), // int
         onlines  : await query(`select * from onlines order by online_username`, null, context.db), // obj
         tot      : await get_var(`select count(*) as c from users`,              null, context.db), // int
@@ -163,7 +157,7 @@ async function collect_post_data_and_trim(context) { // to deal with safari on i
     return post_data
 }
 
-async function set_user(context) { // update context with whether they are logged in or not
+async function get_user(context) { // update context with whether they are logged in or not
 
     if (!context.req.headers.cookie) return
 
@@ -177,63 +171,55 @@ async function set_user(context) { // update context with whether they are logge
             pairs[name] = value
         })
 
-        context.current_user = await get_row('select * from users where user_id = ? and user_pass = ?', [pairs[CONF.usercookie], pairs[CONF.pwcookie]],
-        context.db)
+        let current_user = await get_row('select * from users where user_id = ? and user_pass = ?',
+            [pairs[CONF.usercookie], pairs[CONF.pwcookie]], context.db)
 
-        if (context.current_user && context.current_user.user_id) {
-            context.current_user.is_moderator_of = (await query('select topic from topics where topic_moderator = ?',
-                                                              [context.current_user.user_id], context.db)).map(row => row.topic)
-            await set_relations(context)
-            await set_topics(context)
+        if (current_user && current_user.user_id) {
+            current_user.is_moderator_of = (await query('select topic from topics where topic_moderator = ?',
+                                                        [current_user.user_id], context.db)).map(row => row.topic)
+            current_user = await set_relations(current_user, context)
+            current_user = await set_topics(current_user, context)
 
             // update users currently online for display in header
             await query(`delete from onlines where online_last_view < date_sub(now(), interval 5 minute)`, null, context.db)
             await query(`insert into onlines (online_user_id, online_username, online_last_view) values (?, ?, now())
-                         on duplicate key update online_last_view=now()`, [context.current_user.user_id, context.current_user.user_name], context.db)
+                         on duplicate key update online_last_view=now()`, [current_user.user_id, current_user.user_name], context.db)
         }
 
+        return current_user
     }
     catch(e) { // no valid cookie
         console.log(e)
-        context.current_user = null
+        return null
     }
 }
 
-async function set_relations(context) { // update context object with their relationships to other users
+async function set_relations(current_user, context) { // update current_user with his relationships to other users
     // todo: eventually cache this data so we don't do the query on each hit
-    if (context.current_user) {
+    if (current_user) {
+        let copy = JSON.parse(JSON.stringify(current_user)) // we never modify our parameters
 
         let non_trivial = `rel_my_friend > 0 or rel_i_ban > 0 or rel_i_follow > 0`
         let my_pov      = `select * from relationships
                            left join users on users.user_id=relationships.rel_other_id where rel_self_id = ? and (${non_trivial})`
-        /*
-        let other_pov   = `select rel_self_id   as t2_self_id,
-                                  rel_other_id  as t2_other_id,
-                                  rel_i_follow  as follows_me,
-                                  rel_i_ban     as bans_me,
-                                  rel_my_friend as likes_me
-                                  from relationships where rel_other_id = ? and (${non_trivial})`
 
-        // we have to both left join and right join to pick up cases where one side has relation but other does not
-        let sql = `select * from (${my_pov}) as t1 left join  (${other_pov}) as t2 on t1.rel_other_id = t2.t2_self_id
-                   union
-                   select * from (${my_pov}) as t1 right join (${other_pov}) as t2 on t1.rel_other_id = t2.t2_self_id`
+        let results = await query(my_pov, [copy.user_id], context.db)
 
-        var results2 = await query(sql, Array(4).fill(context.current_user.user_id), context.db)
-        */
+        copy.relationships = [] // now renumber results array using user_ids to make later access easy
 
-        var results = await query(my_pov, [context.current_user.user_id], context.db)
+        for (var i = 0; i < results.length; ++i) copy.relationships[results[i].rel_other_id] = results[i]
 
-        context.current_user.relationships = [] // now renumber results array using user_ids to make later access easy
-
-        for (var i = 0; i < results.length; ++i) context.current_user.relationships[results[i].rel_other_id] = results[i]
+        return copy
     }
 }
 
-async function set_topics(context) { // update context object with their topics they follow
-    if (context.current_user) {
-        var results = await query(`select topicwatch_name from topicwatches where topicwatch_user_id=?`, [context.current_user.user_id], context.db)
-        context.current_user.topics = results.map(row => row.topicwatch_name)
+async function set_topics(current_user, context) { // update current_user object with topics he follows
+    if (current_user) {
+        let copy = JSON.parse(JSON.stringify(current_user)) // we never modify our parameters
+        var results = await query(`select topicwatch_name from topicwatches where topicwatch_user_id=?`, [copy.user_id], context.db)
+        copy.topics = results.map(row => row.topicwatch_name)
+
+        return copy
     }
 }
 
