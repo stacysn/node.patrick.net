@@ -233,18 +233,6 @@ function md5(str) {
     return hash.digest('hex')
 }
 
-function render_query_times(start_time, queries) {
-    var db_total_ms = 0
-    var queries = queries.sortByProp('ms').map( (item) => {
-        db_total_ms += item.ms
-        return `${ item.ms }ms ${ item.sql }`
-    }).join('\n')
-
-    return `<span id='render_query_times'>
-                <!-- ${'\n' + queries + '\n'}\n${db_total_ms} ms db\n${Date.now() - start_time} ms total time -->
-            </span>`
-}
-
 function ip2anon(ip) {
     return 'anon_' + md5(ip).substring(0, 5)
 }
@@ -279,70 +267,6 @@ function strip_tags(s) { // use like this: str = strip_tags('<p>There is some <u
 
 function strip_all_tags(s) {
     return s.replace(/(<([^>]+)>)/g,'')
-}
-
-function client_side_js() {
-    return `<script type="text/javascript">
-
-    function addquote(post_id, offset, comment_id, author) {
-
-        var comment_link;
-        var textarea = document.forms['commentform'].elements['ta'];
-        var theSelection = '';
-
-        if (comment_id > 0)
-            comment_link = '<a href="/post/' + post_id + '&offset=' + offset + '#comment-' + comment_id + '">' + author + ' says</a>';
-        else
-            comment_link = '<a href="/post/' + post_id                                                  + '">' + author + ' says</a>';
-
-        if (theSelection = getHTMLOfSelection()) { // user manually selected something
-            if (s = sessionStorage.getItem('tripleclickselect')) { // override tripleclick selection to avoid getting extra html elements
-                theSelection = s.trim(); // trim bc tripleclick appends useless whitespace
-                sessionStorage.removeItem('tripleclickselect'); // so we don't keep using it by mistake
-            }
-        }
-        else { // either we are on mobile (no selection possible) or the user did not select any text
-            // whole comment, or post when comment_id === 0
-            theSelection = document.getElementById('comment-' + comment_id + '-text').innerHTML;
-        }
-
-        if (theSelection.length > 1024) var theSelection = theSelection.substring(0, 1000) + '...'; // might mangle tags
-
-        textarea.value = textarea.value + comment_link + '<br><blockquote>' + theSelection + '</blockquote>';
-        textarea.focus();
-        return;
-    }
-
-    window.addEventListener('click', function (evt) {
-        if (evt.detail === 3) {
-            sessionStorage.setItem('tripleclickselect', window.getSelection());
-
-            // if they don't use it by clicking "quote" within 10 seconds, delete it so it dn confuse them later
-            setTimeout(function() { sessionStorage.removeItem('tripleclickselect'); }, 10000);
-        }
-    });
-
-    function getHTMLOfSelection () {
-      var range;
-      if (window.getSelection) {
-        var selection = window.getSelection();
-        if (selection.rangeCount > 0) {
-          range = selection.getRangeAt(0);
-          var clonedSelection = range.cloneContents();
-          var div = document.createElement('div');
-          div.appendChild(clonedSelection);
-          return div.innerHTML;
-        }
-        else {
-          return '';
-        }
-      }
-      else {
-        return '';
-      }
-    }
-    </script>
-    `
 }
 
 function newlineify(s) { // transform the html shown in the edit box to be more human-friendly
@@ -644,10 +568,6 @@ function resize_image(file, max_dim = 600) { // max_dim is maximum dimension in 
     })
 }
 
-function render_watch_indicator(want_email) {
-    return want_email ? `<img src='/content/openeye.png'> unwatch` : `<img src='/content/closedeye.png'> watch`
-}
-
 function valid_nonce(ip, ts, nonce) {
     if (intval(ts) < (Date.now() - 7200000)) return false // don't accept timestamps older than two hours
 
@@ -659,68 +579,6 @@ function get_nonce(ts, ip) {
     // create or check a nonce string for input forms. this makes each form usable only once, and only from the ip that got the form.
     // hopefully this slows down spammers and cross-site posting tricks
     return md5(ip + CONF.nonce_secret + ts)
-}
-
-function render_user_list(users, d) {
-
-    d = d ? d.replace(/[^adesc]/, '').substring(0,4)  : 'desc' // asc or desc
-    let i = (d === 'desc') ? 'asc' : 'desc'                    // invert asc or desc
-
-    let header = `
-    <form name='input' action='/users' method='get' >
-    <input type='text' size=40 maxlength=80 name='user_name' autofocus />
-    <input type='submit' value='User Search' />
-    </form><p>
-    <table width='100%' cellpadding='10' style="overflow-x:auto;" ><tr>
-    <th ></th>
-    <th                    ><a href='/users?ob=user_name&d=${ i }'       title='order by user name' >Username</a></th>
-    <th                    ><a href='/users?ob=user_registered&d=${ i }' title='order by registration date' >Registered</a></th>
-    <th class='text-right' ><a href='/users?ob=user_posts&d=${ i }'      title='order by number of posts started' >Posts</a></th>
-    <th class='text-right' ><a href='/users?ob=user_comments&d=${ i }'   title='order by number of comments' >Comments</a></th>
-    <th class='text-right' ><a href='/users?ob=user_likes&d=${ i }'      title='number of likes user got' >Likes</a></th>
-    <th class='text-right' ><a href='/users?ob=user_dislikes&d=${ i }'   title='number of dislikes user got' >Dislikes</a></th>
-    <th class='text-right' ><a href='/users?ob=user_friends&d=${ i }'    title='order by number of friends' >Friends</a></th>
-    <th class='text-right' ><a href='/users?ob=user_followers&d=${ i }'  title='order by number of followers' >Followers</a></th>
-    <th class='text-right' ><a href='/users?ob=user_bannedby&d=${ i }'   title='how many people are ignoring user' >Ignored By</a></th>
-    <th class='text-right' ><a href='/users?ob=user_banning&d=${ i }'    title='how many people user is ignoring' >Ignoring</a></th>
-    </tr>`
-
-    if (users.length) {
-        var formatted = users.map( (u) => {
-            return `<tr>
-                <td >${render_user_icon(u)}</td>
-                <td align=left >${user_link(u)}</td>
-                <td align=left >${render_date(u.user_registered)}</td>
-                <td align=right ><a href='/user/${u.user_name}' >${u.user_posts.number_format()}</a></td>
-                <td align=right ><a href='/comments?a=${u.user_name}'>${u.user_comments.number_format()}</a></td>
-                <td align=right >${u.user_likes.number_format()}</td>
-                <td align=right >${u.user_dislikes.number_format()}</td>
-                <td align=right ><a href='/users?friendsof=${u.user_id}' >${u.user_friends.number_format()}</a></td>
-                <td align=right ><a href='/users?followersof=${u.user_id}' >${u.user_followers.number_format()}</a></td>
-                <td align=right >${u.user_bannedby.number_format()}</td>
-                <td align=right >${u.user_banning.number_format()}</td>
-               </tr>`
-        })
-
-        var result = formatted.join('')
-    }
-    else var result = 'no such user'
-
-    return header + result + '</table>'
-}
-
-function render_user_icon(u, scale=1, img_parms='') { // clickable icon for this user if they have icon
-
-    var user_icon_width  = Math.round(u.user_icon_width  * scale)
-    var user_icon_height = Math.round(u.user_icon_height * scale)
-
-    return u.user_icon ?
-            `<a href='/user/${ u.user_name }'><img src='${u.user_icon}' width='${user_icon_width}' height='${user_icon_height}' ${img_parms} ></a>`
-            : ''
-}
-
-function user_link(u) {
-    return `<a href='/user/${ u.user_name }'>${ u.user_name }</a>`
 }
 
 function render_date(gmt_date, utz='America/Los_Angeles', format='YYYY MMM D, h:mma') { // create localized date string from gmt date out of mysql
@@ -786,55 +644,6 @@ function create_nonce_parms(ip) {
     return `ts=${ts}&nonce=${nonce}`
 }
 
-function follow_user_button(u, current_user, ip) { // u is the user to follow, a row from users table
-
-    let b = `<button type="button" class="btn btn-default btn-xs" title="get emails of new posts by ${u.user_name}" >follow ${u.user_name}</button>`
-
-    var unfollow_user_link = `<span id='unfollow_user_link' >following<sup>
-                         <a href='#' onclick="$.get('/follow_user?other_id=${u.user_id}&undo=1&${create_nonce_parms(ip)}&ajax=1',
-                         function() { document.getElementById('follow').innerHTML = document.getElementById('follow_user_link').innerHTML }); return false" >x</a></sup></span>`
-
-    var follow_user_link = `<span id='follow_user_link' >
-                       <a href='#' title='hide all posts and comments by ${u.user_name}'
-                       onclick="$.get('/follow_user?other_id=${u.user_id}&${create_nonce_parms(ip)}&ajax=1',
-                       function() { document.getElementById('follow').innerHTML = document.getElementById('unfollow_user_link').innerHTML }); return false" >${b}</a></span>`
-
-    if (current_user
-     && current_user.relationships
-     && current_user.relationships[u.user_id]
-     && current_user.relationships[u.user_id].rel_i_follow) {
-        var follow = `<span id='follow' >${unfollow_user_link}</span>`
-    }
-    else {
-        var follow = `<span id='follow' >${follow_user_link}</span>`
-    }
-
-    return `<span style='display: none;' > ${follow_user_link} ${unfollow_user_link} </span> ${follow}`
-}
-
-function render_ban_link(user, topic, current_user, ip) {
-
-    if (!current_user) return ''
-
-    var id=`ban_${user.user_id}_from_${topic}`
-
-    var ban_message = is_user_banned(user.bans, topic, current_user)
-
-    if (ban_message) return ban_message
-
-    return (current_user.user_id === 1 || current_user.is_moderator_of.includes(topic)) ?
-        `<a href='#'
-            id='${id}'
-            onclick="if (confirm('Ban ${user.user_name} from ${topic} for a day?')) {
-                         $.get(
-                             '/ban_from_topic?user_id=${user.user_id}&topic=${topic}&${create_nonce_parms(ip)}',
-                             function(response) { $('#${id}').html(response) }
-                         );
-                         return false;
-                     }";
-         >ban ${user.user_name} from ${topic} for a day</a>` : ''
-}
-
 function is_user_banned(bans, topic, current_user) {
 
     let ban = bans.filter(item => (item.topic === topic))[0]; // there should be only one per topic
@@ -842,231 +651,13 @@ function is_user_banned(bans, topic, current_user) {
     var utz = current_user ? current_user.user_timezone : 'America/Los_Angeles'
     return ban ? `banned from ${ban.topic} until ${render_date(ban.until, utz)}` : ''
 }
-
-function render_unread_comments_icon(post, last_view, current_user) { // return the blinky icon if there are unread comments in a post
-
-    // if post.post_latest_commenter_id is an ignored user, just return
-    // prevents user from seeing blinky for ignored users, but unfortunately also prevents blinky for wanted unread comments before that
-    if (current_user
-     && current_user.relationships
-     && current_user.relationships[post.post_latest_commenter_id]
-     && current_user.relationships[post.post_latest_commenter_id].rel_i_ban) { return '' }
-
-    // if post_modified > last time they viewed this post, then give them a link to earliest unread comment
-    let last_viewed = Date.parse(last_view) / 1000
-    let modified    = Date.parse(post.post_modified) / 1000
-
-    if (modified > last_viewed) {
-
-        let unread = `<a href='/since?p=${post.post_id}&when=${last_viewed}' ><img src='/content/unread_comments.gif' width='19' height='18' title='View unread comments'></a>`
-
-        return unread
-    }
-    else return ''
-}
-
-function render_upload_form() {
-
-    return `
-    <form enctype='multipart/form-data' id='upload-file' method='post' target='upload_target' action='/upload' >
-        <input type='file'   id='upload'   name='image' class='form' /> 
-        <input type='submit' value='Include Image' class='form' />
-    </form>
-    <iframe id='upload_target' name='upload_target' src='' style='display: none;' ></iframe>` // for uploading a bit of js to insert the img link
-}
-
-function topic_nav(post) {
-
-    if (post && post.post_topic) {
-        let prev_link = post.post_prev_in_topic ? `&laquo; <a href='/post/${post.post_prev_in_topic}'>prev</a>  &nbsp;` : ''
-        let next_link = post.post_next_in_topic ? `&nbsp;  <a href='/post/${post.post_next_in_topic}'>next</a> &raquo;` : ''
-
-        return `<b>${prev_link} ${post.post_topic} ${next_link}</b>`
-    }
-    else return ``
-}
-
-function admin_user(u, current_user, ip) { // links to administer a user
-
-    if (!current_user)                              return ``
-    if (current_user && current_user.user_id !== 1) return ``
-
-    return `<hr>
-        <a href='mailto:${u.user_email}'>email ${u.user_email}</a> &nbsp;
-        <a href='https://whatismyipaddress.com/ip/${u.user_last_comment_ip}'>${u.user_last_comment_ip}</a> &nbsp;
-        <a href='/user/${u.user_name}?become=1&${create_nonce_parms(ip)}' >become ${u.user_name}</a> &nbsp;
-        <a href='/nuke?nuke_id=${u.user_id}&${create_nonce_parms(ip)}' onClick='javascript:return confirm("Really?")' >nuke</a> &nbsp;
-        <hr>`
-}
-
-function arrowbox(post) { // output html for vote up/down arrows; takes a post left joined on user's votes for that post
-
-    var upgrey   = post.postvote_up   ? `style='color: grey; pointer-events: none;'` : ``
-    var downgrey = post.postvote_down ? `style='color: grey; pointer-events: none;'` : ``
-
-    var likelink    = `href='#' ${upgrey}   onclick="postlike('post_${post.post_id}_up'); return false;"`
-    var dislikelink = `href='#' ${downgrey} onclick="postdislike('post_${post.post_id}_down');return false;"`
-
-    return `<div class='arrowbox' >
-            <a ${likelink}    title='${post.post_likes} upvotes'      >&#9650;</a><br>
-            <span id='post_${post.post_id}_up' />${post.post_likes}</span><br>
-            <span id='post_${post.post_id}_down' />${post.post_dislikes}</span><br>
-            <a ${dislikelink} title='${post.post_dislikes} downvotes' >&#9660;</a>
-            </div>`
-}
-
-function topic_moderation(topic, current_user) {
-
-    if (!current_user || !current_user.is_moderator_of) return ''
-
-    if (!current_user.is_moderator_of.includes(topic)) return ''
-
-    return `<hr id='moderation' >
-        <h2>Welcome ${current_user.user_name}, moderator of ${topic}!</h2>
-        set or edit "About ${topic}"<br>
-        posts waiting for moderation<br>
-        comments waiting for moderation<br>
-        review jailed comments<br>
-        user blacklist by ip or username<br>
-        user whitelist<br>
-        set background image<br>
-        set color<br>
-        set donation link<br>
-    `
-}
-
-function topic_list(topics) {
-    return topics ? topics.map(item => `<a href='/topic/${ item.post_topic }'>#${ item.post_topic }</a>`).join(' ') : ''
-}
-
-function top_topics() {
-    return `
-        <a href='/topic/housing'>#housing</a> 
-        <a href='/topic/investing'>#investing</a> 
-        <a href='/topic/politics'>#politics</a> 
-        <a href='/random'>#random</a> <a href='/topics/'>more&raquo;</a>`
-}
-
-function tabs(order, extra='', path) {
-
-    let selected_tab = []
-    selected_tab['active']   = ''
-    selected_tab['comments'] = ''
-    selected_tab['likes']    = ''
-    selected_tab['new']      = ''
-    selected_tab[order]      = `class='active'` // default is active
-
-    if (!path) {
-        console.log('tabs() was passed falsey path, derived from req.url')
-        return
-    }
-
-    return `<ul class='nav nav-tabs'>
-        <li ${selected_tab['active']}   > <a href='${path}?order=active${extra}'   title='most recent comments'       >active</a></li>
-        <li ${selected_tab['comments']} > <a href='${path}?order=comments${extra}' title='most comments in last week' >comments</a></li>
-        <li ${selected_tab['likes']}    > <a href='${path}?order=likes${extra}'    title='most likes in last week'    >likes</a></li>
-        <li ${selected_tab['new']}      > <a href='${path}?order=new${extra}'      title='newest'                     >new</a></li>
-        </ul>`
-}
-
-function brag(header_data) {
-
-    var online_list = header_data.onlines.map(u => `<a href='/user/${u.online_username}'>${u.online_username}</a>`).join(', ')
-
-    return `${ header_data.comments.number_format() } comments by
-            <a href='/users'>${ header_data.tot.number_format() } users</a>,
-            ${ header_data.onlines.length } online now: ${ online_list }`
-}
-
 function slugify(s) { // url-safe pretty chars only; not used for navigation, only for seo and humans
     return s.replace(/\W+/g,'-').toLowerCase().replace(/-+/,'-').replace(/^-+|-+$/,'')
-}
-
-function registerform() {
-    return `
-    <div id='registerform' >
-        <h1>register</h1>
-        <form action='/registration' method='post'>
-        <div >
-            <div class='form-group'><input type='text' name='user_name' placeholder='choose username' class='form-control' id='user_name' ></div>
-            <div class='form-group'><input type='text' name='user_email'      placeholder='email'     class='form-control'                ></div>
-        </div>
-        <button type='submit' id='submit' class='btn btn-success btn-sm'>submit</button>
-        </form>
-        <script type="text/javascript">document.getElementById('user_name').focus();</script>
-    </div>`
 }
 
 function post2path(post) {
     let slug = JSON.stringify(post.post_date).replace(/"/g, '').substring(0, 10) + '-' + slugify(`${post.post_title}`)
     return `/post/${post.post_id}/${slug}`
-}
-
-function get_permalink(c, utz) {
-    return `<a href='/post/${c.comment_post_id}/?c=${c.comment_id}' title='permalink' >${render_date(c.comment_date, utz)}</a>`
-}
-
-function get_del_link(c, current_user, ip) {
-
-    if (!current_user) return ''
-
-    return (current_user.user_id === c.comment_author ||
-            current_user.user_id === 1                ||
-            current_user.user_id === c.topic_moderator) ?
-        `<a href='#' onclick="if (confirm('Really delete?')) { $.get('/delete_comment?comment_id=${ c.comment_id }&post_id=${ c.comment_post_id }&${create_nonce_parms(ip)}', function() { $('#comment-${ c.comment_id }').remove() }); return false}">delete</a>` : ''
-}
-
-function profile_form(updated, context) {
-
-    if (!context.current_user) return die('please log in to edit your profile', context)
-
-    let u = context.current_user
-
-    let ret = '<h1>edit profile</h1>'
-
-    if (updated) ret += `<h3><font color='green'>your profile has been updated</font></h3>`
-
-    ret += `
-    <table>
-    <tr>
-    <td>${render_user_icon(u)} &nbsp; </td>
-    <td>
-        <div style='margin: 0px; padding: 5px; border: 1px solid #ddd; background-color: #f5f5f5; display: inline-block;' >
-            <form enctype='multipart/form-data' id='upload-file' method='post' action='upload'>
-                Upload any size image to represent you (gif, jpg, png, bmp)<br>
-                Image will automatically be resized after upload<p>
-                <input type='file'   id='upload' name='image' class='form' />
-                <input type='submit' value='Upload &raquo;' class='form' />
-            </form>
-        </div>
-    </td>
-    </tr>
-    </table>
-    <p>
-    <form name='profile' action='update_profile?${create_nonce_parms(context.ip)}' method='post'>
-    <input type='text' name='user_name'  placeholder='user_name' size='25' value='${ u.user_name }'  maxlength='30'  /> user name<p>
-    <input type='text' name='user_email' placeholder='email'     size='25' value='${ u.user_email }' maxlength='100' /> email<p>
-    <br>
-    <input type='checkbox' name='user_summonable' value='1' ${ u.user_summonable ? 'checked' : '' } >
-        Get emails of comments which have '@${ u.user_name }' and get emails of 'likes' of your comments
-    <br>
-    <input type='checkbox' name='user_hide_post_list_photos' value='1' ${ u.user_hide_post_list_photos ? 'checked' : '' } >
-        Hide images on post lists
-    <h2>about you</h2>
-    <textarea class='form-control' rows='3' name='user_aboutyou' >${u.user_aboutyou || ''}</textarea><br>
-
-    <input type='submit' class='btn btn-success btn-sm' value='Save' />
-    </form><p><h3>ignored users</h3>(click to unignore that user)<br>`
-
-    let ignored_users = u.relationships ? u.relationships.filter(rel => rel).filter(rel => rel.rel_i_ban) : null
-    
-    if (ignored_users && ignored_users.length)
-        ret += ignored_users.map(u => `<a href='#' onclick="$.get('/ignore?other_id=${u.user_id}&undo=1&${create_nonce_parms(context.ip)}',
-         function() { $('#user-${ u.user_id }').remove() }); return false" id='user-${u.user_id}' >${u.user_name}</a><br>`).join('')
-    else
-        ret += 'none'
-
-    return ret
 }
 
 function post(post, ip, current_user) { // format a single post for display
@@ -1534,92 +1125,6 @@ function clean_upload_path(path, filename, current_user) {
     return filename
 }
 
-function format_comment(c, current_user, ip, req, comments, offset) {
-
-    var utz = current_user ? current_user.user_timezone : 'America/Los_Angeles'
-
-    var comment_dislikes = intval(c.comment_dislikes)
-    var comment_likes    = intval(c.comment_likes)
-    var date_link        = get_permalink(c, utz)
-    var del              = get_del_link(c, current_user, ip)
-    var edit             = get_edit_link(c, current_user, ip)
-    var nuke             = get_nuke_link(c, current_user, ip, req)
-    var icon             = render_user_icon(c, 0.4, `'align='left' hspace='5' vspace='2'`) // scale image down
-    var u                = c.user_name ? `<a href='/user/${c.user_name}'>${c.user_name}</a>` : 'anonymous'
-    var mute             = `<a href='#' onclick="if (confirm('Really ignore ${c.user_name}?')) { $.get('/ignore?other_id=${ c.user_id }&${create_nonce_parms(ip)}', function() { $('#comment-${ c.comment_id }').remove() }); return false}; return false" title='ignore ${c.user_name}' >ignore (${c.user_bannedby})</a>`
-    var clink            = contextual_link(c, current_user, req.url, ip)
-
-    var liketext    = c.commentvote_up   ? 'you like this'    : '&#8593;&nbsp;like';
-    var disliketext = c.commentvote_down ? 'you dislike this' : '&#8595;&nbsp;dislike';
-
-    var like    = `<a href='#' id='like_${c.comment_id}' onclick="like('like_${c.comment_id}');return false">${liketext} (${c.comment_likes})</a>`
-    var dislike = `<a href='#' id='dislike_${c.comment_id}' onclick="dislike('dislike_${c.comment_id}');return false">${disliketext} (${c.comment_dislikes})</a>`
-
-    if (current_user) {
-        if (current_user.relationships[c.user_id] &&
-            current_user.relationships[c.user_id].rel_i_ban) var hide = `style='display: none'`
-        else var hide = ''
-    }
-
-    c.user_name = c.user_name || 'anonymous' // so we don't display 'null' in case the comment is anonymous
-
-    var quote = `<a href="#commentform"
-                  onclick="addquote('${c.comment_post_id}', '${offset}', '${c.comment_id}', '${c.user_name}'); return false;"
-                  title="select some text then click this to quote" >quote</a>`
-
-    // for the last comment in the whole result set (not just last on this page) add an id="last"
-    if (comments) { // comments may not be defined, for example when we just added one comment
-        var last = (c.row_number === comments.found_rows) ? `<span id='last'></span>` : ''
-    }
-    else var last = ''
-
-    if (!req.url) {
-        console.log('format_comment() was passed falsey req.url')
-        return
-    }
-
-    c.comment_content = (c.comment_adhom_when && !URL.parse(req.url).pathname.match(/jail/)) ?
-                `<a href='/comment_jail#comment-${c.comment_id}'>this comment has been jailed for incivility</a>` : c.comment_content
-
-    return `${last}<div class="comment" id="comment-${c.comment_id}" ${hide} >
-    <font size=-1 >
-        ${c.row_number || ''}
-        ${icon}
-        ${u} &nbsp;
-        ${mute} &nbsp;
-        ${date_link} &nbsp;
-        ${like} &nbsp;
-        ${dislike} &nbsp;
-        ${clink} &nbsp;
-        ${quote} &nbsp;
-        ${edit} &nbsp;
-        ${del} &nbsp;
-        ${nuke} &nbsp;
-    </font><p><div id='comment-${c.comment_id}-text'>${ c.comment_content }</div></div>`
-}
-
-function contextual_link(c, current_user, url, ip) { // a link in the comment header that varies by comment context, jail, moderation, etc
-
-    if (!current_user) return ''
-
-    if (!url) {
-        console.log('contextual_link() was passed falsey url')
-        return
-    }
-
-    if (URL.parse(url).pathname.match(/jail/) && (current_user.user_level === 4)) {
-         return `<a href='/liberate?comment_id=${c.comment_id}' >liberate</a>`
-    }
-    
-    if (URL.parse(url).pathname.match(/comment_moderation/) && (current_user.user_level === 4)) {
-        return `<a href='#' onclick="$.get('/approve_comment?comment_id=${ c.comment_id }&${create_nonce_parms(ip)}', function() { $('#comment-${ c.comment_id }').remove() }); return false">approve</a>`
-    }
-
-    if (current_user.user_pbias >= 3 || current_user.user_id === 1) {
-        return `<a href='#' onclick="if (confirm('Really mark as uncivil?')) { $.get('/uncivil?c=${ c.comment_id }&${create_nonce_parms(ip)}', function() { $('#comment-${ c.comment_id }').remove() }); return false}" title='attacks person, not point' >uncivil</a>`
-    }
-    else return ''
-}
 
 function which_page(page, order) { // tell homepage, search, userpage, topic which page we are on
 
@@ -1638,132 +1143,6 @@ function which_page(page, order) { // tell homepage, search, userpage, topic whi
     let order_by = 'order by ' + orders[order] + ' desc'
 
     return [curpage, slimit, order, order_by]
-}
-
-function h1(message) {
-    return `<h1 style='display: inline;' >${ message }</h1>`
-}
-
-function post_pagination(post_count, curpage, extra, url) {
-
-    let links    = ''
-    let nextpage = curpage + 1
-    let pages    = Math.floor( (post_count + 20) / 20)
-
-    if (!url) {
-        console.log('post_pagination() was passed falsey url')
-        return
-    }
-
-    let path     = URL.parse(url).pathname
-    let prevpage = curpage - 1
-
-    if (curpage > 1) links = links + `<a href='${path}?page=${prevpage}${extra}'>&laquo; previous</a> &nbsp;`
-
-    links = links + ` page ${curpage} of ${pages} `
-
-    if (curpage < pages) links = links + `&nbsp; <a href='${path}?page=${nextpage}${extra}'>next &raquo;</a>`
-
-    return links
-}
-
-function footer() {
-    return `
-    <p id='footer' >
-    <center>
-    <a href='/users'>users</a> &nbsp;
-    <a href='/about'>about</a> &nbsp;
-    <a href='/post/1302130/2017-01-28-patnet-improvement-suggestions'>suggestions</a> &nbsp;
-    <a href='https://github.com/killelea/node.${CONF.domain}'>source code</a> &nbsp;
-    <a href='mailto:${ CONF.admin_email }' >contact</a> &nbsp;
-    <br>
-    <a href='/topics'>topics</a> &nbsp;
-    <a href='/best'>best comments</a> &nbsp;
-    <a href='/comment_jail'>comment jail</a> &nbsp;
-    <a href='/old?years_ago=1'>old posts by year</a> &nbsp;
-    <br>
-    <a href='/post/1282720/2015-07-11-ten-reasons-it-s-a-terrible-time-to-buy-an-expensive-house'>10 reasons it's a terrible time to buy</a> &nbsp;
-    <br>
-    <a href='/post/1282721/2015-07-11-eight-groups-who-lie-about-the-housing-market'>8 groups who lie about the housing market</a> &nbsp;
-    <br>
-    <a href='/post/1282722/2015-07-11-37-bogus-arguments-about-housing'>37 bogus arguments about housing</a> &nbsp;
-    <br>
-    <a href='/post/1206569/free-bumper-stickers'>get a free bumper sticker:<br><img src='/images/bumpersticker.png' width=300 ></a>
-    <br>
-    <form method='get' action='/search' ><input name='s' type='text' placeholder='search...' size='20' ></form>
-    </center>
-    <div class='fixed'>
-        <a href='#' title='top of page' >top</a> &nbsp; <a href='#footer' title='bottom of page' >bottom</a> &nbsp; <a href='/' title='home page' >home</a>
-    </div>
-    <script>
-    function like(content) {
-        $.get( "/like?comment_id="+content.split("_")[1], function(data) { document.getElementById(content).innerHTML = data; });
-    }
-    function dislike(content) {
-        $.get( "/dislike?comment_id="+content.split("_")[1], function(data) { document.getElementById(content).innerHTML = data; });
-    }
-    function postlike(content) { // For whole post instead of just one comment.
-        $.get( "/like?post_id="+content.split("_")[1]+"_up", function(data) { document.getElementById(content).innerHTML = data; });
-    }
-    function postdislike(content) { // For whole post instead of just one comment.
-        $.get( "/dislike?post_id="+content.split("_")[1]+"_down", function(data) { document.getElementById(content).innerHTML = data; });
-    }
-    </script>`
-}
-
-function follow_topic_button(t, current_user, ip) { // t is the topic to follow, a \w+ string
-
-    let b = `<button type="button" class="btn btn-default btn-xs" title="get emails of new posts in ${t}" >follow ${t}</button>`
-
-    var unfollow_topic_link = `<span id='unfollow_topic_link' >following<sup>
-                         <a href='#' onclick="$.get('/follow_topic?topic=${t}&undo=1&${create_nonce_parms(ip)}&ajax=1',
-                         function() { document.getElementById('follow').innerHTML = document.getElementById('follow_topic_link').innerHTML }); return false" >x</a></sup></span>`
-
-    var follow_topic_link = `<span id='follow_topic_link' >
-                       <a href='#' title='get emails of new posts in ${t}'
-                       onclick="$.get('/follow_topic?topic=${t}&${create_nonce_parms(ip)}&ajax=1',
-                       function() { document.getElementById('follow').innerHTML = document.getElementById('unfollow_topic_link').innerHTML }); return false" >${b}</a></span>`
-
-    if (current_user
-     && current_user.topics
-     && current_user.topics.indexOf(t) !== -1) {
-        var follow = `<span id='follow' >${unfollow_topic_link}</span>`
-    }
-    else {
-        var follow = `<span id='follow' >${follow_topic_link}</span>`
-    }
-
-    return `<span style='display: none;' > ${follow_topic_link} ${unfollow_topic_link} </span> ${follow}`
-}
-
-function header(header_data, topic, page, current_user, login_failed_email, url) {
-
-    var hashtag = ''
-
-    // display hashtag in title if we are on a post in that topic, or in the index for that topic
-    if (topic) hashtag = `<a href='/topic/${topic}'><h1 class='sitename' >#${topic}</h1></a>`
-
-    if (page === 'topic') {
-        var topic = segments(url)[2] // like /topic/housing
-        hashtag = `<a href='/topic/${topic}'><h1 class='sitename' >#${topic}</h1></a>`
-    }
-
-    return `<div class='comment' >
-        <div style='float:right' >${ icon_or_loginprompt(current_user, login_failed_email) }</div>
-        <a href='/' ><h1 class='sitename' title='back to home page' >${ CONF.domain }</h1></a> &nbsp; ${hashtag}
-        <br>
-        ${ top_topics() + '<br>' + brag(header_data) + '</font><br>' + new_post_button() }
-        </div>`
-}
-
-function comment_search_box() {
-    return `<form name='searchform' action='/comments' method='get' > 
-      <fieldset> 
-      <input type='text'   name='s'      value='' size='17' /> 
-      <input type='hidden' name='offset' value='0' /> 
-      <input type='submit'               value='Search comments &raquo;' />  
-      </fieldset> 
-    </form><p>`
 }
 
 function _GET(url, parm) { // given a string, return the GET parameter by that name
@@ -2199,32 +1578,6 @@ async function comment_mail(c, db) { // reasons to send out comment emails: @use
 async function cid2offset(post_id, comment_id, db) { // given a comment_id, find the offset
     return await get_var(`select floor(count(*) / 40) * 40 as o from comments
                           where comment_post_id=? and comment_id < ? order by comment_id`, [post_id, comment_id], db)
-}
-
-function head(stylesheet, description, title) {
-    return `<head>
-    <link href='/${ stylesheet }' rel='stylesheet' type='text/css' />
-    <link rel='icon' href='/favicon.ico' />
-    <meta charset='utf-8' />
-    <meta name='description' content='${ description }' />
-    <meta name='viewport' content='width=device-width, initial-scale=1, shrink-to-fit=no' />
-    <title>${ title }</title>
-    ${client_side_js()}
-    </head>`
-}
-
-function html(query_times, head, ...args) {
-    return `<!DOCTYPE html><html lang="en">
-    ${ query_times }
-    ${ head }
-    <body>
-        <div class="container" >
-        ${ args.join('') }
-        ${ footer() }
-        </div>
-    </body>
-    <script async src="/jquery.min.js"></script>
-    </html>`
 }
 
 function die(message, context) {
@@ -3710,3 +3063,655 @@ var routes = {
     },
 
 } // end of routes
+
+// from here to end are the html components
+// * all pure functions: no reading outside parms, no modification of parms, no side effects, can be replace with ret value
+// * mostly just take (data, context) objects
+// * all return html
+
+function head(stylesheet, description, title) {
+    return `<head>
+    <link href='/${ stylesheet }' rel='stylesheet' type='text/css' />
+    <link rel='icon' href='/favicon.ico' />
+    <meta charset='utf-8' />
+    <meta name='description' content='${ description }' />
+    <meta name='viewport' content='width=device-width, initial-scale=1, shrink-to-fit=no' />
+    <title>${ title }</title>
+    ${client_side_js()}
+    </head>`
+}
+
+function html(query_times, head, ...args) {
+    return `<!DOCTYPE html><html lang="en">
+    ${ query_times }
+    ${ head }
+    <body>
+        <div class="container" >
+        ${ args.join('') }
+        ${ footer() }
+        </div>
+    </body>
+    <script async src="/jquery.min.js"></script>
+    </html>`
+}
+
+function h1(message) {
+    return `<h1 style='display: inline;' >${ message }</h1>`
+}
+
+function post_pagination(post_count, curpage, extra, url) {
+
+    let links    = ''
+    let nextpage = curpage + 1
+    let pages    = Math.floor( (post_count + 20) / 20)
+
+    if (!url) {
+        console.log('post_pagination() was passed falsey url')
+        return
+    }
+
+    let path     = URL.parse(url).pathname
+    let prevpage = curpage - 1
+
+    if (curpage > 1) links = links + `<a href='${path}?page=${prevpage}${extra}'>&laquo; previous</a> &nbsp;`
+
+    links = links + ` page ${curpage} of ${pages} `
+
+    if (curpage < pages) links = links + `&nbsp; <a href='${path}?page=${nextpage}${extra}'>next &raquo;</a>`
+
+    return links
+}
+
+function footer() {
+    return `
+    <p id='footer' >
+    <center>
+    <a href='/users'>users</a> &nbsp;
+    <a href='/about'>about</a> &nbsp;
+    <a href='/post/1302130/2017-01-28-patnet-improvement-suggestions'>suggestions</a> &nbsp;
+    <a href='https://github.com/killelea/node.${CONF.domain}'>source code</a> &nbsp;
+    <a href='mailto:${ CONF.admin_email }' >contact</a> &nbsp;
+    <br>
+    <a href='/topics'>topics</a> &nbsp;
+    <a href='/best'>best comments</a> &nbsp;
+    <a href='/comment_jail'>comment jail</a> &nbsp;
+    <a href='/old?years_ago=1'>old posts by year</a> &nbsp;
+    <br>
+    <a href='/post/1282720/2015-07-11-ten-reasons-it-s-a-terrible-time-to-buy-an-expensive-house'>10 reasons it's a terrible time to buy</a> &nbsp;
+    <br>
+    <a href='/post/1282721/2015-07-11-eight-groups-who-lie-about-the-housing-market'>8 groups who lie about the housing market</a> &nbsp;
+    <br>
+    <a href='/post/1282722/2015-07-11-37-bogus-arguments-about-housing'>37 bogus arguments about housing</a> &nbsp;
+    <br>
+    <a href='/post/1206569/free-bumper-stickers'>get a free bumper sticker:<br><img src='/images/bumpersticker.png' width=300 ></a>
+    <br>
+    <form method='get' action='/search' ><input name='s' type='text' placeholder='search...' size='20' ></form>
+    </center>
+    <div class='fixed'>
+        <a href='#' title='top of page' >top</a> &nbsp; <a href='#footer' title='bottom of page' >bottom</a> &nbsp; <a href='/' title='home page' >home</a>
+    </div>
+    <script>
+    function like(content) {
+        $.get( "/like?comment_id="+content.split("_")[1], function(data) { document.getElementById(content).innerHTML = data; });
+    }
+    function dislike(content) {
+        $.get( "/dislike?comment_id="+content.split("_")[1], function(data) { document.getElementById(content).innerHTML = data; });
+    }
+    function postlike(content) { // For whole post instead of just one comment.
+        $.get( "/like?post_id="+content.split("_")[1]+"_up", function(data) { document.getElementById(content).innerHTML = data; });
+    }
+    function postdislike(content) { // For whole post instead of just one comment.
+        $.get( "/dislike?post_id="+content.split("_")[1]+"_down", function(data) { document.getElementById(content).innerHTML = data; });
+    }
+    </script>`
+}
+
+function follow_topic_button(t, current_user, ip) { // t is the topic to follow, a \w+ string
+
+    let b = `<button type="button" class="btn btn-default btn-xs" title="get emails of new posts in ${t}" >follow ${t}</button>`
+
+    var unfollow_topic_link = `<span id='unfollow_topic_link' >following<sup>
+                         <a href='#' onclick="$.get('/follow_topic?topic=${t}&undo=1&${create_nonce_parms(ip)}&ajax=1',
+                         function() { document.getElementById('follow').innerHTML = document.getElementById('follow_topic_link').innerHTML }); return false" >x</a></sup></span>`
+
+    var follow_topic_link = `<span id='follow_topic_link' >
+                       <a href='#' title='get emails of new posts in ${t}'
+                       onclick="$.get('/follow_topic?topic=${t}&${create_nonce_parms(ip)}&ajax=1',
+                       function() { document.getElementById('follow').innerHTML = document.getElementById('unfollow_topic_link').innerHTML }); return false" >${b}</a></span>`
+
+    if (current_user
+     && current_user.topics
+     && current_user.topics.indexOf(t) !== -1) {
+        var follow = `<span id='follow' >${unfollow_topic_link}</span>`
+    }
+    else {
+        var follow = `<span id='follow' >${follow_topic_link}</span>`
+    }
+
+    return `<span style='display: none;' > ${follow_topic_link} ${unfollow_topic_link} </span> ${follow}`
+}
+
+function header(header_data, topic, page, current_user, login_failed_email, url) {
+
+    var hashtag = ''
+
+    // display hashtag in title if we are on a post in that topic, or in the index for that topic
+    if (topic) hashtag = `<a href='/topic/${topic}'><h1 class='sitename' >#${topic}</h1></a>`
+
+    if (page === 'topic') {
+        var topic = segments(url)[2] // like /topic/housing
+        hashtag = `<a href='/topic/${topic}'><h1 class='sitename' >#${topic}</h1></a>`
+    }
+
+    return `<div class='comment' >
+        <div style='float:right' >${ icon_or_loginprompt(current_user, login_failed_email) }</div>
+        <a href='/' ><h1 class='sitename' title='back to home page' >${ CONF.domain }</h1></a> &nbsp; ${hashtag}
+        <br>
+        ${ top_topics() + '<br>' + brag(header_data) + '</font><br>' + new_post_button() }
+        </div>`
+}
+
+function comment_search_box() {
+    return `<form name='searchform' action='/comments' method='get' > 
+      <fieldset> 
+      <input type='text'   name='s'      value='' size='17' /> 
+      <input type='hidden' name='offset' value='0' /> 
+      <input type='submit'               value='Search comments &raquo;' />  
+      </fieldset> 
+    </form><p>`
+}
+
+function format_comment(c, current_user, ip, req, comments, offset) {
+
+    var utz = current_user ? current_user.user_timezone : 'America/Los_Angeles'
+
+    var comment_dislikes = intval(c.comment_dislikes)
+    var comment_likes    = intval(c.comment_likes)
+    var date_link        = get_permalink(c, utz)
+    var del              = get_del_link(c, current_user, ip)
+    var edit             = get_edit_link(c, current_user, ip)
+    var nuke             = get_nuke_link(c, current_user, ip, req)
+    var icon             = render_user_icon(c, 0.4, `'align='left' hspace='5' vspace='2'`) // scale image down
+    var u                = c.user_name ? `<a href='/user/${c.user_name}'>${c.user_name}</a>` : 'anonymous'
+    var mute             = `<a href='#' onclick="if (confirm('Really ignore ${c.user_name}?')) { $.get('/ignore?other_id=${ c.user_id }&${create_nonce_parms(ip)}', function() { $('#comment-${ c.comment_id }').remove() }); return false}; return false" title='ignore ${c.user_name}' >ignore (${c.user_bannedby})</a>`
+    var clink            = contextual_link(c, current_user, req.url, ip)
+
+    var liketext    = c.commentvote_up   ? 'you like this'    : '&#8593;&nbsp;like';
+    var disliketext = c.commentvote_down ? 'you dislike this' : '&#8595;&nbsp;dislike';
+
+    var like    = `<a href='#' id='like_${c.comment_id}' onclick="like('like_${c.comment_id}');return false">${liketext} (${c.comment_likes})</a>`
+    var dislike = `<a href='#' id='dislike_${c.comment_id}' onclick="dislike('dislike_${c.comment_id}');return false">${disliketext} (${c.comment_dislikes})</a>`
+
+    if (current_user) {
+        if (current_user.relationships[c.user_id] &&
+            current_user.relationships[c.user_id].rel_i_ban) var hide = `style='display: none'`
+        else var hide = ''
+    }
+
+    c.user_name = c.user_name || 'anonymous' // so we don't display 'null' in case the comment is anonymous
+
+    var quote = `<a href="#commentform"
+                  onclick="addquote('${c.comment_post_id}', '${offset}', '${c.comment_id}', '${c.user_name}'); return false;"
+                  title="select some text then click this to quote" >quote</a>`
+
+    // for the last comment in the whole result set (not just last on this page) add an id="last"
+    if (comments) { // comments may not be defined, for example when we just added one comment
+        var last = (c.row_number === comments.found_rows) ? `<span id='last'></span>` : ''
+    }
+    else var last = ''
+
+    if (!req.url) {
+        console.log('format_comment() was passed falsey req.url')
+        return
+    }
+
+    c.comment_content = (c.comment_adhom_when && !URL.parse(req.url).pathname.match(/jail/)) ?
+                `<a href='/comment_jail#comment-${c.comment_id}'>this comment has been jailed for incivility</a>` : c.comment_content
+
+    return `${last}<div class="comment" id="comment-${c.comment_id}" ${hide} >
+    <font size=-1 >
+        ${c.row_number || ''}
+        ${icon}
+        ${u} &nbsp;
+        ${mute} &nbsp;
+        ${date_link} &nbsp;
+        ${like} &nbsp;
+        ${dislike} &nbsp;
+        ${clink} &nbsp;
+        ${quote} &nbsp;
+        ${edit} &nbsp;
+        ${del} &nbsp;
+        ${nuke} &nbsp;
+    </font><p><div id='comment-${c.comment_id}-text'>${ c.comment_content }</div></div>`
+}
+
+function contextual_link(c, current_user, url, ip) { // a link in the comment header that varies by comment context, jail, moderation, etc
+
+    if (!current_user) return ''
+
+    if (!url) {
+        console.log('contextual_link() was passed falsey url')
+        return
+    }
+
+    if (URL.parse(url).pathname.match(/jail/) && (current_user.user_level === 4)) {
+         return `<a href='/liberate?comment_id=${c.comment_id}' >liberate</a>`
+    }
+    
+    if (URL.parse(url).pathname.match(/comment_moderation/) && (current_user.user_level === 4)) {
+        return `<a href='#' onclick="$.get('/approve_comment?comment_id=${ c.comment_id }&${create_nonce_parms(ip)}', function() { $('#comment-${ c.comment_id }').remove() }); return false">approve</a>`
+    }
+
+    if (current_user.user_pbias >= 3 || current_user.user_id === 1) {
+        return `<a href='#' onclick="if (confirm('Really mark as uncivil?')) { $.get('/uncivil?c=${ c.comment_id }&${create_nonce_parms(ip)}', function() { $('#comment-${ c.comment_id }').remove() }); return false}" title='attacks person, not point' >uncivil</a>`
+    }
+    else return ''
+}
+
+function render_query_times(start_time, queries) {
+    var db_total_ms = 0
+    var queries = queries.sortByProp('ms').map( (item) => {
+        db_total_ms += item.ms
+        return `${ item.ms }ms ${ item.sql }`
+    }).join('\n')
+
+    return `<span id='render_query_times'>
+                <!-- ${'\n' + queries + '\n'}\n${db_total_ms} ms db\n${Date.now() - start_time} ms total time -->
+            </span>`
+}
+
+function client_side_js() {
+    return `<script type="text/javascript">
+
+    function addquote(post_id, offset, comment_id, author) {
+
+        var comment_link;
+        var textarea = document.forms['commentform'].elements['ta'];
+        var theSelection = '';
+
+        if (comment_id > 0)
+            comment_link = '<a href="/post/' + post_id + '&offset=' + offset + '#comment-' + comment_id + '">' + author + ' says</a>';
+        else
+            comment_link = '<a href="/post/' + post_id                                                  + '">' + author + ' says</a>';
+
+        if (theSelection = getHTMLOfSelection()) { // user manually selected something
+            if (s = sessionStorage.getItem('tripleclickselect')) { // override tripleclick selection to avoid getting extra html elements
+                theSelection = s.trim(); // trim bc tripleclick appends useless whitespace
+                sessionStorage.removeItem('tripleclickselect'); // so we don't keep using it by mistake
+            }
+        }
+        else { // either we are on mobile (no selection possible) or the user did not select any text
+            // whole comment, or post when comment_id === 0
+            theSelection = document.getElementById('comment-' + comment_id + '-text').innerHTML;
+        }
+
+        if (theSelection.length > 1024) var theSelection = theSelection.substring(0, 1000) + '...'; // might mangle tags
+
+        textarea.value = textarea.value + comment_link + '<br><blockquote>' + theSelection + '</blockquote>';
+        textarea.focus();
+        return;
+    }
+
+    window.addEventListener('click', function (evt) {
+        if (evt.detail === 3) {
+            sessionStorage.setItem('tripleclickselect', window.getSelection());
+
+            // if they don't use it by clicking "quote" within 10 seconds, delete it so it dn confuse them later
+            setTimeout(function() { sessionStorage.removeItem('tripleclickselect'); }, 10000);
+        }
+    });
+
+    function getHTMLOfSelection () {
+      var range;
+      if (window.getSelection) {
+        var selection = window.getSelection();
+        if (selection.rangeCount > 0) {
+          range = selection.getRangeAt(0);
+          var clonedSelection = range.cloneContents();
+          var div = document.createElement('div');
+          div.appendChild(clonedSelection);
+          return div.innerHTML;
+        }
+        else {
+          return '';
+        }
+      }
+      else {
+        return '';
+      }
+    }
+    </script>
+    `
+}
+
+function render_watch_indicator(want_email) {
+    return want_email ? `<img src='/content/openeye.png'> unwatch` : `<img src='/content/closedeye.png'> watch`
+}
+
+function render_user_list(users, d) {
+
+    d = d ? d.replace(/[^adesc]/, '').substring(0,4)  : 'desc' // asc or desc
+    let i = (d === 'desc') ? 'asc' : 'desc'                    // invert asc or desc
+
+    let header = `
+    <form name='input' action='/users' method='get' >
+    <input type='text' size=40 maxlength=80 name='user_name' autofocus />
+    <input type='submit' value='User Search' />
+    </form><p>
+    <table width='100%' cellpadding='10' style="overflow-x:auto;" ><tr>
+    <th ></th>
+    <th                    ><a href='/users?ob=user_name&d=${ i }'       title='order by user name' >Username</a></th>
+    <th                    ><a href='/users?ob=user_registered&d=${ i }' title='order by registration date' >Registered</a></th>
+    <th class='text-right' ><a href='/users?ob=user_posts&d=${ i }'      title='order by number of posts started' >Posts</a></th>
+    <th class='text-right' ><a href='/users?ob=user_comments&d=${ i }'   title='order by number of comments' >Comments</a></th>
+    <th class='text-right' ><a href='/users?ob=user_likes&d=${ i }'      title='number of likes user got' >Likes</a></th>
+    <th class='text-right' ><a href='/users?ob=user_dislikes&d=${ i }'   title='number of dislikes user got' >Dislikes</a></th>
+    <th class='text-right' ><a href='/users?ob=user_friends&d=${ i }'    title='order by number of friends' >Friends</a></th>
+    <th class='text-right' ><a href='/users?ob=user_followers&d=${ i }'  title='order by number of followers' >Followers</a></th>
+    <th class='text-right' ><a href='/users?ob=user_bannedby&d=${ i }'   title='how many people are ignoring user' >Ignored By</a></th>
+    <th class='text-right' ><a href='/users?ob=user_banning&d=${ i }'    title='how many people user is ignoring' >Ignoring</a></th>
+    </tr>`
+
+    if (users.length) {
+        var formatted = users.map( (u) => {
+            return `<tr>
+                <td >${render_user_icon(u)}</td>
+                <td align=left >${user_link(u)}</td>
+                <td align=left >${render_date(u.user_registered)}</td>
+                <td align=right ><a href='/user/${u.user_name}' >${u.user_posts.number_format()}</a></td>
+                <td align=right ><a href='/comments?a=${u.user_name}'>${u.user_comments.number_format()}</a></td>
+                <td align=right >${u.user_likes.number_format()}</td>
+                <td align=right >${u.user_dislikes.number_format()}</td>
+                <td align=right ><a href='/users?friendsof=${u.user_id}' >${u.user_friends.number_format()}</a></td>
+                <td align=right ><a href='/users?followersof=${u.user_id}' >${u.user_followers.number_format()}</a></td>
+                <td align=right >${u.user_bannedby.number_format()}</td>
+                <td align=right >${u.user_banning.number_format()}</td>
+               </tr>`
+        })
+
+        var result = formatted.join('')
+    }
+    else var result = 'no such user'
+
+    return header + result + '</table>'
+}
+
+function render_user_icon(u, scale=1, img_parms='') { // clickable icon for this user if they have icon
+
+    var user_icon_width  = Math.round(u.user_icon_width  * scale)
+    var user_icon_height = Math.round(u.user_icon_height * scale)
+
+    return u.user_icon ?
+            `<a href='/user/${ u.user_name }'><img src='${u.user_icon}' width='${user_icon_width}' height='${user_icon_height}' ${img_parms} ></a>`
+            : ''
+}
+
+function user_link(u) {
+    return `<a href='/user/${ u.user_name }'>${ u.user_name }</a>`
+}
+
+function follow_user_button(u, current_user, ip) { // u is the user to follow, a row from users table
+
+    let b = `<button type="button" class="btn btn-default btn-xs" title="get emails of new posts by ${u.user_name}" >follow ${u.user_name}</button>`
+
+    var unfollow_user_link = `<span id='unfollow_user_link' >following<sup>
+                         <a href='#' onclick="$.get('/follow_user?other_id=${u.user_id}&undo=1&${create_nonce_parms(ip)}&ajax=1',
+                         function() { document.getElementById('follow').innerHTML = document.getElementById('follow_user_link').innerHTML }); return false" >x</a></sup></span>`
+
+    var follow_user_link = `<span id='follow_user_link' >
+                       <a href='#' title='hide all posts and comments by ${u.user_name}'
+                       onclick="$.get('/follow_user?other_id=${u.user_id}&${create_nonce_parms(ip)}&ajax=1',
+                       function() { document.getElementById('follow').innerHTML = document.getElementById('unfollow_user_link').innerHTML }); return false" >${b}</a></span>`
+
+    if (current_user
+     && current_user.relationships
+     && current_user.relationships[u.user_id]
+     && current_user.relationships[u.user_id].rel_i_follow) {
+        var follow = `<span id='follow' >${unfollow_user_link}</span>`
+    }
+    else {
+        var follow = `<span id='follow' >${follow_user_link}</span>`
+    }
+
+    return `<span style='display: none;' > ${follow_user_link} ${unfollow_user_link} </span> ${follow}`
+}
+
+function render_ban_link(user, topic, current_user, ip) {
+
+    if (!current_user) return ''
+
+    var id=`ban_${user.user_id}_from_${topic}`
+
+    var ban_message = is_user_banned(user.bans, topic, current_user)
+
+    if (ban_message) return ban_message
+
+    return (current_user.user_id === 1 || current_user.is_moderator_of.includes(topic)) ?
+        `<a href='#'
+            id='${id}'
+            onclick="if (confirm('Ban ${user.user_name} from ${topic} for a day?')) {
+                         $.get(
+                             '/ban_from_topic?user_id=${user.user_id}&topic=${topic}&${create_nonce_parms(ip)}',
+                             function(response) { $('#${id}').html(response) }
+                         );
+                         return false;
+                     }";
+         >ban ${user.user_name} from ${topic} for a day</a>` : ''
+}
+
+function render_unread_comments_icon(post, last_view, current_user) { // return the blinky icon if there are unread comments in a post
+
+    // if post.post_latest_commenter_id is an ignored user, just return
+    // prevents user from seeing blinky for ignored users, but unfortunately also prevents blinky for wanted unread comments before that
+    if (current_user
+     && current_user.relationships
+     && current_user.relationships[post.post_latest_commenter_id]
+     && current_user.relationships[post.post_latest_commenter_id].rel_i_ban) { return '' }
+
+    // if post_modified > last time they viewed this post, then give them a link to earliest unread comment
+    let last_viewed = Date.parse(last_view) / 1000
+    let modified    = Date.parse(post.post_modified) / 1000
+
+    if (modified > last_viewed) {
+
+        let unread = `<a href='/since?p=${post.post_id}&when=${last_viewed}' ><img src='/content/unread_comments.gif' width='19' height='18' title='View unread comments'></a>`
+
+        return unread
+    }
+    else return ''
+}
+
+function render_upload_form() {
+
+    return `
+    <form enctype='multipart/form-data' id='upload-file' method='post' target='upload_target' action='/upload' >
+        <input type='file'   id='upload'   name='image' class='form' /> 
+        <input type='submit' value='Include Image' class='form' />
+    </form>
+    <iframe id='upload_target' name='upload_target' src='' style='display: none;' ></iframe>` // for uploading a bit of js to insert the img link
+}
+
+function topic_nav(post) {
+
+    if (post && post.post_topic) {
+        let prev_link = post.post_prev_in_topic ? `&laquo; <a href='/post/${post.post_prev_in_topic}'>prev</a>  &nbsp;` : ''
+        let next_link = post.post_next_in_topic ? `&nbsp;  <a href='/post/${post.post_next_in_topic}'>next</a> &raquo;` : ''
+
+        return `<b>${prev_link} ${post.post_topic} ${next_link}</b>`
+    }
+    else return ``
+}
+
+function admin_user(u, current_user, ip) { // links to administer a user
+
+    if (!current_user)                              return ``
+    if (current_user && current_user.user_id !== 1) return ``
+
+    return `<hr>
+        <a href='mailto:${u.user_email}'>email ${u.user_email}</a> &nbsp;
+        <a href='https://whatismyipaddress.com/ip/${u.user_last_comment_ip}'>${u.user_last_comment_ip}</a> &nbsp;
+        <a href='/user/${u.user_name}?become=1&${create_nonce_parms(ip)}' >become ${u.user_name}</a> &nbsp;
+        <a href='/nuke?nuke_id=${u.user_id}&${create_nonce_parms(ip)}' onClick='javascript:return confirm("Really?")' >nuke</a> &nbsp;
+        <hr>`
+}
+
+function arrowbox(post) { // output html for vote up/down arrows; takes a post left joined on user's votes for that post
+
+    var upgrey   = post.postvote_up   ? `style='color: grey; pointer-events: none;'` : ``
+    var downgrey = post.postvote_down ? `style='color: grey; pointer-events: none;'` : ``
+
+    var likelink    = `href='#' ${upgrey}   onclick="postlike('post_${post.post_id}_up'); return false;"`
+    var dislikelink = `href='#' ${downgrey} onclick="postdislike('post_${post.post_id}_down');return false;"`
+
+    return `<div class='arrowbox' >
+            <a ${likelink}    title='${post.post_likes} upvotes'      >&#9650;</a><br>
+            <span id='post_${post.post_id}_up' />${post.post_likes}</span><br>
+            <span id='post_${post.post_id}_down' />${post.post_dislikes}</span><br>
+            <a ${dislikelink} title='${post.post_dislikes} downvotes' >&#9660;</a>
+            </div>`
+}
+
+function topic_moderation(topic, current_user) {
+
+    if (!current_user || !current_user.is_moderator_of) return ''
+
+    if (!current_user.is_moderator_of.includes(topic)) return ''
+
+    return `<hr id='moderation' >
+        <h2>Welcome ${current_user.user_name}, moderator of ${topic}!</h2>
+        set or edit "About ${topic}"<br>
+        posts waiting for moderation<br>
+        comments waiting for moderation<br>
+        review jailed comments<br>
+        user blacklist by ip or username<br>
+        user whitelist<br>
+        set background image<br>
+        set color<br>
+        set donation link<br>
+    `
+}
+
+function topic_list(topics) {
+    return topics ? topics.map(item => `<a href='/topic/${ item.post_topic }'>#${ item.post_topic }</a>`).join(' ') : ''
+}
+
+function top_topics() {
+    return `
+        <a href='/topic/housing'>#housing</a> 
+        <a href='/topic/investing'>#investing</a> 
+        <a href='/topic/politics'>#politics</a> 
+        <a href='/random'>#random</a> <a href='/topics/'>more&raquo;</a>`
+}
+
+function tabs(order, extra='', path) {
+
+    let selected_tab = []
+    selected_tab['active']   = ''
+    selected_tab['comments'] = ''
+    selected_tab['likes']    = ''
+    selected_tab['new']      = ''
+    selected_tab[order]      = `class='active'` // default is active
+
+    if (!path) {
+        console.log('tabs() was passed falsey path, derived from req.url')
+        return
+    }
+
+    return `<ul class='nav nav-tabs'>
+        <li ${selected_tab['active']}   > <a href='${path}?order=active${extra}'   title='most recent comments'       >active</a></li>
+        <li ${selected_tab['comments']} > <a href='${path}?order=comments${extra}' title='most comments in last week' >comments</a></li>
+        <li ${selected_tab['likes']}    > <a href='${path}?order=likes${extra}'    title='most likes in last week'    >likes</a></li>
+        <li ${selected_tab['new']}      > <a href='${path}?order=new${extra}'      title='newest'                     >new</a></li>
+        </ul>`
+}
+
+function brag(header_data) {
+
+    var online_list = header_data.onlines.map(u => `<a href='/user/${u.online_username}'>${u.online_username}</a>`).join(', ')
+
+    return `${ header_data.comments.number_format() } comments by
+            <a href='/users'>${ header_data.tot.number_format() } users</a>,
+            ${ header_data.onlines.length } online now: ${ online_list }`
+}
+
+function registerform() {
+    return `
+    <div id='registerform' >
+        <h1>register</h1>
+        <form action='/registration' method='post'>
+        <div >
+            <div class='form-group'><input type='text' name='user_name' placeholder='choose username' class='form-control' id='user_name' ></div>
+            <div class='form-group'><input type='text' name='user_email'      placeholder='email'     class='form-control'                ></div>
+        </div>
+        <button type='submit' id='submit' class='btn btn-success btn-sm'>submit</button>
+        </form>
+        <script type="text/javascript">document.getElementById('user_name').focus();</script>
+    </div>`
+}
+
+function get_permalink(c, utz) {
+    return `<a href='/post/${c.comment_post_id}/?c=${c.comment_id}' title='permalink' >${render_date(c.comment_date, utz)}</a>`
+}
+
+function get_del_link(c, current_user, ip) {
+
+    if (!current_user) return ''
+
+    return (current_user.user_id === c.comment_author ||
+            current_user.user_id === 1                ||
+            current_user.user_id === c.topic_moderator) ?
+        `<a href='#' onclick="if (confirm('Really delete?')) { $.get('/delete_comment?comment_id=${ c.comment_id }&post_id=${ c.comment_post_id }&${create_nonce_parms(ip)}', function() { $('#comment-${ c.comment_id }').remove() }); return false}">delete</a>` : ''
+}
+
+function profile_form(updated, context) {
+
+    if (!context.current_user) return die('please log in to edit your profile', context)
+
+    let u = context.current_user
+
+    let ret = '<h1>edit profile</h1>'
+
+    if (updated) ret += `<h3><font color='green'>your profile has been updated</font></h3>`
+
+    ret += `
+    <table>
+    <tr>
+    <td>${render_user_icon(u)} &nbsp; </td>
+    <td>
+        <div style='margin: 0px; padding: 5px; border: 1px solid #ddd; background-color: #f5f5f5; display: inline-block;' >
+            <form enctype='multipart/form-data' id='upload-file' method='post' action='upload'>
+                Upload any size image to represent you (gif, jpg, png, bmp)<br>
+                Image will automatically be resized after upload<p>
+                <input type='file'   id='upload' name='image' class='form' />
+                <input type='submit' value='Upload &raquo;' class='form' />
+            </form>
+        </div>
+    </td>
+    </tr>
+    </table>
+    <p>
+    <form name='profile' action='update_profile?${create_nonce_parms(context.ip)}' method='post'>
+    <input type='text' name='user_name'  placeholder='user_name' size='25' value='${ u.user_name }'  maxlength='30'  /> user name<p>
+    <input type='text' name='user_email' placeholder='email'     size='25' value='${ u.user_email }' maxlength='100' /> email<p>
+    <br>
+    <input type='checkbox' name='user_summonable' value='1' ${ u.user_summonable ? 'checked' : '' } >
+        Get emails of comments which have '@${ u.user_name }' and get emails of 'likes' of your comments
+    <br>
+    <input type='checkbox' name='user_hide_post_list_photos' value='1' ${ u.user_hide_post_list_photos ? 'checked' : '' } >
+        Hide images on post lists
+    <h2>about you</h2>
+    <textarea class='form-control' rows='3' name='user_aboutyou' >${u.user_aboutyou || ''}</textarea><br>
+
+    <input type='submit' class='btn btn-success btn-sm' value='Save' />
+    </form><p><h3>ignored users</h3>(click to unignore that user)<br>`
+
+    let ignored_users = u.relationships ? u.relationships.filter(rel => rel).filter(rel => rel.rel_i_ban) : null
+    
+    if (ignored_users && ignored_users.length)
+        ret += ignored_users.map(u => `<a href='#' onclick="$.get('/ignore?other_id=${u.user_id}&undo=1&${create_nonce_parms(context.ip)}',
+         function() { $('#user-${ u.user_id }').remove() }); return false" id='user-${u.user_id}' >${u.user_name}</a><br>`).join('')
+    else
+        ret += 'none'
+
+    return ret
+}
