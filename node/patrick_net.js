@@ -1058,9 +1058,9 @@ function profile_form(updated, context) {
     <input type='submit' class='btn btn-success btn-sm' value='Save' />
     </form><p><h3>ignored users</h3>(click to unignore that user)<br>`
 
-    let ignored_users = context.current_user.relationships.filter(rel => rel.rel_i_ban)
+    let ignored_users = (u && u.relationships) ? u.relationships.filter(rel => rel.rel_i_ban) : null
     
-    if (ignored_users.length)
+    if (ignored_users && ignored_users.length)
         ret += ignored_users.map(u => `<a href='#' onclick="$.get('/ignore?other_id=${u.user_id}&undo=1&${create_nonce_parms(context.ip)}',
          function() { $('#user-${ u.user_id }').remove() }); return false" id='user-${u.user_id}' >${u.user_name}</a><br>`).join('')
     else
