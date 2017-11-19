@@ -2364,12 +2364,12 @@ var routes = {
                         [post_data, comment_id, context.current_user.user_id, context.current_user.user_id], context.db)
 
             // now select the inserted row so that we pick up the comment_post_id
-            context.comment = await get_row('select * from comments where comment_id = ?', [comment_id], context.db)
+            let comment = await get_row('select * from comments where comment_id = ?', [comment_id], context.db)
 
-            if (context.comment.comment_adhom_when) redirect(`/comment_jail#comment-${comment_id}`, context.res, context.db, context.ip)
+            if (comment.comment_adhom_when) redirect(`/comment_jail#comment-${comment_id}`, context.res, context.db, context.ip)
             else {
-                let offset = await cid2offset(context.comment.comment_post_id, comment_id, context.db)
-                redirect(`/post/${context.comment.comment_post_id}?offset=${offset}#comment-${comment_id}`, context.res, context.db, context.ip)
+                let offset = await cid2offset(comment.comment_post_id, comment_id, context.db)
+                redirect(`/post/${comment.comment_post_id}?offset=${offset}#comment-${comment_id}`, context.res, context.db, context.ip)
             }
         }
     },
