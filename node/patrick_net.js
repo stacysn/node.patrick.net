@@ -3190,7 +3190,7 @@ var routes = {
 
         if (!p.post_approved && current_user_id !== 1) { await repair_referer(context.req, context.db); return die(`That p is waiting for moderation`, context) }
 
-        context.comments      = await post_comment_list(p, context.req.url, context.current_user, context.db) // pick up the comment list for this post
+        let comments      = await post_comment_list(p, context.req.url, context.current_user, context.db) // pick up the comment list for this post
         p.watchers = await get_var(`select count(*) as c from postviews
                                                    where postview_post_id=? and postview_want_email=1`, [post_id], context.db)
 
@@ -3224,9 +3224,9 @@ var routes = {
             midpage(
                 topic_nav(p),
                 post(p, context.ip, context.current_user),
-                comment_pagination(context.comments, context.req.url),
-                comment_list(context.comments, context.current_user, context.ip, context.req),
-                comment_pagination(context.comments, context.req.url),
+                comment_pagination(comments, context.req.url),
+                comment_list(comments, context.current_user, context.ip, context.req),
+                comment_pagination(comments, context.req.url),
                 comment_box(p, context.current_user, context.ip)
             )
         )
@@ -3243,14 +3243,14 @@ var routes = {
 
         if (!context.current_user) return die('you must be logged in to moderate posts', context)
 
-        context.posts = await query(`select * from posts left join users on user_id=post_author where post_approved=0`, [], context.db)
+        let posts = await query(`select * from posts left join users on user_id=post_author where post_approved=0`, [], context.db)
 
         let content = html(
             render_query_times(context.res.start_time, context.db.queries),
             head(CONF.stylesheet, CONF.description, context.post ? context.post.post_title : CONF.domain),
             header(context.header_data, context.post ? context.post.post_topic : null, context.page, context.current_user, context.login_failed_email, context.req.url),
             midpage(
-                post_list(context.posts, context.ip, context.req.url, context.current_user)
+                post_list(posts, context.ip, context.req.url, context.current_user)
             )
         )
 
@@ -3339,7 +3339,7 @@ var routes = {
                    left join users on user_id=post_author
                    where match(post_title, post_content) against ('${s}') ${order_by} limit ${slimit}`
 
-        context.posts    = await query(sql, [], context.db)
+        let posts = await query(sql, [], context.db)
         let found_rows = sql_calc_found_rows(context.db)
 
         let path = URL.parse(context.req.url).pathname // "pathNAME" is url path without ? parms, unlike "path"
@@ -3352,7 +3352,7 @@ var routes = {
                 h1(`search results for "${s}"`),
                 post_pagination(found_rows, curpage, `&s=${us}&order=${order}`, context.req.url),
                 tabs(order, `&s=${us}`, path),
-                post_list(context.posts, context.ip, context.req.url, context.current_user),
+                post_list(posts, context.ip, context.req.url, context.current_user),
                 post_pagination(found_rows, curpage, `&s=${us}&order=${order}`, context.req.url)
             )
         )
@@ -3391,7 +3391,7 @@ var routes = {
                    left join users on user_id=post_author
                    where post_topic = ? and post_approved=1 ${order_by} limit ${slimit}`
 
-        context.posts = await query(sql, [user_id, user_id, topic], context.db)
+        let posts = await query(sql, [user_id, user_id, topic], context.db)
         
         var row = await get_row('select * from users, topics where topic=? and topic_moderator=user_id', [topic], context.db)
 
@@ -3413,7 +3413,7 @@ var routes = {
                 follow_topic_button(topic, context.current_user, context.ip),
                 moderator_announcement,
                 tabs(order, `&topic=${topic}`, path),
-                post_list(context.posts, context.ip, context.req.url, context.current_user),
+                post_list(posts, context.ip, context.req.url, context.current_user),
                 post_pagination(sql_calc_found_rows(context.db), curpage, `&topic=${topic}&order=${order}`, context.req.url),
                 topic_moderation(topic, context.current_user)
             )
@@ -3424,8 +3424,8 @@ var routes = {
 
     topics : async function (context) {
 
-        context.topics = await query(`select post_topic, count(*) as c from posts
-                                    where length(post_topic) > 0 group by post_topic having c >=3 order by c desc`, null, context.db)
+        let topics = await query(`select post_topic, count(*) as c from posts
+                                  where length(post_topic) > 0 group by post_topic having c >=3 order by c desc`, null, context.db)
 
         let content = html(
             render_query_times(context.res.start_time, context.db.queries),
@@ -3433,7 +3433,7 @@ var routes = {
             header(context.header_data, context.post ? context.post.post_topic : null, context.page, context.current_user, context.login_failed_email, context.req.url),
             midpage(
                 h1('Topics'),
-                topic_list(context.topics)
+                topic_list(topics)
             )
         )
 
@@ -3454,8 +3454,7 @@ var routes = {
 
     update_profile : async function(context) { // accept data from profile_form
 
-        if (!valid_nonce(context.ip, _GET(context.req.url, 'ts'), _GET(context.req.url, 'nonce')))              return die(invalid_nonce_message(),
-        context)
+        if (!valid_nonce(context.ip, _GET(context.req.url, 'ts'), _GET(context.req.url, 'nonce'))) return die(invalid_nonce_message(), context)
         if (!context.current_user)         return die('must be logged in to update profile', context)
 
         let post_data = await collect_post_data_and_trim(context)
@@ -3569,7 +3568,7 @@ var routes = {
                    where post_approved=1 and user_id=?
                    ${order_by} limit ${slimit}`
 
-        context.posts = await query(sql, [current_user_id, current_user_id, u.user_id], context.db)
+        let posts = await query(sql, [current_user_id, current_user_id, u.user_id], context.db)
 
         let found_post_rows = await sql_calc_found_rows(context.db)
 
@@ -3584,7 +3583,7 @@ var routes = {
             midpage(
                 render_user_info(u, context.current_user, context.ip),
                 tabs(order, '', path),
-                post_list(context.posts, context.ip, context.req.url, context.current_user),
+                post_list(posts, context.ip, context.req.url, context.current_user),
                 post_pagination(found_post_rows, curpage, `&order=${order}`, context.req.url),
                 admin_user(u, context.current_user, context.ip)
             )
@@ -3599,6 +3598,7 @@ var routes = {
         let ob = _GET(context.req.url, 'ob') ? _GET(context.req.url, 'ob').replace(/[^a-z_]/g, '').substring(0,32) : 'user_comments' // order by
         let offset = intval(_GET(context.req.url, 'offset')) || 0
         let message = ''
+        let users
 
         if ( _GET(context.req.url, 'unrequited') ) {
             message = `Unrequited Friendship Requests For ${context.current_user.user_name}`
@@ -3612,7 +3612,7 @@ var routes = {
                   (select rel_other_id from relationships where rel_self_id=? and rel_my_friend > 0)`,
                   [context.current_user.user_id], context.db)
             
-            context.users = await query(`select sql_calc_found_rows * from unrequited, users
+            users = await query(`select sql_calc_found_rows * from unrequited, users
                                        where unrequited.rel_self_id = users.user_id and user_id = ? limit 40 offset ${offset}`,
                                       [context.current_user.user_id], context.db)
         }
@@ -3621,7 +3621,7 @@ var routes = {
 
             message = 'Followers of ' + (await get_userrow(followersof, context.db)).user_name
 
-            context.users = await query(`select sql_calc_found_rows * from users
+            users = await query(`select sql_calc_found_rows * from users
                 where user_id in (select rel_self_id from relationships where rel_other_id=? and rel_i_follow > 0)
                 order by ${ob} ${d} limit 40 offset ${offset}`, [followersof, ob, d], context.db)
 
@@ -3633,7 +3633,7 @@ var routes = {
 
             message = 'Users ' + (await get_userrow(following, context.db)).user_name + ' is Following'
 
-            context.users = await query(`select sql_calc_found_rows * from users where user_id in
+            users = await query(`select sql_calc_found_rows * from users where user_id in
                                       (select rel_other_id from relationships where rel_self_id=? and rel_i_follow > 0)
                                        order by ${ob} ${d} limit 40 offset ${offset}`, [following], context.db)
         }
@@ -3642,7 +3642,7 @@ var routes = {
 
             message = 'Friends of ' + (await get_userrow(friendsof, context.db)).user_name
 
-            context.users = await query(`select sql_calc_found_rows * from users where user_id in
+            users = await query(`select sql_calc_found_rows * from users where user_id in
                                       (select r1.rel_other_id from relationships as r1, relationships as r2 where
                                           r1.rel_self_id=? and
                                           r1.rel_self_id=r2.rel_other_id and
@@ -3660,12 +3660,12 @@ var routes = {
 
             message = `Users With Names Like '${user_name}'`
 
-            context.users = await query(`select sql_calc_found_rows * from users where user_name like '%${user_name}%'
+            users = await query(`select sql_calc_found_rows * from users where user_name like '%${user_name}%'
                                        order by ${ob} ${d} limit 40 offset ${offset}`, [ob, d], context.db)
         }
         else {
             message = 'users'
-            context.users   = await query(`select sql_calc_found_rows * from users order by ${ob} ${d} limit 40 offset ${offset}`, [], context.db)
+            users   = await query(`select sql_calc_found_rows * from users order by ${ob} ${d} limit 40 offset ${offset}`, [], context.db)
         }
 
         let next_page = context.req.url.match(/offset=/) ? context.req.url.replace(/offset=\d+/, `offset=${offset + 40}`) :
@@ -3678,7 +3678,7 @@ var routes = {
             midpage(
                 h1(message),
                 `<p><a href='${next_page}'>next page &raquo;</a><p>`,
-                render_user_list(context.users, _GET(context.req.url, 'd')),
+                render_user_list(users, _GET(context.req.url, 'd')),
                 `<hr><a href='${next_page}'>next page &raquo;</a>`
             )
         )
