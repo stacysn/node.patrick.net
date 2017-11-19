@@ -1016,11 +1016,11 @@ function get_del_link(c, current_user, ip) {
         `<a href='#' onclick="if (confirm('Really delete?')) { $.get('/delete_comment?comment_id=${ c.comment_id }&post_id=${ c.comment_post_id }&${create_nonce_parms(ip)}', function() { $('#comment-${ c.comment_id }').remove() }); return false}">delete</a>` : ''
 }
 
-function profile_form(current_user, ip, updated, context) {
+function profile_form(updated, context) {
 
-    if (!current_user) return die('please log in to edit your profile', context)
+    if (!context.current_user) return die('please log in to edit your profile', context)
 
-    let u = current_user
+    let u = context.current_user
 
     let ret = '<h1>edit profile</h1>'
 
@@ -1043,7 +1043,7 @@ function profile_form(current_user, ip, updated, context) {
     </tr>
     </table>
     <p>
-    <form name='profile' action='update_profile?${create_nonce_parms(ip)}' method='post'>
+    <form name='profile' action='update_profile?${create_nonce_parms(context.ip)}' method='post'>
     <input type='text' name='user_name'  placeholder='user_name' size='25' value='${ u.user_name }'  maxlength='30'  /> user name<p>
     <input type='text' name='user_email' placeholder='email'     size='25' value='${ u.user_email }' maxlength='100' /> email<p>
     <br>
@@ -1058,10 +1058,10 @@ function profile_form(current_user, ip, updated, context) {
     <input type='submit' class='btn btn-success btn-sm' value='Save' />
     </form><p><h3>ignored users</h3>(click to unignore that user)<br>`
 
-    let ignored_users = current_user.relationships.filter(rel => rel.rel_i_ban)
+    let ignored_users = context.current_user.relationships.filter(rel => rel.rel_i_ban)
     
     if (ignored_users.length)
-        ret += ignored_users.map(u => `<a href='#' onclick="$.get('/ignore?other_id=${u.user_id}&undo=1&${create_nonce_parms(ip)}',
+        ret += ignored_users.map(u => `<a href='#' onclick="$.get('/ignore?other_id=${u.user_id}&undo=1&${create_nonce_parms(context.ip)}',
          function() { $('#user-${ u.user_id }').remove() }); return false" id='user-${u.user_id}' >${u.user_name}</a><br>`).join('')
     else
         ret += 'none'
@@ -2801,7 +2801,7 @@ var routes = {
             head(CONF.stylesheet, CONF.description, context.post ? context.post.post_title : CONF.domain),
             header(context.header_data, context.post ? context.post.post_topic : null, context.page, context.current_user, context.login_failed_email, context.req.url),
             midpage(
-                profile_form(context.current_user, context.ip, _GET(context.req.url, 'updated'))
+                profile_form('updated', context)
             )
         )
 
