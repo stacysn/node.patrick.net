@@ -34,6 +34,11 @@ if (CLUSTER.isMaster && !('dev' === process.env.environment)) { // to keep debug
     })
 } else HTTP.createServer(render).listen(CONF.http_port)
 
+process.on('unhandledRejection', (reason, p) => {
+    console.log('Unhandled Rejection at: Promise', p, 'reason:', reason);
+    console.log(reason.stack)
+});
+
 async function render(req, res) {
 
     res.start_t = Date.now()
@@ -1983,7 +1988,7 @@ async function post_mail(p, db) { // reasons to send out post emails: @user, use
 
             if (already_mailed[row.rel_self_id]) return
 
-            let u = await get_userrow(row.rel_self_id, context.db)
+            let u = await get_userrow(row.rel_self_id, db)
 
             if (!u) return
 
@@ -2007,7 +2012,7 @@ async function post_mail(p, db) { // reasons to send out post emails: @user, use
 
                 if (already_mailed[row.topicwatch_user_id]) return
 
-                let u = await get_userrow(row.topicwatch_user_id, context.db)
+                let u = await get_userrow(row.topicwatch_user_id, db)
 
                 if (!u) return
 
