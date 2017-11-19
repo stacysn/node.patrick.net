@@ -35,7 +35,7 @@ if (CLUSTER.isMaster && !('dev' === process.env.environment)) { // to keep debug
 } else HTTP.createServer(render).listen(CONF.http_port)
 
 process.on('unhandledRejection', (reason, p) => {
-    console.log('Unhandled Rejection at: Promise', p, 'reason:', reason);
+    console.log('Unhandled Rejection at promise:', p, 'reason:', reason);
     console.log(reason.stack)
 });
 
@@ -56,15 +56,16 @@ async function render(req, res) {
 
     const context = { db, ip, page, req, res }
 
+    context.current_user = await get_user(context)
+    context.header_data  = await header_data(context)
+
     try {
-        context.current_user = await get_user(context)
-        context.header_data  = await header_data(context)
         await routes[page](context)
     }
     catch(e) {
         var message = e.message || e.toString()
-        console.error(`${Date()} pid:${PROCESS.pid} ${context.ip} ${context.req.url} failed in render with error: ${message} ${e.stack}`)
-        return send_html(intval(e.code) || 500, `node server says: ${message}`, context.res, context.db, context.ip, context.res, context.db, context.ip)
+        console.error(`${Date()} ${context.ip} ${context.req.url} failed with: ${message} ${e.stack || ''}`)
+        return send_html(intval(e.code) || 500, `node server says: ${message}`, res, db, ip)
     }
 }
 
