@@ -55,7 +55,6 @@ async function render(req, res) {
     if (await block_countries(db, ip)) return bail(res, 403, 'permission denied to evil country')
 
     const context = { db, ip, page, req, res }
-
     context.current_user = await get_user(context)
     context.header_data  = await header_data(context)
 
@@ -173,7 +172,6 @@ async function get_user(context) { // update context with whether they are logge
         context.req.headers.cookie.replace(/\s/g,'').split(';').forEach(function(element) {
             var name  = element.split('=')[0]
             var value = element.split('=')[1]
-
             pairs[name] = value
         })
 
@@ -2267,7 +2265,7 @@ var routes = {
 
         if (ago && ago < 2) { // this ip already commented less than two seconds ago
             return send_html(200, JSON.stringify({ err: true, content: popup('You are posting comments too quickly! Please slow down') }),
-            context.res, context.db, context.ip)
+                             context.res, context.db, context.ip)
         }
         else {
             post_data.comment_author = context.current_user ? context.current_user.user_id : await find_or_create_anon(context.db, context.ip)
@@ -2436,8 +2434,9 @@ var routes = {
         if (!comment_id)                        return send_html(200, '', context.res, context.db, context.ip)
         if (!context.current_user)                return send_html(200, '', context.res, context.db, context.ip)
         if (context.current_user.user_level !== 4) return send_html(200, '', context.res, context.db, context.ip)
-        if (!valid_nonce(context.ip, _GET(context.req.url, 'ts'), _GET(context.req.url, 'nonce')))                     return send_html(200, '',
-        context.res, context.db, context.ip)
+        if (!valid_nonce(context.ip, _GET(context.req.url, 'ts'), _GET(context.req.url, 'nonce'))) {
+            return send_html(200, '', context.res, context.db, context.ip)
+        }
 
         await query('update comments set comment_approved=1, comment_date=now() where comment_id=?', [comment_id], context.db)
         await query('update posts set post_modified=now() where post_id=(select comment_post_id from comments where comment_id=?)',
@@ -2453,8 +2452,9 @@ var routes = {
         if (!post_id)                            return send_html(200, '', context.res, context.db, context.ip)
         if (!context.current_user)                 return send_html(200, '', context.res, context.db, context.ip)
         if (context.current_user.user_level !== 4) return send_html(200, '', context.res, context.db, context.ip)
-        if (!valid_nonce(context.ip, _GET(context.req.url, 'ts'), _GET(context.req.url, 'nonce')))                      return send_html(200, '',
-        context.res, context.db, context.ip)
+        if (!valid_nonce(context.ip, _GET(context.req.url, 'ts'), _GET(context.req.url, 'nonce'))) {
+            return send_html(200, '', context.res, context.db, context.ip)
+        }
 
         await query('update posts set post_approved=1, post_modified=now() where post_id=?', [post_id], context.db)
 
@@ -2485,8 +2485,9 @@ var routes = {
 
     ban_from_topic : async function(context) {
 
-        if (!valid_nonce(context.ip, _GET(context.req.url, 'ts'), _GET(context.req.url, 'nonce'))) return send_html(200, invalid_nonce_message(),
-        context.res, context.db, context.ip)
+        if (!valid_nonce(context.ip, _GET(context.req.url, 'ts'), _GET(context.req.url, 'nonce'))) {
+            return send_html(200, invalid_nonce_message(), context.res, context.db, context.ip)
+        }
 
         let user_id = intval(_GET(context.req.url, 'user_id'))
         if (!user_id) return send_html(200, 'missing user_id', context.res, context.db, context.ip)
@@ -2638,8 +2639,9 @@ var routes = {
         let post_id    = intval(_GET(context.req.url, 'post_id'))
 
         if (!context.current_user)      return send_html(200, '', context.res, context.db, context.ip)
-        if (!valid_nonce(context.ip, _GET(context.req.url, 'ts'), _GET(context.req.url, 'nonce')))           return send_html(200, '', context.res,
-        context.db, context.ip)
+        if (!valid_nonce(context.ip, _GET(context.req.url, 'ts'), _GET(context.req.url, 'nonce'))) {
+            return send_html(200, '', context.res, context.db, context.ip)
+        }
         if (!(comment_id && post_id)) return send_html(200, '', context.res, context.db, context.ip)
 
         var topic = (await get_post(post_id, context.db)).post_topic
@@ -2811,11 +2813,12 @@ var routes = {
         let ajax  = intval(_GET(context.req.url, 'ajax'))
         let topic = _GET(context.req.url, 'topic').replace(/\W/, '').toLowerCase()
 
-        if (!topic)              return ajax ? send_html(200, '', context.res, context.db, context.ip) : die('topic missing', context)
+        if (!topic)                return ajax ? send_html(200, '', context.res, context.db, context.ip) : die('topic missing', context)
         if (!context.current_user) return ajax ? send_html(200, '', context.res, context.db, context.ip) : die('must be logged in to follow or unfollow',
         context)
-        if (!valid_nonce(context.ip, _GET(context.req.url, 'ts'), _GET(context.req.url, 'nonce')))      return ajax ? send_html(200, '', context.res,
-        context.db, context.ip) : die(invalid_nonce_message(), context)
+        if (!valid_nonce(context.ip, _GET(context.req.url, 'ts'), _GET(context.req.url, 'nonce'))) {
+            return ajax ? send_html(200, '', context.res, context.db, context.ip) : die(invalid_nonce_message(), context)
+        }
 
         if (intval(_GET(context.req.url, 'undo'))) {
 
@@ -2836,11 +2839,12 @@ var routes = {
         let ajax     = intval(_GET(context.req.url, 'ajax'))
         let other_id = intval(_GET(context.req.url, 'other_id'))
 
-        if (!other_id)           return ajax ? send_html(200, '', context.res, context.db, context.ip) : die('other_id missing', context)
+        if (!other_id)             return ajax ? send_html(200, '', context.res, context.db, context.ip) : die('other_id missing', context)
         if (!context.current_user) return ajax ? send_html(200, '', context.res, context.db, context.ip) : die('must be logged in to follow or unfollow',
         context)
-        if (!valid_nonce(context.ip, _GET(context.req.url, 'ts'), _GET(context.req.url, 'nonce')))      return ajax ? send_html(200, '', context.res,
-        context.db, context.ip) : die(invalid_nonce_message(), context)
+        if (!valid_nonce(context.ip, _GET(context.req.url, 'ts'), _GET(context.req.url, 'nonce'))) {
+            return ajax ? send_html(200, '', context.res, context.db, context.ip) : die(invalid_nonce_message(), context)
+        }
 
         if (intval(_GET(context.req.url, 'undo'))) {
             await query(`replace into relationships set rel_i_follow=0, rel_self_id=?, rel_other_id=?`,
@@ -2906,8 +2910,9 @@ var routes = {
         let other_id = intval(_GET(context.req.url, 'other_id'))
 
         if (!context.current_user) return send_html(200, '', context.res, context.db, context.ip)
-        if (!valid_nonce(context.ip, _GET(context.req.url, 'ts'), _GET(context.req.url, 'nonce')))      return send_html(200, '', context.res, context.db,
-        context.ip)
+        if (!valid_nonce(context.ip, _GET(context.req.url, 'ts'), _GET(context.req.url, 'nonce'))) {
+            return send_html(200, '', context.res, context.db, context.ip)
+        }
 
         if (intval(_GET(context.req.url, 'undo'))) {
             await query(`replace into relationships set rel_i_ban=0, rel_self_id=?, rel_other_id=?`,
@@ -2935,10 +2940,8 @@ var routes = {
         var email = await get_var('select user_email from users where user_activation_key = ?', [key], context.db)
 
         if (email) {
-
             // erase key so it cannot be used again, and set new password
-            await query('update users set user_activation_key=null, user_pass=? where user_activation_key=?',
-                        [md5(password), key], context.db)
+            await query('update users set user_activation_key=null, user_pass=? where user_activation_key=?', [md5(password), key], context.db)
 
             login(email, password, context.db, context.login_failed_email, context.current_user, context.ip, context.page, context.res, context.post,
             context.header_data, context.req.url)
@@ -2950,8 +2953,7 @@ var routes = {
                 head(CONF.stylesheet, CONF.description, context.post ? context.post.post_title : CONF.domain),
                 header(context.header_data, context.post ? context.post.post_topic : null, context.page, context.current_user, context.login_failed_email, context.req.url),
                 midpage(
-                    h1(`Darn, that key has already been used. Please try 'forgot password' if you need to log in.`),
-                    context.text || ''
+                    h1(`Darn, that key has already been used. Please try 'forgot password' if you need to log in.`)
                 )
             )
 
@@ -3111,8 +3113,9 @@ var routes = {
         let nuke_id = intval(_GET(context.req.url, 'nuke_id'))
         let u = await get_userrow(nuke_id, context.db)
 
-        if (!valid_nonce(context.ip, _GET(context.req.url, 'ts'), _GET(context.req.url, 'nonce')))                   return die(invalid_nonce_message(),
-        context)
+        if (!valid_nonce(context.ip, _GET(context.req.url, 'ts'), _GET(context.req.url, 'nonce'))) {
+            return die(invalid_nonce_message(), context)
+        }
         if (1 !== context.current_user.user_id) return die('non-admin may not nuke', context)
         if (1 === nuke_id)                    return die('admin cannot nuke himself', context)
 
@@ -3276,8 +3279,7 @@ var routes = {
             head(CONF.stylesheet, CONF.description, context.post ? context.post.post_title : CONF.domain),
             header(context.header_data, context.post ? context.post.post_topic : null, context.page, context.current_user, context.login_failed_email, context.req.url),
             midpage(
-                h1(message),
-                context.text || ''
+                h1(message)
             )
         )
 
@@ -3312,10 +3314,7 @@ var routes = {
             render_query_times(context.res.start_time, context.db.queries),
             head(CONF.stylesheet, CONF.description, context.post ? context.post.post_title : CONF.domain),
             header(context.header_data, context.post ? context.post.post_topic : null, context.page, context.current_user, context.login_failed_email, context.req.url),
-            midpage(
-            `<h2>${message}</h2>`,
-            context.text || ''
-            )
+            midpage(`<h2>${message}</h2>`)
         )
 
         send_html(200, content, context.res, context.db, context.ip)
@@ -3691,9 +3690,10 @@ var routes = {
         let post_id = intval(_GET(context.req.url, 'post_id'))
 
         if (!context.current_user) return send_html(200, '', context.res, context.db, context.ip)
-        if (!valid_nonce(context.ip, _GET(context.req.url, 'ts'), _GET(context.req.url, 'nonce')))      return send_html(200, '', context.res, context.db,
-        context.ip)
-        if (!post_id)            return send_html(200, '', context.res, context.db, context.ip)
+        if (!valid_nonce(context.ip, _GET(context.req.url, 'ts'), _GET(context.req.url, 'nonce'))) {
+            return send_html(200, '', context.res, context.db, context.ip)
+        }
+        if (!post_id) return send_html(200, '', context.res, context.db, context.ip)
 
         let postview_want_email = await get_var(`select postview_want_email from postviews
                                                  where postview_user_id=? and postview_post_id=?`,
