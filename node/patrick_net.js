@@ -2304,15 +2304,15 @@ var routes = {
             let comment_id = insert_result.insertId
 
             // now select the inserted row so that we pick up the comment_date time and user data for displaying the comment
-            context.comment = await get_row('select * from comments left join users on comment_author=user_id where comment_id = ?',
+            let comment = await get_row('select * from comments left join users on comment_author=user_id where comment_id = ?',
                                           [comment_id], context.db)
 
             send_html(200, JSON.stringify(
-                { err: false, content: format_comment(context.comment, context.current_user, context.ip, context.req, context.comments, _GET(context.req.url,
+                { err: false, content: format_comment(comment, context.current_user, context.ip, context.req, context.comments, _GET(context.req.url,
                 'offset')) }), context.res, context.db, context.ip)
                 // send html fragment
 
-            comment_mail(context.comment, context.db)
+            comment_mail(comment, context.db)
 
             await query(`update posts set post_modified = ?,
                                           post_latest_comment_id = ?,
