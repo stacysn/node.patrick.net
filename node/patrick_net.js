@@ -2774,15 +2774,15 @@ var routes = {
         if (!valid_nonce(context.ip, _GET(context.req.url, 'ts'), _GET(context.req.url, 'nonce'))) return die(invalid_nonce_message(), context)
 
         let post_id = intval(_GET(context.req.url, 'p'))
-        context.post = await get_row(`select * from posts left join users on user_id=post_author where post_id=?`, [post_id], context.db)
+        let post = await get_row(`select * from posts left join users on user_id=post_author where post_id=?`, [post_id], context.db)
 
-        if (!context.post) return send_html(404, `No post with id "${post_id}"`, context.res, context.db, context.ip)
+        if (!post) return send_html(404, `No post with id "${post_id}"`, context.res, context.db, context.ip)
         else {
 
             let content = html(
                 render_query_times(context.res.start_time, context.db.queries),
-                head(CONF.stylesheet, CONF.description, context.post ? context.post.post_title : CONF.domain),
-                header(context.header_data, context.post ? context.post.post_topic : null, context.page, context.current_user, context.login_failed_email, context.req.url),
+                head(CONF.stylesheet, CONF.description, post ? post.post_title : CONF.domain),
+                header(context.header_data, post ? post.post_topic : null, context.page, context.current_user, context.login_failed_email, context.req.url),
                 midpage(
                     post_form(_GET(context.req.url, 'p'), context.post)
                 )
@@ -2883,9 +2883,9 @@ var routes = {
                    where post_modified > date_sub(now(), interval 7 day) and post_approved=1
                    ${order_by} limit ${slimit}`
 
-        context.posts = await query(sql, [current_user_id, current_user_id], context.db)
+        let posts = await query(sql, [current_user_id, current_user_id], context.db)
 
-        let path = URL.parse(context.req.url).pathname // "pathNAME" is url path without ? parms, unlike "path"
+        let path = URL.parse(context.req.url).pathname // "pathname" is url path without ? parms, unlike "path"
 
         let content = html(
             render_query_times(context.res.start_time, context.db.queries),
@@ -2893,7 +2893,7 @@ var routes = {
             header(context.header_data, context.post ? context.post.post_topic : null, context.page, context.current_user, context.login_failed_email, context.req.url),
             midpage(
                 tabs(order, '', path),
-                post_list(context.posts, context.ip, context.req.url, context.current_user),
+                post_list(posts, context.ip, context.req.url, context.current_user),
                 post_pagination(await sql_calc_found_rows(context.db), curpage, `&order=${order}`, context.req.url)
             )
         )
@@ -3060,9 +3060,8 @@ var routes = {
 
     logout : async function(context) {
 
-        context.current_user = null
-        var d              = new Date()
-        var html           = loginprompt(context.login_failed_email)
+        var d    = new Date()
+        var html = loginprompt(context.login_failed_email)
 
         // you must use the undocumented "array" feature of res.writeHead to set multiple cookies, because json
         var headers = [
@@ -3154,7 +3153,7 @@ var routes = {
                     post_date > date_sub(date_sub(now(), interval ${years_ago} year), interval 1 year)
                     order by post_date desc limit 40`
 
-        context.posts = await query(sql, [user_id, user_id], context.db)
+        let posts = await query(sql, [user_id, user_id], context.db)
         let s = (years_ago === 1) ? '' : 's'
         
         let content = html(
@@ -3163,7 +3162,7 @@ var routes = {
             header(context.header_data, context.post ? context.post.post_topic : null, context.page, context.current_user, context.login_failed_email, context.req.url),
             midpage(
                 h1(`Posts from ${years_ago} year${s} ago`),
-                post_list(context.posts, context.ip, context.req.url, context.current_user)
+                post_list(posts, context.ip, context.req.url, context.current_user)
             )
         )
 
@@ -3181,55 +3180,54 @@ var routes = {
             return redirect(`/post/${post_id}?offset=${offset}#comment-${c}`, context.res, context.db, context.ip)
         }
 
-        context.post = await get_row(`select * from posts
+        let p = await get_row(`select * from posts
                                     left join postvotes on (postvote_post_id=post_id and postvote_user_id=?)
                                     left join postviews on (postview_post_id=post_id and postview_user_id=?)
                                     left join users on user_id=post_author
                                     where post_id=?`, [current_user_id, current_user_id, post_id], context.db)
 
-        if (!context.post) { await repair_referer(context.req, context.db); return die(`No post with id "${post_id}"`, context) }
+        if (!p) { await repair_referer(context.req, context.db); return die(`No post with id "${post_id}"`, context) }
 
-        if (!context.post.post_approved && current_user_id !== 1) { await repair_referer(context.req, context.db); return die(`That post is waiting for moderation`, context) }
+        if (!p.post_approved && current_user_id !== 1) { await repair_referer(context.req, context.db); return die(`That p is waiting for moderation`, context) }
 
-        context.comments      = await post_comment_list(context.post, context.req.url, context.current_user, context.db) // pick up the comment list for this post
-        context.post.watchers = await get_var(`select count(*) as c from postviews
+        context.comments      = await post_comment_list(p, context.req.url, context.current_user, context.db) // pick up the comment list for this post
+        p.watchers = await get_var(`select count(*) as c from postviews
                                                    where postview_post_id=? and postview_want_email=1`, [post_id], context.db)
 
-        context.post.post_views++ // increment here for display and in db on next line as record
-        await query(`update posts set post_views = ? where post_id=?`, [context.post.post_views, post_id], context.db)
+        p.post_views++ // increment here for display and in db on next line as record
+        await query(`update posts set post_views = ? where post_id=?`, [p.post_views, post_id], context.db)
 
         if (current_user_id) {
-            context.post.postview_want_email = context.post.postview_want_email || 0 // keep as 1 or 0 from db; set to 0 if null in db
-            if( '0' === _GET(context.req.url, 'want_email') ) context.post.postview_want_email = 0
+            p.postview_want_email = p.postview_want_email || 0 // keep as 1 or 0 from db; set to 0 if null in db
+            if( '0' === _GET(context.req.url, 'want_email') ) p.postview_want_email = 0
 
             await query(`replace into postviews set
                          postview_user_id=?, postview_post_id=?, postview_last_view=now(), postview_want_email=?`,
-                         [ current_user_id, post_id, context.post.postview_want_email ], context.db)
+                         [ current_user_id, post_id, p.postview_want_email ], context.db)
         }
 
         // if we never set prev|next (null) or did set it to 0 AND are here from a new post referer, then update
-        if (context.post.post_topic) {
-            if ((null === context.post.post_prev_in_topic || null === context.post.post_next_in_topic) ||
-                ((0   === context.post.post_prev_in_topic || 0    === context.post.post_next_in_topic) &&
+        if (p.post_topic) {
+            if ((null === p.post_prev_in_topic || null === p.post_next_in_topic) ||
+                ((0   === p.post_prev_in_topic || 0    === p.post_next_in_topic) &&
                     context.req.headers.referer &&
                     context.req.headers.referer.match(/post/))
                ) {
-                [context.post.post_prev_in_topic, context.post.post_next_in_topic] =
-                    await update_prev_next(context.post.post_topic, context.post.post_id, context.db)
+                [p.post_prev_in_topic, p.post_next_in_topic] = await update_prev_next(p.post_topic, p.post_id, context.db)
             }
         }
 
         let content = html(
             render_query_times(context.res.start_time, context.db.queries),
-            head(CONF.stylesheet, CONF.description, context.post ? context.post.post_title : CONF.domain),
-            header(context.header_data, context.post ? context.post.post_topic : null, context.page, context.current_user, context.login_failed_email, context.req.url),
+            head(CONF.stylesheet, CONF.description, p ? p.post_title : CONF.domain),
+            header(context.header_data, p ? p.post_topic : null, context.page, context.current_user, context.login_failed_email, context.req.url),
             midpage(
-                topic_nav(context.post),
-                post(context.post, context.ip, context.current_user),
+                topic_nav(p),
+                post(p, context.ip, context.current_user),
                 comment_pagination(context.comments, context.req.url),
                 comment_list(context.comments, context.current_user, context.ip, context.req),
                 comment_pagination(context.comments, context.req.url),
-                comment_box(context.post, context.current_user, context.ip)
+                comment_box(p, context.current_user, context.ip)
             )
         )
 
