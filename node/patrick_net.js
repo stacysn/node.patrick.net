@@ -2547,12 +2547,12 @@ var routes = {
         // comments not freed in 30 days will be deleted
         await query(`delete from comments where comment_adhom_when < date_sub(now(), interval 30 day)`, [], context.db)
 
-        context.comments = await query(`select sql_calc_found_rows * from comments
+        let comments = await query(`select sql_calc_found_rows * from comments
                                       left join users on user_id=comment_author
                                       where comment_adhom_when is not null order by comment_date desc`, [], context.db)
 
         let offset = 0
-        context.comments = context.comments.map(comment => { comment.row_number = ++offset; return comment })
+        comments = comments.map(comment => { comment.row_number = ++offset; return comment })
 
         let content = html(
             render_query_times(context.res.start_time, context.db.queries),
@@ -2561,7 +2561,7 @@ var routes = {
             midpage(
                 h1('Uncivil Comment Jail'),
                 'These comments were marked as uncivil. Patrick will review them and liberate comments which do not deserve to be here. You can edit your comment here to make it more civil and get it out of jail after the edits are reviewed. Comments not freed within 30 days will be deleted.',
-                comment_list(context.comments, context.current_user, context.ip, context.req)
+                comment_list(comments, context.current_user, context.ip, context.req)
             )
         )
 
@@ -2572,11 +2572,11 @@ var routes = {
 
         if (!context.current_user) return die('you must be logged in to moderate comments', context)
 
-        context.comments = await query(`select * from comments left join users on user_id=comment_author
+        let comments = await query(`select * from comments left join users on user_id=comment_author
                                       where comment_approved = 0`, [], context.db)
 
         let offset = 0
-        context.comments = context.comments.map(comment => { comment.row_number = ++offset; return comment })
+        comments = comments.map(comment => { comment.row_number = ++offset; return comment })
 
         let content = html(
             render_query_times(context.res.start_time, context.db.queries),
@@ -2584,7 +2584,7 @@ var routes = {
             header(context.header_data, context.post ? context.post.post_topic : null, context.page, context.current_user, context.login_failed_email, context.req.url),
             midpage(
                 h1('comment moderation'),
-                comment_list(context.comments, context.current_user, context.ip, context.req)
+                comment_list(comments, context.current_user, context.ip, context.req)
             )
         )
 
