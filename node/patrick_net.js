@@ -2614,8 +2614,8 @@ var routes = {
         }
         else return send_html(200, `invalid request`, context.res, context.db, context.ip)
 
-        context.comments            = results.comments
-        context.comments.found_rows = results.total
+        let comments = results.comments
+        comments.found_rows = results.total
 
         let content = html(
             render_query_times(context.res.start_time, context.db.queries),
@@ -2623,8 +2623,8 @@ var routes = {
             header(context.header_data, context.post ? context.post.post_topic : null, context.page, context.current_user, context.login_failed_email, context.req.url),
             midpage(
                 h1(message),
-                comment_pagination(context.comments, context.req.url),
-                comment_list(context.comments, context.current_user, context.ip, context.req),
+                comment_pagination(comments, context.req.url),
+                comment_list(comments, context.current_user, context.ip, context.req),
                 comment_search_box()
             )
         )
@@ -2751,10 +2751,9 @@ var routes = {
         if (!valid_nonce(context.ip, _GET(context.req.url, 'ts'), _GET(context.req.url, 'nonce'))) return die(invalid_nonce_message(), context)
 
         let comment_id = intval(_GET(context.req.url, 'c'))
-        context.comment = await get_row(`select * from comments left join users on user_id=comment_author
-                                           where comment_id=?`, [comment_id], context.db)
+        let comment = await get_row(`select * from comments left join users on user_id=comment_author where comment_id=?`, [comment_id], context.db)
 
-        if (!context.comment) return send_html(404, `No comment with id "${comment_id}"`, context.res, context.db, context.ip)
+        if (!comment) return send_html(404, `No comment with id "${comment_id}"`, context.res, context.db, context.ip)
         else {
 
             let content = html(
@@ -2762,7 +2761,7 @@ var routes = {
                 head(CONF.stylesheet, CONF.description, context.post ? context.post.post_title : CONF.domain),
                 header(context.header_data, context.post ? context.post.post_topic : null, context.page, context.current_user, context.login_failed_email, context.req.url),
                 midpage(
-                    comment_edit_box(context.comment, context.current_user, context.ip)
+                    comment_edit_box(comment, context.current_user, context.ip)
                 )
             )
 
