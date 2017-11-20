@@ -46,15 +46,17 @@ async function render(req, res) {
     const ip   = req.headers['x-forwarded-for']
     const page = segments(req.url)[1] || 'home'
 
-    if (typeof routes[page] !== 'function') return send(404, {'Content-Type' : 'text/html;charset=utf-8'}, `${page} was not found`, { res: res, db: null, ip : ip})
+    const context = { ip, page, req, res }
 
-    const db = await get_connection_from_pool(ip).catch(e => send(429, {'Content-Type' : 'text/html;charset=utf-8'}, e, context))
+    if (typeof routes[page] !== 'function')
+        return send(404, {'Content-Type' : 'text/html;charset=utf-8'}, `${page} was not found`, { res: res, db: null, ip : ip})
 
-    if (!db)                           return send_html(500, 'failed to get db connection from pool', context)
-    if (await blocked(db, ip))         return send_html(403, 'ip address blocked', context)
-    if (await block_countries(db, ip)) return send_html(403, 'permission denied to evil country', context)
+    context.db = await get_connection_from_pool(ip).catch(e => send(429, {'Content-Type' : 'text/html;charset=utf-8'}, e, context))
 
-    const context = { db, ip, page, req, res }
+    if (!context.db)                                   return send_html(500, 'failed to get db connection from pool', context)
+    if (await blocked(context.db, context.ip))         return send_html(403, 'ip address blocked', context)
+    if (await block_countries(context.db, context.ip)) return send_html(403, 'permission denied to evil country', context)
+
     context.current_user = await get_user(context)
     context.header_data  = await header_data(context)
 
