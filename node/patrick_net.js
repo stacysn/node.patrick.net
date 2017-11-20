@@ -2431,7 +2431,7 @@ var routes = {
 
                     let content = `
                         <html>
-                            <script language="javascript" type="text/javascript">
+                            <script>
                                 var textarea = parent.document.getElementById('ta');
                                 textarea.value = textarea.value + ${addendum};
                             </script>
@@ -2605,7 +2605,7 @@ var routes = {
 } // end of routes
 
 // from here to end are only html components
-// * all pure functions: no reading outside parms, no modification of parms, no side effects, can be replace with ret value
+// * all pure synchronous functions: no reading outside parms, no modification of parms, no side effects, can be replace with ret value
 // * mostly just take (data, context) objects
 // * all return html
 // * all html without unique html tag has id which includes name of the function which generated it
@@ -2888,7 +2888,7 @@ function render_query_times(start_time, queries) {
 }
 
 function client_side_js() {
-    return `<script type="text/javascript">
+    return `<script>
 
     function addquote(post_id, offset, comment_id, author) {
 
@@ -3220,7 +3220,7 @@ function registerform() {
         </div>
         <button type='submit' id='submit' class='btn btn-success btn-sm'>submit</button>
         </form>
-        <script type="text/javascript">document.getElementById('user_name').focus();</script>
+        <script>document.getElementById('user_name').focus();</script>
     </div>`
 }
 
@@ -3413,7 +3413,7 @@ function new_post_button() {
 }
 
 function popup(message) {
-    return `<script type='text/javascript'> alert('${ message }');</script>`
+    return `<script>alert('${ message }');</script>`
 }
 
 function lostpwform(login_failed_email) {
@@ -3426,7 +3426,7 @@ function lostpwform(login_failed_email) {
             <div class='form-group'><input type='text' name='user_email' ${ show } class='form-control' id='lost_pw_email' ></div>
             <button type='submit' id='submit' class='btn btn-success btn-sm'>submit</button>
         </form>
-        <script type="text/javascript">document.getElementById('lost_pw_email').focus();</script>
+        <script>document.getElementById('lost_pw_email').focus();</script>
     </div>`
 }
 
@@ -3617,8 +3617,8 @@ function post_form(p, post) { // used both for composing new posts and for editi
         ${post_id}
         <button type='submit' id='submit' class='btn btn-success btn-sm' >submit</button>
     </form>
-    <script type='text/javascript'>
 
+    <script>
     document.getElementById('title').focus();
 
     function checkforhash() {
@@ -3649,7 +3649,7 @@ function comment_edit_box(comment, context) { // edit existing comment, redirect
         <input type='hidden' name='comment_id' value='${comment.comment_id}' />
         <button type='submit' id='submit' class='btn btn-success btn-sm'>submit</button>
     </form>
-    <script type="text/javascript">document.getElementById('ta').focus();</script>`
+    <script>document.getElementById('ta').focus();</script>`
 }
 
 function post_list(posts, context) { // format a list of posts from whatever source
