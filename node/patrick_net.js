@@ -3126,7 +3126,7 @@ function admin_user(u, current_user, ip) { // links to administer a user
         <a href='mailto:${u.user_email}'>email ${u.user_email}</a> &nbsp;
         <a href='https://whatismyipaddress.com/ip/${u.user_last_comment_ip}'>${u.user_last_comment_ip}</a> &nbsp;
         <a href='/user/${u.user_name}?become=1&${create_nonce_parms(ip)}' >become ${u.user_name}</a> &nbsp;
-        <a href='/nuke?nuke_id=${u.user_id}&${create_nonce_parms(ip)}' onClick='javascript:return confirm("Really?")' >nuke</a> &nbsp;
+        <a href='/nuke?nuke_id=${u.user_id}&${create_nonce_parms(ip)}' onClick='return confirm("Really?")' >nuke</a> &nbsp;
         <hr>`
 }
 
@@ -3355,7 +3355,7 @@ function post(post, ip, current_user) { // format a single post for display
     if (current_user && current_user.user_pbias >= 3) {
 
         if (!post.post_title.match(/thunderdome/)) {
-            let confirm_uncivil = `onClick="javascript:return confirm('Really mark as uncivil?')"`
+            let confirm_uncivil = `onClick="return confirm('Really mark as uncivil?')"`
             uncivil = ` &nbsp; <a href='/uncivil?p=${post.post_id}&${nonce_parms}' ${confirm_uncivil} title='attacks person, not point' >uncivil</a> &nbsp;` 
         }
     }
@@ -3373,7 +3373,7 @@ function post(post, ip, current_user) { // format a single post for display
     let delete_link = ''
     if (current_user && ((current_user.user_id === post.post_author && !post.post_comments) || (current_user.user_level >= 4))) {
         delete_link = ` &nbsp; <a href='/delete_post?post_id=${post.post_id}&${nonce_parms}' 
-                       onClick="javascript:return confirm('Really delete?')" id='delete_post' >delete</a> &nbsp;` 
+                       onClick="return confirm('Really delete?')" id='delete_post' >delete</a> &nbsp;` 
     }
 
     post.user_name = post.user_name || 'anonymous' // so we don't display 'null' in case the post is anonymous
@@ -3451,7 +3451,7 @@ function get_nuke_link(c, current_user, ip, req) {
     }
 
     return (URL.parse(req.url).pathname.match(/comment_moderation/) && (current_user.user_level === 4)) ?
-        `<a href='/nuke?nuke_id=${c.comment_author}&${create_nonce_parms(ip)}' onClick='javascript:return confirm("Really?")' >nuke</a>`
+        `<a href='/nuke?nuke_id=${c.comment_author}&${create_nonce_parms(ip)}' onClick='return confirm("Really?")' >nuke</a>`
         : ''
 }
 
@@ -3694,8 +3694,8 @@ function post_list(posts, context) { // format a list of posts from whatever sou
 
             if (moderation) {
                 var approval_link = `<a href='#' onclick="$.get('/approve_post?post_id=${ post.post_id }&${nonce_parms}', function() { $('#post-${ post.post_id }').remove() }); return false">approve</a>`
-                var delete_link = ` &nbsp; <a href='/delete_post?post_id=${post.post_id}&${nonce_parms}' onClick="javascript:return confirm('Really delete?')" id='delete_post' >delete</a> &nbsp;`
-                var nuke_link = `<a href='/nuke?nuke_id=${post.post_author}&${create_nonce_parms(ip)}' onClick='javascript:return confirm("Really?")' >nuke</a>`
+                var delete_link = ` &nbsp; <a href='/delete_post?post_id=${post.post_id}&${nonce_parms}' onClick="return confirm('Really delete?')" id='delete_post' >delete</a> &nbsp;`
+                var nuke_link = `<a href='/nuke?nuke_id=${post.post_author}&${create_nonce_parms(ip)}' onClick='return confirm("Really?")' >nuke</a>`
             }
             else {
                 var approval_link = ''
