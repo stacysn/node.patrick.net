@@ -46,9 +46,9 @@ async function render(req, res) {
     const ip   = req.headers['x-forwarded-for']
     const page = segments(req.url)[1] || 'home'
 
-    if (typeof routes[page] !== 'function') return bail(res, 404, `${page} was not found`)
+    if (typeof routes[page] !== 'function') return send_html(404, `${page} was not found`, res, db, ip)
 
-    const db = await get_connection_from_pool(ip).catch(e => send_html(500, e, res, null, ip))
+    const db = await get_connection_from_pool(ip).catch(e => send_html(429, e, res, null, ip))
 
     if (!db)                           return send_html(500, 'failed to get db connection from pool', res, db, ip)
     if (await blocked(db, ip))         return send_html(403, 'ip address blocked', res, db, ip)
@@ -2802,7 +2802,7 @@ var routes = {
     update_profile : async function(context) { // accept data from profile_form
 
         if (!valid_nonce(context.ip, _GET(context.req.url, 'ts'), _GET(context.req.url, 'nonce'))) return die(invalid_nonce_message(), context)
-        if (!context.current_user)         return die('must be logged in to update profile', context)
+        if (!context.current_user) return die('must be logged in to update profile', context)
 
         let post_data = await collect_post_data_and_trim(context)
 
