@@ -46,7 +46,7 @@ async function render(req, res) {
     const ip   = req.headers['x-forwarded-for']
     const page = segments(req.url)[1] || 'home'
 
-    if (typeof routes[page] !== 'function') return send(404, {'Content-Type' : 'text/html;charset=utf-8'}, `${page} was not found`, { db: null, ip : ip})
+    if (typeof routes[page] !== 'function') return send(404, {'Content-Type' : 'text/html;charset=utf-8'}, `${page} was not found`, { res: res, db: null, ip : ip})
 
     const db = await get_connection_from_pool(ip).catch(e => send(429, {'Content-Type' : 'text/html;charset=utf-8'}, e, context))
 
