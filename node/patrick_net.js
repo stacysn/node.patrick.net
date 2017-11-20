@@ -2754,7 +2754,7 @@ function header(header_data, topic, page, current_user, login_failed_email, url)
         hashtag = `<a href='/topic/${topic}'><h1 class='sitename' >#${topic}</h1></a>`
     }
 
-    return `<div class='comment' >
+    return `<div class='comment' id='header' >
         <div style='float:right' >${ icon_or_loginprompt(current_user, login_failed_email) }</div>
         <a href='/' ><h1 class='sitename' title='back to home page' >${ CONF.domain }</h1></a> &nbsp; ${hashtag}
         <br>
@@ -2763,16 +2763,18 @@ function header(header_data, topic, page, current_user, login_failed_email, url)
 }
 
 function comment_search_box() {
-    return `<form name='searchform' action='/comments' method='get' > 
+    return `<form name='searchform' action='/comments' method='get' id='comment_search_box' > 
       <fieldset> 
       <input type='text'   name='s'      value='' size='17' /> 
       <input type='hidden' name='offset' value='0' /> 
       <input type='submit'               value='Search comments &raquo;' />  
       </fieldset> 
-    </form><p>`
+    </form>`
 }
 
 function format_comment(c, current_user, ip, req, comments, offset) {
+
+    if (!req.url) return
 
     var utz = current_user ? current_user.user_timezone : 'America/Los_Angeles'
 
@@ -2802,22 +2804,18 @@ function format_comment(c, current_user, ip, req, comments, offset) {
     c.user_name = c.user_name || 'anonymous' // so we don't display 'null' in case the comment is anonymous
 
     var quote = `<a href="#commentform"
-                  onclick="addquote('${c.comment_post_id}', '${offset}', '${c.comment_id}', '${c.user_name}'); return false;"
-                  title="select some text then click this to quote" >quote</a>`
+                    onclick="addquote('${c.comment_post_id}', '${offset}', '${c.comment_id}', '${c.user_name}'); return false;"
+                    title="select some text then click this to quote" >quote</a>`
 
     // for the last comment in the whole result set (not just last on this page) add an id="last"
-    if (comments) { // comments may not be defined, for example when we just added one comment
+    // comments may not be defined, for example when we just added one comment
+    if (comments)
         var last = (c.row_number === comments.found_rows) ? `<span id='last'></span>` : ''
-    }
-    else var last = ''
-
-    if (!req.url) {
-        console.log('format_comment() was passed falsey req.url')
-        return
-    }
+    else
+        var last = ''
 
     c.comment_content = (c.comment_adhom_when && !URL.parse(req.url).pathname.match(/jail/)) ?
-                `<a href='/comment_jail#comment-${c.comment_id}'>this comment has been jailed for incivility</a>` : c.comment_content
+        `<a href='/comment_jail#comment-${c.comment_id}'>this comment has been jailed for incivility</a>` : c.comment_content
 
     return `${last}<div class="comment" id="comment-${c.comment_id}" ${hide} >
     <font size=-1 >
@@ -2839,22 +2837,27 @@ function format_comment(c, current_user, ip, req, comments, offset) {
 function contextual_link(c, current_user, url, ip) { // a link in the comment header that varies by comment context, jail, moderation, etc
 
     if (!current_user) return ''
-
-    if (!url) {
-        console.log('contextual_link() was passed falsey url')
-        return
-    }
+    if (!url)          return ''
 
     if (URL.parse(url).pathname.match(/jail/) && (current_user.user_level === 4)) {
          return `<a href='/liberate?comment_id=${c.comment_id}' >liberate</a>`
     }
     
     if (URL.parse(url).pathname.match(/comment_moderation/) && (current_user.user_level === 4)) {
-        return `<a href='#' onclick="$.get('/approve_comment?comment_id=${ c.comment_id }&${create_nonce_parms(ip)}', function() { $('#comment-${ c.comment_id }').remove() }); return false">approve</a>`
+        return `<a href='#'
+                   onclick="$.get('/approve_comment?comment_id=${ c.comment_id }&${create_nonce_parms(ip)}',
+                            function() { $('#comment-${ c.comment_id }').remove() }); return false"
+                >approve</a>`
     }
 
     if (current_user.user_pbias >= 3 || current_user.user_id === 1) {
-        return `<a href='#' onclick="if (confirm('Really mark as uncivil?')) { $.get('/uncivil?c=${ c.comment_id }&${create_nonce_parms(ip)}', function() { $('#comment-${ c.comment_id }').remove() }); return false}" title='attacks person, not point' >uncivil</a>`
+        return `<a href='#'
+                   title='attacks person, not point'
+                   onclick="if (confirm('Really mark as uncivil?')) {
+                                $.get('/uncivil?c=${ c.comment_id }&${create_nonce_parms(ip)}', function() { $('#comment-${ c.comment_id }').remove() });
+                                return false
+                            }"
+                >uncivil</a>`
     }
     else return ''
 }
