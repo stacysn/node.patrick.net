@@ -2224,7 +2224,7 @@ var routes = {
                    where match(post_title, post_content) against ('${s}') ${order_by} limit ${slimit}`
 
         let posts = await query(sql, [], context.db)
-        let found_rows = sql_calc_found_rows(context.db)
+        let found_rows = await sql_calc_found_rows(context.db)
 
         let path = URL.parse(context.req.url).pathname // "pathNAME" is url path without ? parms, unlike "path"
 
@@ -2298,7 +2298,7 @@ var routes = {
                 moderator_announcement,
                 tabs(order, `&topic=${topic}`, path),
                 post_list(posts, context.ip, context.req.url, context.current_user),
-                post_pagination(sql_calc_found_rows(context.db), curpage, `&topic=${topic}&order=${order}`, context.req.url),
+                post_pagination(await sql_calc_found_rows(context.db), curpage, `&topic=${topic}&order=${order}`, context.req.url),
                 topic_moderation(topic, context.current_user)
             )
         )
@@ -2600,7 +2600,7 @@ var routes = {
 // * all pure functions: no reading outside parms, no modification of parms, no side effects, can be replace with ret value
 // * mostly just take (data, context) objects
 // * all return html
-// * all html without unique html tag has id which includes name of the function
+// * all html without unique html tag has id which includes name of the function which generated it
 
 function html(query_times, head, ...args) {
     return `<!DOCTYPE html><html lang='en'>
@@ -2634,15 +2634,11 @@ function h1(message) {
 
 function post_pagination(post_count, curpage, extra, url) {
 
-    let links    = ''
+    if (!url) return
+
+    let links    = `<span id='post_pagination'>`
     let nextpage = curpage + 1
     let pages    = Math.floor( (post_count + 20) / 20)
-
-    if (!url) {
-        console.log('post_pagination() was passed falsey url')
-        return
-    }
-
     let path     = URL.parse(url).pathname
     let prevpage = curpage - 1
 
@@ -2652,6 +2648,8 @@ function post_pagination(post_count, curpage, extra, url) {
 
     if (curpage < pages) links = links + `&nbsp; <a href='${path}?page=${nextpage}${extra}'>next &raquo;</a>`
 
+    links = links + '</span>'
+
     return links
 }
 
@@ -2659,31 +2657,42 @@ function footer() {
     return `
     <div id='footer' >
         <center>
-        <a href='/users'>users</a> &nbsp;
-        <a href='/about'>about</a> &nbsp;
-        <a href='/post/1302130/2017-01-28-patnet-improvement-suggestions'>suggestions</a> &nbsp;
-        <a href='https://github.com/killelea/node.${CONF.domain}'>source code</a> &nbsp;
-        <a href='mailto:${ CONF.admin_email }' >contact</a> &nbsp;
-        <br>
-        <a href='/topics'>topics</a> &nbsp;
-        <a href='/best'>best comments</a> &nbsp;
-        <a href='/comment_jail'>comment jail</a> &nbsp;
-        <a href='/old?years_ago=1'>old posts by year</a> &nbsp;
-        <br>
-        <a href='/post/1282720/2015-07-11-ten-reasons-it-s-a-terrible-time-to-buy-an-expensive-house'>10 reasons it's a terrible time to buy</a> &nbsp;
-        <br>
-        <a href='/post/1282721/2015-07-11-eight-groups-who-lie-about-the-housing-market'>8 groups who lie about the housing market</a> &nbsp;
-        <br>
-        <a href='/post/1282722/2015-07-11-37-bogus-arguments-about-housing'>37 bogus arguments about housing</a> &nbsp;
-        <br>
-        <a href='/post/1206569/free-bumper-stickers'>get a free bumper sticker:<br><img src='/images/bumpersticker.png' width=300 ></a>
-        <br>
-        <form method='get' action='/search' ><input name='s' type='text' placeholder='search...' size='20' ></form>
+            <a href='/users'>users</a> &nbsp;
+            <a href='/about'>about</a> &nbsp;
+            <a href='/post/1302130/2017-01-28-patnet-improvement-suggestions'>suggestions</a> &nbsp;
+            <a href='https://github.com/killelea/node.${CONF.domain}'>source code</a> &nbsp;
+            <a href='mailto:${ CONF.admin_email }' >contact</a> &nbsp;
+            <br>
+            <a href='/topics'>topics</a> &nbsp;
+            <a href='/best'>best comments</a> &nbsp;
+            <a href='/comment_jail'>comment jail</a> &nbsp;
+            <a href='/old?years_ago=1'>old posts by year</a> &nbsp;
+            <br>
+            <a href='/post/1282720/2015-07-11-ten-reasons-it-s-a-terrible-time-to-buy-an-expensive-house'>10 reasons it's a terrible time to buy</a> &nbsp;
+            <br>
+            <a href='/post/1282721/2015-07-11-eight-groups-who-lie-about-the-housing-market'>8 groups who lie about the housing market</a> &nbsp;
+            <br>
+            <a href='/post/1282722/2015-07-11-37-bogus-arguments-about-housing'>37 bogus arguments about housing</a> &nbsp;
+            <br>
+            <a href='/post/1206569/free-bumper-stickers'>get a free bumper sticker:<br><img src='/images/bumpersticker.png' width=300 ></a>
+            <br>
+            <form method='get' action='/search' ><input name='s' type='text' placeholder='search...' size='20' ></form>
         </center>
-        <div class='fixed'>
-            <a href='#' title='top of page' >top</a> &nbsp; <a href='#footer' title='bottom of page' >bottom</a> &nbsp; <a href='/' title='home page' >home</a>
-        </div>
-        <script>
+        ${nav()}
+        ${like_dislike()}
+    </div>`
+}
+
+function nav() {
+    return `
+    <div class='fixed' id='nav' >
+        <a href='#' title='top of page' >top</a> &nbsp; <a href='#footer' title='bottom of page' >bottom</a> &nbsp; <a href='/' title='home page' >home</a>
+    </div>`
+}
+
+function like_dislike() {
+    return `
+    <script id='like_dislike' >
         function like(content) {
             $.get( "/like?comment_id="+content.split("_")[1], function(data) { document.getElementById(content).innerHTML = data; });
         }
@@ -2696,7 +2705,7 @@ function footer() {
         function postdislike(content) { // For whole post instead of just one comment.
             $.get( "/dislike?post_id="+content.split("_")[1]+"_down", function(data) { document.getElementById(content).innerHTML = data; });
         }
-        </script></div>`
+    </script>`
 }
 
 function follow_topic_button(t, current_user, ip) { // t is the topic to follow, a \w+ string
