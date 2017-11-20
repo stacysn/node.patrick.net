@@ -2710,27 +2710,36 @@ function like_dislike() {
 
 function follow_topic_button(t, current_user, ip) { // t is the topic to follow, a \w+ string
 
-    let b = `<button type="button" class="btn btn-default btn-xs" title="get emails of new posts in ${t}" >follow ${t}</button>`
+    let b = `<button type='button' class='btn btn-default btn-xs' title='get emails of new posts in ${t}' >follow ${t}</button>`
 
-    var unfollow_topic_link = `<span id='unfollow_topic_link' >following<sup>
-                         <a href='#' onclick="$.get('/follow_topic?topic=${t}&undo=1&${create_nonce_parms(ip)}&ajax=1',
-                         function() { document.getElementById('follow').innerHTML = document.getElementById('follow_topic_link').innerHTML }); return false" >x</a></sup></span>`
+    var unfollow_topic_link = `
+        <span id='unfollow_topic_link' >following
+            <sup>
+            <a href='#'
+               title='unfollow ${t}'
+               onclick="$.get('/follow_topic?topic=${t}&undo=1&${create_nonce_parms(ip)}&ajax=1',
+                function() { document.getElementById('follow').innerHTML = document.getElementById('follow_topic_link').innerHTML }); return false" >x</a>
+            </sup>
+        </span>`
 
-    var follow_topic_link = `<span id='follow_topic_link' >
-                       <a href='#' title='get emails of new posts in ${t}'
-                       onclick="$.get('/follow_topic?topic=${t}&${create_nonce_parms(ip)}&ajax=1',
-                       function() { document.getElementById('follow').innerHTML = document.getElementById('unfollow_topic_link').innerHTML }); return false" >${b}</a></span>`
+    var follow_topic_link = `
+        <span id='follow_topic_link'>
+            <a href='#'
+               title='get emails of new posts in ${t}'
+               onclick="$.get('/follow_topic?topic=${t}&${create_nonce_parms(ip)}&ajax=1',
+                function() { document.getElementById('follow').innerHTML = document.getElementById('unfollow_topic_link').innerHTML }); return false" >${b}</a>
+        </span>`
 
     if (current_user
      && current_user.topics
-     && current_user.topics.indexOf(t) !== -1) {
+     && current_user.topics.includes(t)) {
         var follow = `<span id='follow' >${unfollow_topic_link}</span>`
     }
     else {
         var follow = `<span id='follow' >${follow_topic_link}</span>`
     }
 
-    return `<span style='display: none;' > ${follow_topic_link} ${unfollow_topic_link} </span> ${follow}`
+    return `<span style='display: none;' id='follow_topic_button' > ${follow_topic_link} ${unfollow_topic_link} </span> ${follow}`
 }
 
 function header(header_data, topic, page, current_user, login_failed_email, url) {
