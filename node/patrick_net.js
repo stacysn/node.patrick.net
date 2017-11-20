@@ -46,9 +46,9 @@ async function render(req, res) {
     const ip   = req.headers['x-forwarded-for']
     const page = segments(req.url)[1] || 'home'
 
-    if (typeof routes[page] !== 'function') return send(res, 404, {'Content-Type' : 'text/html;charset=utf-8'}, `${page} was not found`, null, ip)
+    if (typeof routes[page] !== 'function') return send(404, {'Content-Type' : 'text/html;charset=utf-8'}, `${page} was not found`, { db: null, ip : ip})
 
-    const db = await get_connection_from_pool(ip).catch(e => send(429, e, context))
+    const db = await get_connection_from_pool(ip).catch(e => send(429, {'Content-Type' : 'text/html;charset=utf-8'}, e, context))
 
     if (!db)                           return send_html(500, 'failed to get db connection from pool', context)
     if (await blocked(db, ip))         return send_html(403, 'ip address blocked', context)
@@ -740,10 +740,10 @@ async function send_login_link(ip, db, post_data) {
     else return `Could not find user with email ${ post_data.user_email }`
 }
 
-function send(res, code, headers, content, db, ip) {
-    res.writeHead(code, headers)
-    res.end(content)
-    release_connection_to_pool(db, ip)
+function send(code, headers, content, context) {
+    context.res.writeHead(code, headers)
+    context.res.end(content)
+    release_connection_to_pool(context.db, context.ip)
 }
 
 function send_html(code, html, context) {
@@ -756,7 +756,7 @@ function send_html(code, html, context) {
         'Expires'        : new Date().toUTCString()
     }
 
-    send(context.res, code, headers, html, context.db, context.ip)
+    send(code, headers, html, context)
 }
 
 async function reset_latest_comment(post_id, db) { // reset post table data about latest comment, esp post_modified time
@@ -811,7 +811,11 @@ async function repair_referer(req, db) { // look at referer to a bad post; if it
     }
 }
 
-function redirect(redirect_to, res, db, ip, code=303) { // put the code at the end; then if it isn't there we get a default
+function redirect(redirect_to, context, code=303) { // put the code at the end; then if it isn't there we get a default
+
+    var db  = context.db
+    var ip  = context.ip
+    var res = context.res
 
     var message = `Redirecting to ${ redirect_to }`
 
@@ -821,7 +825,7 @@ function redirect(redirect_to, res, db, ip, code=303) { // put the code at the e
       'Expires'        : new Date().toUTCString()
     }
 
-    send(res, code, headers, message, db, ip)
+    send(code, headers, message, context)
 }
 
 async function get_moderator(topic, db) {
@@ -941,7 +945,17 @@ async function post_mail(p, db) { // reasons to send out post emails: @user, use
     }
 }
 
-async function login(email, password, db, login_failed_email, current_user, ip, page, res, post, header_data, url) {
+async function login(email, password, context) {
+
+    var current_user       = context.current_user
+    var db                 = context.db
+    var header_data        = context.header_data
+    var ip                 = context.ip
+    var login_failed_email = context.login_failed_email
+    var page               = context.page
+    var post               = context.post
+    var res                = context.res
+    var url                = context.req.url
 
     var user = await get_row('select * from users where user_email = ? and user_pass = ?', [email, md5(password)], db)
 
@@ -987,7 +1001,7 @@ async function login(email, password, db, login_failed_email, current_user, ip, 
         ['Set-Cookie'     , `${pwcookie};   Expires=${decade}; Path=/`]
     ] // do not use 'secure' parm with cookie or will be unable to test login in dev, bc dev is http only
 
-    send(res, 200, headers, content, db, ip)
+    send(200, headers, content, context)
 }
 
 async function ip2country(ip, db) { // probably a bit slow, so don't overuse this
@@ -1128,7 +1142,7 @@ function die(message, context) {
 var routes = {
 
     about : async function(context) {
-        redirect(`/post/${CONF.about_post_id}`, context.res, context.db, context.ip)
+        redirect(`/post/${CONF.about_post_id}`, context)
     },
 
     accept_comment : async function(context) { // insert new comment
@@ -1245,10 +1259,10 @@ var routes = {
             // now select the inserted row so that we pick up the comment_post_id
             let comment = await get_row('select * from comments where comment_id = ?', [comment_id], context.db)
 
-            if (comment.comment_adhom_when) redirect(`/comment_jail#comment-${comment_id}`, context.res, context.db, context.ip)
+            if (comment.comment_adhom_when) redirect(`/comment_jail#comment-${comment_id}`, context)
             else {
                 let offset = await cid2offset(comment.comment_post_id, comment_id, context.db)
-                redirect(`/post/${comment.comment_post_id}?offset=${offset}#comment-${comment_id}`, context.res, context.db, context.ip)
+                redirect(`/post/${comment.comment_post_id}?offset=${offset}#comment-${comment_id}`, context)
             }
         }
     },
@@ -1305,7 +1319,7 @@ var routes = {
 
         var post_row = await get_post(p, context.db)
 
-        redirect(post2path(post_row), context.res, context.db, context.ip)
+        redirect(post2path(post_row), context)
     },
 
     approve_comment : async function(context) {
@@ -1753,7 +1767,7 @@ var routes = {
 
         var p
 
-        if (p = intval(_GET(context.req.url, 'p'))) return redirect(`/post/${p}`, context.res, context.db, context.ip, 301) // legacy redirect for cases like /?p=1216301
+        if (p = intval(_GET(context.req.url, 'p'))) return redirect(`/post/${p}`, context, 301) // legacy redirect for cases like /?p=1216301
 
         let current_user_id = context.current_user ? context.current_user.user_id : 0
 
@@ -1823,8 +1837,7 @@ var routes = {
             // erase key so it cannot be used again, and set new password
             await query('update users set user_activation_key=null, user_pass=? where user_activation_key=?', [md5(password), key], context.db)
 
-            login(email, password, context.db, context.login_failed_email, context.current_user, context.ip, context.page, context.res, context.post,
-            context.header_data, context.req.url)
+            login(email, password, context)
         }
         else {
 
@@ -1953,7 +1966,7 @@ var routes = {
             ['Set-Cookie'     , `${ CONF.pwcookie   }=_; Expires=${d}; Path=/`]
         ] // do not use 'secure' parm with cookie or will be unable to test login in dev, bc dev is http only
 
-        send(context.res, 200, headers, html, context.db, context.ip)
+        send(200, headers, html, context)
     },
 
     new_post : async function(context) {
@@ -2018,7 +2031,7 @@ var routes = {
         }
         catch(e) { console.log(e) } // try-catch for case where ip is already in nukes table somehow
 
-        redirect(context.req.headers.referer, context.res, context.db, context.ip) 
+        redirect(context.req.headers.referer, context) 
     },
 
     old : async function(context) {
@@ -2060,7 +2073,7 @@ var routes = {
         var c
         if (c = _GET(context.req.url, 'c')) { // permalink to a comment
             let offset = await cid2offset(post_id, c, context.db)
-            return redirect(`/post/${post_id}?offset=${offset}#comment-${c}`, context.res, context.db, context.ip)
+            return redirect(`/post/${post_id}?offset=${offset}#comment-${c}`, context)
         }
 
         let p = await get_row(`select * from posts
@@ -2119,7 +2132,7 @@ var routes = {
 
     post_login : async function(context) {
         let post_data = await collect_post_data_and_trim(context)
-        login(post_data.email, post_data.password, context.db, context.login_failed_email, context.current_user, context.ip, context.page, context.res, context.post, context.header_data, context.req.url)
+        login(post_data.email, post_data.password, context)
     },
 
     post_moderation : async function (context) {
@@ -2145,7 +2158,7 @@ var routes = {
         let rand = await get_var(`select round(rand() * (select count(*) from posts)) as r`, [], context.db)
         let p    = await get_var(`select post_id from posts limit 1 offset ?`, [rand], context.db)
 
-        redirect(`/post/${p}`, context.res, context.db, context.ip)
+        redirect(`/post/${p}`, context)
     },
 
     recoveryemail : async function(context) {
@@ -2251,7 +2264,7 @@ var routes = {
 
         let offset = await cid2offset(p, c, context.db)
         let post = await get_post(p, context.db)
-        redirect(`${post2path(post)}?offset=${offset}#comment-${c}`, context.res, context.db, context.ip)
+        redirect(`${post2path(post)}?offset=${offset}#comment-${c}`, context)
     },
 
     topic : async function(context) {
@@ -2362,7 +2375,7 @@ var routes = {
                 else                                  return die(`Something went wrong with save`, context)
              })
 
-        redirect('/edit_profile?updated=true', context.res, context.db, context.ip)
+        redirect('/edit_profile?updated=true', context)
     },
 
     upload : async function(context) {
@@ -2407,7 +2420,7 @@ var routes = {
                     await query(`update users set user_icon_width  = ? where user_id = ?`, [dims[0],                     id], context.db)
                     await query(`update users set user_icon_height = ? where user_id = ?`, [dims[1],                     id], context.db)
 
-                    return redirect('/edit_profile', context.res, context.db, context.ip)
+                    return redirect('/edit_profile', context)
                 }
                 else { // uploading image link to post or comment text area
                     if (dims[0] > 600) {
