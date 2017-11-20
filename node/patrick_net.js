@@ -2562,7 +2562,7 @@ var routes = {
             midpage(
                 h1(message),
                 `<p><a href='${next_page}'>next page &raquo;</a><p>`,
-                render_user_list(users, _GET(context.req.url, 'd')),
+                user_list(users, _GET(context.req.url, 'd')),
                 `<hr><a href='${next_page}'>next page &raquo;</a>`
             )
         )
@@ -2864,12 +2864,13 @@ function contextual_link(c, current_user, url, ip) { // a link in the comment he
 
 function render_query_times(start_time, queries) {
     var db_total_ms = 0
+
     var queries = queries.sortByProp('ms').map( (item) => {
         db_total_ms += item.ms
         return `${ item.ms }ms ${ item.sql }`
     }).join('\n')
 
-    return `<span id='render_query_times'>
+    return `<span id='render_query_times' >
                 <!-- ${'\n' + queries + '\n'}\n${db_total_ms} ms db\n${Date.now() - start_time} ms total time -->
             </span>`
 }
@@ -2939,19 +2940,26 @@ function client_side_js() {
 }
 
 function render_watch_indicator(want_email) {
-    return want_email ? `<img src='/content/openeye.png'> unwatch` : `<img src='/content/closedeye.png'> watch`
+    return want_email ? `<img src='/content/openeye.png' > unwatch` : `<img src='/content/closedeye.png' > watch`
 }
 
-function render_user_list(users, d) {
+function user_search_box() {
+    return `
+    <form name='input' action='/users' method='get' >
+        <input type='text' size=40 maxlength=80 name='user_name' autofocus />
+        <input type='submit' value='User Search' />
+    </form>`
+}
+
+function user_list(users, d) {
 
     d = d ? d.replace(/[^adesc]/, '').substring(0,4)  : 'desc' // asc or desc
     let i = (d === 'desc') ? 'asc' : 'desc'                    // invert asc or desc
 
     let header = `
-    <form name='input' action='/users' method='get' >
-    <input type='text' size=40 maxlength=80 name='user_name' autofocus />
-    <input type='submit' value='User Search' />
-    </form><p>
+    <div id='user_list' >
+    ${user_search_box()}
+    <p>
     <table width='100%' cellpadding='10' style="overflow-x:auto;" ><tr>
     <th ></th>
     <th                    ><a href='/users?ob=user_name&d=${ i }'       title='order by user name' >Username</a></th>
@@ -2987,7 +2995,7 @@ function render_user_list(users, d) {
     }
     else var result = 'no such user'
 
-    return header + result + '</table>'
+    return header + result + '</table></div>'
 }
 
 function render_user_icon(u, scale=1, img_parms='') { // clickable icon for this user if they have icon
@@ -2996,12 +3004,13 @@ function render_user_icon(u, scale=1, img_parms='') { // clickable icon for this
     var user_icon_height = Math.round(u.user_icon_height * scale)
 
     return u.user_icon ?
-            `<a href='/user/${ u.user_name }'><img src='${u.user_icon}' width='${user_icon_width}' height='${user_icon_height}' ${img_parms} ></a>`
-            : ''
+            `<a href='/user/${ u.user_name }' id='render_user_icon' >
+                <img src='${u.user_icon}' width='${user_icon_width}' height='${user_icon_height}' ${img_parms} >
+             </a>` : ''
 }
 
 function user_link(u) {
-    return `<a href='/user/${ u.user_name }'>${ u.user_name }</a>`
+    return `<a href='/user/${ u.user_name }' id='user_link' >${ u.user_name }</a>`
 }
 
 function follow_user_button(u, current_user, ip) { // u is the user to follow, a row from users table
