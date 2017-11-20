@@ -48,11 +48,11 @@ async function render(req, res) {
 
     if (typeof routes[page] !== 'function') return bail(res, 404, `${page} was not found`)
 
-    const db = await get_connection_from_pool(ip)
+    const db = await get_connection_from_pool(ip).catch(e => send_html(500, e, res, null, ip))
 
-    if (!db)                           return bail(res, 500, 'failed to get db connection from pool')
-    if (await blocked(db, ip))         return bail(res, 403, 'ip address blocked')
-    if (await block_countries(db, ip)) return bail(res, 403, 'permission denied to evil country')
+    if (!db)                           return send_html(500, 'failed to get db connection from pool', res, db, ip)
+    if (await blocked(db, ip))         return send_html(403, 'ip address blocked', res, db, ip)
+    if (await block_countries(db, ip)) return send_html(403, 'permission denied to evil country', res, db, ip)
 
     const context = { db, ip, page, req, res }
     context.current_user = await get_user(context)
@@ -68,17 +68,12 @@ async function render(req, res) {
     }
 }
 
-function bail(res, code, message) {
-    res.writeHead(code, { 'Content-Type' : 'text/plain' })
-    res.end(message)
-}
-
 function get_connection_from_pool(ip) {
 
     return new Promise(function(resolve, reject) {
 
         if (LOCKS[ip]) {
-            console.trace()
+            console.log(`rate limit exceeded by ${ip}`)
             return reject('rate limit exceeded')
         }
 
