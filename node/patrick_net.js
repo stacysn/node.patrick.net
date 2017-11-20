@@ -1644,11 +1644,11 @@ var routes = {
                 head(CONF.stylesheet, CONF.description, context.post ? context.post.post_title : CONF.domain),
                 header(context.header_data, context.post ? context.post.post_topic : null, context.page, context.current_user, context.login_failed_email, context.req.url),
                 midpage(
-                    comment_edit_box(comment, context.current_user, context.ip)
+                    comment_edit_box(comment, context)
                 )
             )
 
-            send_html(200, content, context.res, context.db, context.ip)
+            send_html(200, content, context)
         }
     },
 
@@ -3621,7 +3621,10 @@ function post_form(p, post) { // used both for composing new posts and for editi
     ${render_upload_form()}`
 }
 
-function comment_edit_box(comment, current_user, ip) { // edit existing comment, redirect back to whole post page
+function comment_edit_box(comment, context) { // edit existing comment, redirect back to whole post page
+
+    var current_user = context.current_user
+    var ip           = context.ip
 
     comment.comment_content = newlineify(comment.comment_content)
 
