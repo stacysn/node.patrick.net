@@ -25,7 +25,7 @@ const URL         = require('url')
 const BASEURL     = ('dev' === process.env.environment) ? CONF.baseurl_dev : CONF.baseurl // CONF.baseurl_dev is for testing
 const POOL        = MYSQL.createPool(CONF.db)
 
-process.on('unhandledRejection', (reason, p) => {
+process.on('unhandledRejection', (reason, p) => { // very valuable for debugging unhandled promise rejections
     console.log('Unhandled Rejection at promise:', p, 'reason:', reason)
     console.log(reason.stack)
 })
@@ -580,58 +580,6 @@ function render_date(gmt_date, utz='America/Los_Angeles', format='YYYY MMM D, h:
     return MOMENT(Date.parse(gmt_date)).tz(utz).format(format)
 }
 
-function render_user_info(u, current_user, ip) {
-    let img = render_user_icon(u)
-
-    if (current_user && u.user_id === current_user.user_id) {
-        var edit_or_logout = `<div style='float:right'>
-        <b><a href='/edit_profile'>edit profile</a> &nbsp; 
-           <a href='#' onclick="$.get('/logout', function(data) { $('#status').html(data) });return false">logout</a></b><p>
-        </div><div style='clear: both;'></div>`
-    }
-    else var edit_or_logout = ''
-
-    let offset = (u.user_comments - 40 > 0) ? u.user_comments - 40 : 0
-
-    var unignore_link = `<span id='unignore_link' >ignoring ${u.user_name}<sup>
-                         <a href='#' onclick="$.get('/ignore?other_id=${u.user_id}&undo=1&${create_nonce_parms(ip)}',
-                         function() { document.getElementById('ignore').innerHTML = document.getElementById('ignore_link').innerHTML }); return false" >x</a></sup></span>`
-
-    var ignore_link = `<span id='ignore_link' >
-                       <a href='#' title='hide all posts and comments by ${u.user_name}'
-                       onclick="$.get('/ignore?other_id=${u.user_id}&${create_nonce_parms(ip)}',
-                       function() { document.getElementById('ignore').innerHTML = document.getElementById('unignore_link').innerHTML }); return false" >ignore</a></span>`
-
-    if (current_user
-     && current_user.relationships
-     && current_user.relationships[u.user_id]
-     && current_user.relationships[u.user_id].rel_i_ban) {
-        var ignore = `<span id='ignore' >${unignore_link}</span>`
-    }
-    else {
-        var ignore = `<span id='ignore' >${ignore_link}</span>`
-    }
-
-    var ban_links = ''
-    if (current_user && current_user.is_moderator_of.length) {
-        ban_links = current_user.is_moderator_of.map(topic => render_ban_link(u, topic, current_user, ip)).join('<br>')
-    }
-
-    return `${edit_or_logout}
-            <center>
-            <a href='/user/${u.user_name}' >${ img }</a><h2>${u.user_name}</h2>
-            ${u.user_aboutyou || ''}
-            <p>joined ${ render_date(u.user_registered) } &nbsp;
-            ${u.user_country ? u.user_country : ''}
-            ${u.user_posts.number_format()} posts &nbsp;
-            <a href='/comments?a=${encodeURI(u.user_name)}&offset=${offset}'>${ u.user_comments.number_format() } comments</a> &nbsp;
-            ${follow_user_button(u, current_user, ip)} &nbsp;
-            <span style='display: none;' > ${ignore_link} ${unignore_link} </span>
-            ${ignore}
-            <p>
-            ${ban_links}
-            </center>`
-}
 
 function create_nonce_parms(ip) {
     let ts = Date.now() // current unix time in ms
@@ -655,64 +603,6 @@ function post2path(post) {
     return `/post/${post.post_id}/${slug}`
 }
 
-function post(post, ip, current_user) { // format a single post for display
-
-    let uncivil       = ''
-    let arrowbox_html = arrowbox(post)
-    let icon          = render_user_icon(post, 1, `align='left' hspace='5' vspace='2'`)
-    let link          = post_link(post)
-    let nonce_parms   = create_nonce_parms(ip)
-
-    if (current_user && current_user.user_pbias >= 3) {
-
-        if (!post.post_title.match(/thunderdome/)) {
-            let confirm_uncivil = `onClick="javascript:return confirm('Really mark as uncivil?')"`
-            uncivil = ` &nbsp; <a href='/uncivil?p=${post.post_id}&${nonce_parms}' ${confirm_uncivil} title='attacks person, not point' >uncivil</a> &nbsp;` 
-        }
-    }
-
-    // watch toggle
-    var watcheye = `<a href='#' id='watch' onclick="$.get('/watch?post_id=${post.post_id}&${nonce_parms}', function(data) {
-    document.getElementById('watch').innerHTML = data; });
-    return false" title='comments by email'>${render_watch_indicator(post.postview_want_email)}</a>`
-
-    let edit_link = ''
-    if (current_user && ((current_user.user_id === post.post_author) || (current_user.user_level >= 4)) ) {
-        edit_link = `<a href='/edit_post?p=${post.post_id}&${nonce_parms}'>edit</a> &nbsp; `
-    }
-
-    let delete_link = ''
-    if (current_user && ((current_user.user_id === post.post_author && !post.post_comments) || (current_user.user_level >= 4))) {
-        delete_link = ` &nbsp; <a href='/delete_post?post_id=${post.post_id}&${nonce_parms}' 
-                       onClick="javascript:return confirm('Really delete?')" id='delete_post' >delete</a> &nbsp;` 
-    }
-
-    post.user_name = post.user_name || 'anonymous' // so we don't display 'null' in case the post is anonymous
-
-    var utz = current_user ? current_user.user_timezone : 'America/Los_Angeles'
-
-    return `<div class='comment' >${arrowbox_html} ${icon} <h2 style='display:inline' >${ link }</h2>
-            <p>By ${user_link(post)} ${follow_user_button(post, current_user, ip)} &nbsp; ${render_date(post.post_date, utz)} ${uncivil}
-            ${post.post_views.number_format()} views &nbsp; ${post.post_comments.number_format()} comments &nbsp;
-            ${watcheye} &nbsp;
-            <a href="#commentform" onclick="addquote( '${post.post_id}', '0', '0', '${post.user_name}' ); return false;"
-               title="Select some text then click this to quote" >quote</a> &nbsp;
-            &nbsp; ${share_post(post)} &nbsp; ${edit_link} ${delete_link}
-            <p><hr><div class="entry" class="alt" id="comment-0-text" >${ post.post_content }</div></div>`
-}
-
-function post_link(post) {
-    let path = post2path(post)
-    return `<a href='${path}' title='patrick.net' >${post.post_title}</a>`
-}
-
-function share_post(post) {
-    let share_title = encodeURI(post.post_title).replace(/%20/g,' ')
-    let share_link  = encodeURI('https://' + CONF.domain +  post2path(post) )
-    return `<a href='mailto:?subject=${share_title}&body=${share_link}' title='email this' >share
-            <img src='/images/mailicon.jpg' width=15 height=12 ></a>`
-}
-
 function maybe(path) { // maybe the object path exists, maybe not
     // we pass in a string, evaluate as an object path, then return the value or null
     // if some object path does not exit, don't just bomb with "TypeError: Cannot read property 'whatever' of null"
@@ -723,350 +613,8 @@ function maybe(path) { // maybe the object path exists, maybe not
     catch(e) { return null }
 }
 
-function midpage(...args) { // just an id so we can easily swap out the middle of the page
-    return `<div id="midpage" >
-        ${ args.join('') }
-        </div>`
-}
-
-function new_post_button() {
-    return '<a href="/new_post" class="btn btn-success btn-sm" title="start a new post" ><b>new post</b></a>'
-}
-
-function popup(message) {
-    return `<script type='text/javascript'> alert('${ message }');</script>`
-}
-
-function lostpwform(login_failed_email) {
-    var show = login_failed_email ? `value='${ login_failed_email }'` : `placeholder='email address'`
-
-    return `
-    <div id='lostpwform' >
-        <h1>reset password</h1>
-        <form action='/recoveryemail' method='post'>
-            <div class='form-group'><input type='text' name='user_email' ${ show } class='form-control' id='lost_pw_email' ></div>
-            <button type='submit' id='submit' class='btn btn-success btn-sm'>submit</button>
-        </form>
-        <script type="text/javascript">document.getElementById('lost_pw_email').focus();</script>
-    </div>`
-}
-
-function get_edit_link(c, current_user, ip) {
-
-    if (!current_user) return ''
-
-    if ((current_user.user_id === c.comment_author) || (current_user.user_level === 4)) {
-        return `<a href='/edit_comment?c=${c.comment_id}&${create_nonce_parms(ip)}'>edit</a>`
-    }
-
-    return ''
-}
-
-function get_nuke_link(c, current_user, ip, req) {
-
-    if (!current_user) return ''
-
-    if (!req.url) {
-        console.log('get_nuke_link() was passed falsey req.url')
-        return
-    }
-
-    return (URL.parse(req.url).pathname.match(/comment_moderation/) && (current_user.user_level === 4)) ?
-        `<a href='/nuke?nuke_id=${c.comment_author}&${create_nonce_parms(ip)}' onClick='javascript:return confirm("Really?")' >nuke</a>`
-        : ''
-}
-
-function id_box(current_user) {
-
-    var img = render_user_icon(current_user, 0.4, `'align='left' hspace='5' vspace='2'`) // scale image down
-
-    return `
-        <div id='status' >
-            ${img}<a href='/user/${current_user.user_name}' >${current_user.user_name}</a>
-        </div>`
-}
-
 function invalid_nonce_message() {
     return `invalid nonce. reload this page and try again`
-}
-
-function loginprompt(login_failed_email) {
-
-    return `
-        <div id='status' >
-            ${ login_failed_email ? 'login failed' : '' }
-            <form id='loginform' >
-                <fieldset>
-                    <input id='email'    name='email'    placeholder='email'    type='text'     required >
-                    <input id='password' name='password' placeholder='password' type='password' required >
-                </fieldset>
-                <fieldset>
-                    <input type='submit' id='submit' value='log in'
-                        onclick="$.post('/post_login', $('#loginform').serialize()).done(function(data) { $('#status').html(data) });return false">
-                    <a href='#' onclick="midpage.innerHTML = lostpwform.innerHTML;  return false" >forgot password</a> /
-                    <a href='#' onclick="midpage.innerHTML = registerform.innerHTML; return false" >register</a>
-                </fieldset>
-            </form>
-            <div style='display: none;' >
-                ${ lostpwform(login_failed_email)   }
-                ${ registerform() }
-            </div>
-        </div>`
-}
-
-function icon_or_loginprompt(current_user, login_failed_email) {
-    if (current_user) return id_box(current_user)
-    else              return loginprompt(login_failed_email)
-}
-
-function comment_box(post, current_user, ip) { // add new comment, just updates page without reload
-
-    let url = `/accept_comment?${create_nonce_parms(ip)}` // first href on button below is needed for mocha test
-    return `<hr>Comment as
-    ${current_user ? current_user.user_name : ip2anon(ip) }
-    ${current_user ? '' : ' or <a href="#">log in</a> at top of page'}:
-    ${render_upload_form()}
-    <form id='commentform' >
-        <textarea id='ta' name='comment_content' class='form-control' rows='10' ></textarea><p>
-        <input type='hidden' name='comment_post_id' value='${post.post_id}' />
-        <button class='btn btn-success btn-sm' id='accept_comment' href=${url} 
-            onclick="$.post('${url}', $('#commentform').serialize()).done(function(response) {
-                response = JSON.parse(response) // was a string, now is an object
-                $('#comment_list').append(response.content)
-                if (!response.err) document.getElementById('commentform').reset() // don't clear the textbox if error
-            }).fail(function() {
-                $('#comment_list').append('something went wrong on the server ')
-            })
-            return false" >submit</button>
-    </form>`
-}
-
-function comment_pagination(comments, url) { // get pagination links for a single page of comments
-
-    if (!comments)                 return
-    if (comments.found_rows <= 40) return // no pagination links needed if one page or less
-
-    let total    = comments.found_rows
-    let ret      = `<p id='comments'>`
-    if (!url) {
-        console.log('comment_pagination() was passed falsey url')
-        return
-    }
-    let pathname = URL.parse(url).pathname // "pathNAME" is url path without the ? parms, unlike "path"
-    let query    = URL.parse(url).query
-
-    // offset is mysql offset, ie greatest row number to exclude from the result set
-    // offset missing from url -> showing last  40 comments in set (same as total - 40)
-    // offset 0                -> showing first 40 comments in set
-    // offset n                -> showing first 40 comments after n
-
-    if (!query || !query.match(/offset=\d+/)) { // we are on the last page of comments, ie offset = total - 40
-        var offset          = total - 40
-        var previous_offset = (total - 80 > 0) ? total - 80 : 0 // second to last page
-        var q               = query ? (query + '&') : ''
-
-        var first_link      = `${pathname}?${q}offset=0#comments`
-        var previous_link   = `${pathname}?${q}offset=${previous_offset}#comments`
-        // there is no next_link because we are necessarily on the last page of comments
-        var last_link       = `${pathname}${q ? ('?' + q) : ''}#last` // don't include the question mark unless q
-    }
-    else { // there is a query string, and it includes offset
-        var offset          = intval(_GET(url, 'offset'))
-        var previous_offset = (offset - 40 > 0) ? offset - 40 : 0
-        var next_offset     = (offset + 40 > total - 40) ? total - 40 : offset + 40 // last page will always be 40 comments
-
-        if (offset !== 0) { // don't need these links if we are on the first page
-            var first_link    = `${pathname}?${query.replace(/offset=\d+/, 'offset=0')}#comments`
-            var previous_link = `${pathname}?${query.replace(/offset=\d+/, 'offset=' + previous_offset)}#comments`
-        }
-
-        if (offset < total - 40) { // don't need next link on last page
-            var next_link = `${pathname}?${query.replace(/offset=\d+/, 'offset=' + next_offset)}#comments`
-        }
-
-        var last_link = `${pathname}?${query.replace(/offset=\d+/, 'offset=' + (total - 40))}#last`
-    }
-
-    if (typeof first_link !== 'undefined') {
-        ret = ret + `<a href='${first_link}' title='Jump to first comment' >&laquo; First</a> &nbsp; &nbsp;`
-    }
-
-    if (typeof previous_link !== 'undefined') {
-         ret = ret + `<a href='${previous_link}' title='Previous page of comments' >&laquo; Previous</a> &nbsp; &nbsp; `
-    }
-
-    let max_on_this_page = (total > offset + 40) ? offset + 40 : total
-    ret = ret + `Comments ${offset + 1} - ${max_on_this_page} of ${total.number_format()} &nbsp; &nbsp; `
-
-    if (typeof next_link !== 'undefined') {
-         ret = ret + `<a href='${next_link}' title='Next page of comments' >Next &raquo;</a> &nbsp; &nbsp; `
-    }
-
-    return ret + `<a href='${last_link}' title='Jump to last comment' >Last &raquo;</a></br>`
-}
-
-function post_form(p, post) { // used both for composing new posts and for editing existing posts; distinction is the presence of p, the post_id
-
-    // todo: add conditional display of user-name chooser for non-logged in users
-
-    if (p) {
-        var fn = 'edit'
-        var title = post.post_title.replace(/'/g, '&apos;') // replace to display correctly in single-quoted html value below
-        var content = newlineify(post.post_content.replace(/'/g, '&apos;'))
-        var post_id = `<input type='hidden' name='post_id' value='${post.post_id}' />`
-    }
-    else {
-        var fn = 'new post'
-        var title = ''
-        var content = ''
-        var post_id = ''
-    }
-
-    return `
-    <h1>${fn}</h1>
-    <form action='/accept_post' method='post' name='postform' onsubmit='return checkforhash()' >
-        <div class='form-group'><input name='post_title' type='text' class='form-control' placeholder='title' id='title' value='${title}' ></div>
-        <textarea class='form-control' name='post_content' rows='12' id='ta' name='ta'
-            placeholder='please include one of these topic hashtags at the beginning of a line to classify your post:
-#cheesecake
-#crime
-#economics
-#environment
-#housing
-#humor
-#investing
-#misc
-#politics
-#religion
-#scitech ' >${content}</textarea><p>
-        ${post_id}
-        <button type='submit' id='submit' class='btn btn-success btn-sm' >submit</button>
-    </form>
-    <script type='text/javascript'>
-
-    document.getElementById('title').focus();
-
-    function checkforhash() {
-        let text = document.forms['postform']['ta'].value;
-
-        if (!text.match(/#\\w+/gm)) {
-            alert('Please include a topic hashtag like #investing or #politics at the beginning of a line.');
-            return false;
-        }
-        else return true;
-    }
-    </script>
-    ${render_upload_form()}`
-}
-
-function comment_edit_box(comment, current_user, ip) { // edit existing comment, redirect back to whole post page
-
-    comment.comment_content = newlineify(comment.comment_content)
-
-    return `
-    <h1>edit comment</h1>
-    ${current_user ? render_upload_form() : ''}
-    <form id='commentform' action='/accept_edited_comment?${create_nonce_parms(ip)}' method='post' >
-        <textarea id='ta' name='comment_content' class='form-control' rows='10' placeholder='write a comment...' >${comment.comment_content}</textarea><p>
-        <input type='hidden' name='comment_id' value='${comment.comment_id}' />
-        <button type='submit' id='submit' class='btn btn-success btn-sm'>submit</button>
-    </form>
-    <script type="text/javascript">document.getElementById('ta').focus();</script>`
-}
-
-function post_list(posts, ip, url, current_user) { // format a list of posts from whatever source
-
-    if (posts) {
-        let nonce_parms = create_nonce_parms(ip)
-        let moderation = 0
-
-        if (!url) {
-            console.log('post_list() was passed falsey url')
-            return
-        }
-
-        if (URL.parse(url).pathname.match(/post_moderation/) && (current_user.user_level === 4)) moderation = 1
-        
-        var formatted = posts.map(post => {
-
-            if (!current_user && post.post_title.match(/thunderdome/gi)) return '' // hide thunderdome posts if not logged in
-            if (!current_user && post.post_nsfw)                         return '' // hide porn posts if not logged in
-
-            let net = post.post_likes - post.post_dislikes
-
-            if (current_user) { // user is logged in
-                if (!post.postview_last_view)
-                    var unread = `<a href='${post2path(post)}' ><img src='/content/unread_post.gif' width='45' height='16' title='You never read this one' ></a>`
-                else 
-                    var unread = render_unread_comments_icon(post, post.postview_last_view, current_user) // last view by this user, from left join
-            }
-            else var unread = ''
-
-            let ago           = MOMENT(post.post_modified).fromNow();
-
-            if (post.post_topic)
-                var hashlink      = `in <a href='/topic/${post.post_topic}'>#${post.post_topic}</a>`
-            else
-                var hashlink      = ``
-
-            let imgdiv        = (current_user && current_user.user_hide_post_list_photos) ? '' : get_first_image(post)
-            let arrowbox_html = arrowbox(post)
-            let firstwords    = `<font size='-1'>${first_words(post.post_content, 30)}</font>`
-
-            if (moderation) {
-                var approval_link = `<a href='#' onclick="$.get('/approve_post?post_id=${ post.post_id }&${nonce_parms}', function() { $('#post-${ post.post_id }').remove() }); return false">approve</a>`
-                var delete_link = ` &nbsp; <a href='/delete_post?post_id=${post.post_id}&${nonce_parms}' onClick="javascript:return confirm('Really delete?')" id='delete_post' >delete</a> &nbsp;`
-                var nuke_link = `<a href='/nuke?nuke_id=${post.post_author}&${create_nonce_parms(ip)}' onClick='javascript:return confirm("Really?")' >nuke</a>`
-            }
-            else {
-                var approval_link = ''
-                var delete_link = ''
-                var nuke_link = ''
-            }
-
-            if (post.post_comments) {
-                let s = (post.post_comments === 1) ? '' : 's';
-                let path = post2path(post)
-                // should add commas to post_comments here
-                var latest = `<a href='${path}'>${post.post_comments}&nbsp;comment${s}</a>, latest <a href='${path}#comment-${post.post_latest_comment_id}' >${ago}</a>`
-            }
-            else var latest = `<a href='${post2path(post)}'>Posted ${ago}</a>`
-
-            if (current_user                                 &&
-                current_user.relationships[post.post_author] &&
-                current_user.relationships[post.post_author].rel_i_ban) var hide = `style='display: none'`
-            else var hide = ''
-
-            var link = `<b>${post_link(post)}</b>`
-            let extlinks = get_external_links(post.post_content)
-            if (extlinks && extlinks.length && URL.parse(extlinks[0]).host) {
-                var host = URL.parse(extlinks[0]).host.replace(/www./, '').substring(0, 31)
-                link += ` (<a href='${brandit(extlinks[0])}' target='_blank' title='original story' >${host})</a>`
-            }
-
-            var utz = current_user ? current_user.user_timezone : 'America/Los_Angeles'
-            var date = render_date(post.post_date, utz, 'D MMM YYYY')
-
-            return `<div class='post' id='post-${post.post_id}' ${hide} >${arrowbox_html}${imgdiv}${link}
-            <br>by <a href='/user/${ post.user_name }'>${ post.user_name }</a> ${hashlink} on ${date}&nbsp;
-            ${latest} ${unread} ${approval_link} ${delete_link} ${nuke_link}<br>${firstwords}</div>`
-        })
-    }
-    else formatted = []
-
-    return formatted.join('')
-}
-
-function get_first_image(post) {
-
-    let c = CHEERIO.load(post.post_content)
-
-    if (!c('img').length) return ''
-
-    if (post.post_nsfw)
-        return `<div class='icon' ><a href='${post2path(post)}' ><img src='/images/nsfw.png' border=0 width=100 align=top hspace=5 vspace=5 ></a></div>`
-    else
-        return `<div class='icon' ><a href='${post2path(post)}' ><img src='${c('img').attr('src')}' border=0 width=100 align=top hspace=5 vspace=5 ></a></div>`
 }
 
 function get_external_links(content) {
@@ -1120,7 +668,6 @@ function clean_upload_path(path, filename, current_user) {
     return filename
 }
 
-
 function which_page(page, order) { // tell homepage, search, userpage, topic which page we are on
 
     let curpage = Math.floor(page) ? Math.floor(page) : 1
@@ -1143,16 +690,6 @@ function which_page(page, order) { // tell homepage, search, userpage, topic whi
 function _GET(url, parm) { // given a string, return the GET parameter by that name
     if (!url) return ''
     return URL.parse(url, true).query[parm]
-}
-
-function comment_list(comments, current_user, ip, req) { // format one page of comments
-    let ret = `<div id='comment_list' >`
-    ret = ret +
-        (comments.length ? comments.map(item => {
-            return format_comment(item, current_user, ip, req, comments, _GET(req.url, 'offset')) })
-            .join('') : '<b>no comments found</b>')
-    ret = ret + `</div>`
-    return ret
 }
 
 async function get_post(post_id, db) {
@@ -3708,5 +3245,468 @@ function profile_form(updated, context) {
     else
         ret += 'none'
 
+    return ret
+}
+
+function render_user_info(u, current_user, ip) {
+    let img = render_user_icon(u)
+
+    if (current_user && u.user_id === current_user.user_id) {
+        var edit_or_logout = `<div style='float:right'>
+        <b><a href='/edit_profile'>edit profile</a> &nbsp; 
+           <a href='#' onclick="$.get('/logout', function(data) { $('#status').html(data) });return false">logout</a></b><p>
+        </div><div style='clear: both;'></div>`
+    }
+    else var edit_or_logout = ''
+
+    let offset = (u.user_comments - 40 > 0) ? u.user_comments - 40 : 0
+
+    var unignore_link = `<span id='unignore_link' >ignoring ${u.user_name}<sup>
+                         <a href='#' onclick="$.get('/ignore?other_id=${u.user_id}&undo=1&${create_nonce_parms(ip)}',
+                         function() { document.getElementById('ignore').innerHTML = document.getElementById('ignore_link').innerHTML }); return false" >x</a></sup></span>`
+
+    var ignore_link = `<span id='ignore_link' >
+                       <a href='#' title='hide all posts and comments by ${u.user_name}'
+                       onclick="$.get('/ignore?other_id=${u.user_id}&${create_nonce_parms(ip)}',
+                       function() { document.getElementById('ignore').innerHTML = document.getElementById('unignore_link').innerHTML }); return false" >ignore</a></span>`
+
+    if (current_user
+     && current_user.relationships
+     && current_user.relationships[u.user_id]
+     && current_user.relationships[u.user_id].rel_i_ban) {
+        var ignore = `<span id='ignore' >${unignore_link}</span>`
+    }
+    else {
+        var ignore = `<span id='ignore' >${ignore_link}</span>`
+    }
+
+    var ban_links = ''
+    if (current_user && current_user.is_moderator_of.length) {
+        ban_links = current_user.is_moderator_of.map(topic => render_ban_link(u, topic, current_user, ip)).join('<br>')
+    }
+
+    return `${edit_or_logout}
+            <center>
+            <a href='/user/${u.user_name}' >${ img }</a><h2>${u.user_name}</h2>
+            ${u.user_aboutyou || ''}
+            <p>joined ${ render_date(u.user_registered) } &nbsp;
+            ${u.user_country ? u.user_country : ''}
+            ${u.user_posts.number_format()} posts &nbsp;
+            <a href='/comments?a=${encodeURI(u.user_name)}&offset=${offset}'>${ u.user_comments.number_format() } comments</a> &nbsp;
+            ${follow_user_button(u, current_user, ip)} &nbsp;
+            <span style='display: none;' > ${ignore_link} ${unignore_link} </span>
+            ${ignore}
+            <p>
+            ${ban_links}
+            </center>`
+}
+
+function post(post, ip, current_user) { // format a single post for display
+
+    let uncivil       = ''
+    let arrowbox_html = arrowbox(post)
+    let icon          = render_user_icon(post, 1, `align='left' hspace='5' vspace='2'`)
+    let link          = post_link(post)
+    let nonce_parms   = create_nonce_parms(ip)
+
+    if (current_user && current_user.user_pbias >= 3) {
+
+        if (!post.post_title.match(/thunderdome/)) {
+            let confirm_uncivil = `onClick="javascript:return confirm('Really mark as uncivil?')"`
+            uncivil = ` &nbsp; <a href='/uncivil?p=${post.post_id}&${nonce_parms}' ${confirm_uncivil} title='attacks person, not point' >uncivil</a> &nbsp;` 
+        }
+    }
+
+    // watch toggle
+    var watcheye = `<a href='#' id='watch' onclick="$.get('/watch?post_id=${post.post_id}&${nonce_parms}', function(data) {
+    document.getElementById('watch').innerHTML = data; });
+    return false" title='comments by email'>${render_watch_indicator(post.postview_want_email)}</a>`
+
+    let edit_link = ''
+    if (current_user && ((current_user.user_id === post.post_author) || (current_user.user_level >= 4)) ) {
+        edit_link = `<a href='/edit_post?p=${post.post_id}&${nonce_parms}'>edit</a> &nbsp; `
+    }
+
+    let delete_link = ''
+    if (current_user && ((current_user.user_id === post.post_author && !post.post_comments) || (current_user.user_level >= 4))) {
+        delete_link = ` &nbsp; <a href='/delete_post?post_id=${post.post_id}&${nonce_parms}' 
+                       onClick="javascript:return confirm('Really delete?')" id='delete_post' >delete</a> &nbsp;` 
+    }
+
+    post.user_name = post.user_name || 'anonymous' // so we don't display 'null' in case the post is anonymous
+
+    var utz = current_user ? current_user.user_timezone : 'America/Los_Angeles'
+
+    return `<div class='comment' >${arrowbox_html} ${icon} <h2 style='display:inline' >${ link }</h2>
+            <p>By ${user_link(post)} ${follow_user_button(post, current_user, ip)} &nbsp; ${render_date(post.post_date, utz)} ${uncivil}
+            ${post.post_views.number_format()} views &nbsp; ${post.post_comments.number_format()} comments &nbsp;
+            ${watcheye} &nbsp;
+            <a href="#commentform" onclick="addquote( '${post.post_id}', '0', '0', '${post.user_name}' ); return false;"
+               title="Select some text then click this to quote" >quote</a> &nbsp;
+            &nbsp; ${share_post(post)} &nbsp; ${edit_link} ${delete_link}
+            <p><hr><div class="entry" class="alt" id="comment-0-text" >${ post.post_content }</div></div>`
+}
+
+function post_link(post) {
+    let path = post2path(post)
+    return `<a href='${path}' title='patrick.net' >${post.post_title}</a>`
+}
+
+function share_post(post) {
+    let share_title = encodeURI(post.post_title).replace(/%20/g,' ')
+    let share_link  = encodeURI('https://' + CONF.domain +  post2path(post) )
+    return `<a href='mailto:?subject=${share_title}&body=${share_link}' title='email this' >share
+            <img src='/images/mailicon.jpg' width=15 height=12 ></a>`
+}
+
+function midpage(...args) { // just an id so we can easily swap out the middle of the page
+    return `<div id="midpage" >
+        ${ args.join('') }
+        </div>`
+}
+
+function new_post_button() {
+    return '<a href="/new_post" class="btn btn-success btn-sm" title="start a new post" ><b>new post</b></a>'
+}
+
+function popup(message) {
+    return `<script type='text/javascript'> alert('${ message }');</script>`
+}
+
+function lostpwform(login_failed_email) {
+    var show = login_failed_email ? `value='${ login_failed_email }'` : `placeholder='email address'`
+
+    return `
+    <div id='lostpwform' >
+        <h1>reset password</h1>
+        <form action='/recoveryemail' method='post'>
+            <div class='form-group'><input type='text' name='user_email' ${ show } class='form-control' id='lost_pw_email' ></div>
+            <button type='submit' id='submit' class='btn btn-success btn-sm'>submit</button>
+        </form>
+        <script type="text/javascript">document.getElementById('lost_pw_email').focus();</script>
+    </div>`
+}
+
+function get_edit_link(c, current_user, ip) {
+
+    if (!current_user) return ''
+
+    if ((current_user.user_id === c.comment_author) || (current_user.user_level === 4)) {
+        return `<a href='/edit_comment?c=${c.comment_id}&${create_nonce_parms(ip)}'>edit</a>`
+    }
+
+    return ''
+}
+
+function get_nuke_link(c, current_user, ip, req) {
+
+    if (!current_user) return ''
+
+    if (!req.url) {
+        console.log('get_nuke_link() was passed falsey req.url')
+        return
+    }
+
+    return (URL.parse(req.url).pathname.match(/comment_moderation/) && (current_user.user_level === 4)) ?
+        `<a href='/nuke?nuke_id=${c.comment_author}&${create_nonce_parms(ip)}' onClick='javascript:return confirm("Really?")' >nuke</a>`
+        : ''
+}
+
+function id_box(current_user) {
+
+    var img = render_user_icon(current_user, 0.4, `'align='left' hspace='5' vspace='2'`) // scale image down
+
+    return `
+        <div id='status' >
+            ${img}<a href='/user/${current_user.user_name}' >${current_user.user_name}</a>
+        </div>`
+}
+
+function loginprompt(login_failed_email) {
+
+    return `
+        <div id='status' >
+            ${ login_failed_email ? 'login failed' : '' }
+            <form id='loginform' >
+                <fieldset>
+                    <input id='email'    name='email'    placeholder='email'    type='text'     required >
+                    <input id='password' name='password' placeholder='password' type='password' required >
+                </fieldset>
+                <fieldset>
+                    <input type='submit' id='submit' value='log in'
+                        onclick="$.post('/post_login', $('#loginform').serialize()).done(function(data) { $('#status').html(data) });return false">
+                    <a href='#' onclick="midpage.innerHTML = lostpwform.innerHTML;  return false" >forgot password</a> /
+                    <a href='#' onclick="midpage.innerHTML = registerform.innerHTML; return false" >register</a>
+                </fieldset>
+            </form>
+            <div style='display: none;' >
+                ${ lostpwform(login_failed_email)   }
+                ${ registerform() }
+            </div>
+        </div>`
+}
+
+function icon_or_loginprompt(current_user, login_failed_email) {
+    if (current_user) return id_box(current_user)
+    else              return loginprompt(login_failed_email)
+}
+
+function comment_box(post, current_user, ip) { // add new comment, just updates page without reload
+
+    let url = `/accept_comment?${create_nonce_parms(ip)}` // first href on button below is needed for mocha test
+    return `<hr>Comment as
+    ${current_user ? current_user.user_name : ip2anon(ip) }
+    ${current_user ? '' : ' or <a href="#">log in</a> at top of page'}:
+    ${render_upload_form()}
+    <form id='commentform' >
+        <textarea id='ta' name='comment_content' class='form-control' rows='10' ></textarea><p>
+        <input type='hidden' name='comment_post_id' value='${post.post_id}' />
+        <button class='btn btn-success btn-sm' id='accept_comment' href=${url} 
+            onclick="$.post('${url}', $('#commentform').serialize()).done(function(response) {
+                response = JSON.parse(response) // was a string, now is an object
+                $('#comment_list').append(response.content)
+                if (!response.err) document.getElementById('commentform').reset() // don't clear the textbox if error
+            }).fail(function() {
+                $('#comment_list').append('something went wrong on the server ')
+            })
+            return false" >submit</button>
+    </form>`
+}
+
+function comment_pagination(comments, url) { // get pagination links for a single page of comments
+
+    if (!comments)                 return
+    if (comments.found_rows <= 40) return // no pagination links needed if one page or less
+
+    let total    = comments.found_rows
+    let ret      = `<p id='comments'>`
+    if (!url) {
+        console.log('comment_pagination() was passed falsey url')
+        return
+    }
+    let pathname = URL.parse(url).pathname // "pathNAME" is url path without the ? parms, unlike "path"
+    let query    = URL.parse(url).query
+
+    // offset is mysql offset, ie greatest row number to exclude from the result set
+    // offset missing from url -> showing last  40 comments in set (same as total - 40)
+    // offset 0                -> showing first 40 comments in set
+    // offset n                -> showing first 40 comments after n
+
+    if (!query || !query.match(/offset=\d+/)) { // we are on the last page of comments, ie offset = total - 40
+        var offset          = total - 40
+        var previous_offset = (total - 80 > 0) ? total - 80 : 0 // second to last page
+        var q               = query ? (query + '&') : ''
+
+        var first_link      = `${pathname}?${q}offset=0#comments`
+        var previous_link   = `${pathname}?${q}offset=${previous_offset}#comments`
+        // there is no next_link because we are necessarily on the last page of comments
+        var last_link       = `${pathname}${q ? ('?' + q) : ''}#last` // don't include the question mark unless q
+    }
+    else { // there is a query string, and it includes offset
+        var offset          = intval(_GET(url, 'offset'))
+        var previous_offset = (offset - 40 > 0) ? offset - 40 : 0
+        var next_offset     = (offset + 40 > total - 40) ? total - 40 : offset + 40 // last page will always be 40 comments
+
+        if (offset !== 0) { // don't need these links if we are on the first page
+            var first_link    = `${pathname}?${query.replace(/offset=\d+/, 'offset=0')}#comments`
+            var previous_link = `${pathname}?${query.replace(/offset=\d+/, 'offset=' + previous_offset)}#comments`
+        }
+
+        if (offset < total - 40) { // don't need next link on last page
+            var next_link = `${pathname}?${query.replace(/offset=\d+/, 'offset=' + next_offset)}#comments`
+        }
+
+        var last_link = `${pathname}?${query.replace(/offset=\d+/, 'offset=' + (total - 40))}#last`
+    }
+
+    if (typeof first_link !== 'undefined') {
+        ret = ret + `<a href='${first_link}' title='Jump to first comment' >&laquo; First</a> &nbsp; &nbsp;`
+    }
+
+    if (typeof previous_link !== 'undefined') {
+         ret = ret + `<a href='${previous_link}' title='Previous page of comments' >&laquo; Previous</a> &nbsp; &nbsp; `
+    }
+
+    let max_on_this_page = (total > offset + 40) ? offset + 40 : total
+    ret = ret + `Comments ${offset + 1} - ${max_on_this_page} of ${total.number_format()} &nbsp; &nbsp; `
+
+    if (typeof next_link !== 'undefined') {
+         ret = ret + `<a href='${next_link}' title='Next page of comments' >Next &raquo;</a> &nbsp; &nbsp; `
+    }
+
+    return ret + `<a href='${last_link}' title='Jump to last comment' >Last &raquo;</a></br>`
+}
+
+function post_form(p, post) { // used both for composing new posts and for editing existing posts; distinction is the presence of p, the post_id
+
+    // todo: add conditional display of user-name chooser for non-logged in users
+
+    if (p) {
+        var fn = 'edit'
+        var title = post.post_title.replace(/'/g, '&apos;') // replace to display correctly in single-quoted html value below
+        var content = newlineify(post.post_content.replace(/'/g, '&apos;'))
+        var post_id = `<input type='hidden' name='post_id' value='${post.post_id}' />`
+    }
+    else {
+        var fn = 'new post'
+        var title = ''
+        var content = ''
+        var post_id = ''
+    }
+
+    return `
+    <h1>${fn}</h1>
+    <form action='/accept_post' method='post' name='postform' onsubmit='return checkforhash()' >
+        <div class='form-group'><input name='post_title' type='text' class='form-control' placeholder='title' id='title' value='${title}' ></div>
+        <textarea class='form-control' name='post_content' rows='12' id='ta' name='ta'
+            placeholder='please include one of these topic hashtags at the beginning of a line to classify your post:
+#cheesecake
+#crime
+#economics
+#environment
+#housing
+#humor
+#investing
+#misc
+#politics
+#religion
+#scitech ' >${content}</textarea><p>
+        ${post_id}
+        <button type='submit' id='submit' class='btn btn-success btn-sm' >submit</button>
+    </form>
+    <script type='text/javascript'>
+
+    document.getElementById('title').focus();
+
+    function checkforhash() {
+        let text = document.forms['postform']['ta'].value;
+
+        if (!text.match(/#\\w+/gm)) {
+            alert('Please include a topic hashtag like #investing or #politics at the beginning of a line.');
+            return false;
+        }
+        else return true;
+    }
+    </script>
+    ${render_upload_form()}`
+}
+
+function comment_edit_box(comment, current_user, ip) { // edit existing comment, redirect back to whole post page
+
+    comment.comment_content = newlineify(comment.comment_content)
+
+    return `
+    <h1>edit comment</h1>
+    ${current_user ? render_upload_form() : ''}
+    <form id='commentform' action='/accept_edited_comment?${create_nonce_parms(ip)}' method='post' >
+        <textarea id='ta' name='comment_content' class='form-control' rows='10' placeholder='write a comment...' >${comment.comment_content}</textarea><p>
+        <input type='hidden' name='comment_id' value='${comment.comment_id}' />
+        <button type='submit' id='submit' class='btn btn-success btn-sm'>submit</button>
+    </form>
+    <script type="text/javascript">document.getElementById('ta').focus();</script>`
+}
+
+function post_list(posts, ip, url, current_user) { // format a list of posts from whatever source
+
+    if (posts) {
+        let nonce_parms = create_nonce_parms(ip)
+        let moderation = 0
+
+        if (!url) {
+            console.log('post_list() was passed falsey url')
+            return
+        }
+
+        if (URL.parse(url).pathname.match(/post_moderation/) && (current_user.user_level === 4)) moderation = 1
+        
+        var formatted = posts.map(post => {
+
+            if (!current_user && post.post_title.match(/thunderdome/gi)) return '' // hide thunderdome posts if not logged in
+            if (!current_user && post.post_nsfw)                         return '' // hide porn posts if not logged in
+
+            let net = post.post_likes - post.post_dislikes
+
+            if (current_user) { // user is logged in
+                if (!post.postview_last_view)
+                    var unread = `<a href='${post2path(post)}' ><img src='/content/unread_post.gif' width='45' height='16' title='You never read this one' ></a>`
+                else 
+                    var unread = render_unread_comments_icon(post, post.postview_last_view, current_user) // last view by this user, from left join
+            }
+            else var unread = ''
+
+            let ago           = MOMENT(post.post_modified).fromNow();
+
+            if (post.post_topic)
+                var hashlink      = `in <a href='/topic/${post.post_topic}'>#${post.post_topic}</a>`
+            else
+                var hashlink      = ``
+
+            let imgdiv        = (current_user && current_user.user_hide_post_list_photos) ? '' : get_first_image(post)
+            let arrowbox_html = arrowbox(post)
+            let firstwords    = `<font size='-1'>${first_words(post.post_content, 30)}</font>`
+
+            if (moderation) {
+                var approval_link = `<a href='#' onclick="$.get('/approve_post?post_id=${ post.post_id }&${nonce_parms}', function() { $('#post-${ post.post_id }').remove() }); return false">approve</a>`
+                var delete_link = ` &nbsp; <a href='/delete_post?post_id=${post.post_id}&${nonce_parms}' onClick="javascript:return confirm('Really delete?')" id='delete_post' >delete</a> &nbsp;`
+                var nuke_link = `<a href='/nuke?nuke_id=${post.post_author}&${create_nonce_parms(ip)}' onClick='javascript:return confirm("Really?")' >nuke</a>`
+            }
+            else {
+                var approval_link = ''
+                var delete_link = ''
+                var nuke_link = ''
+            }
+
+            if (post.post_comments) {
+                let s = (post.post_comments === 1) ? '' : 's';
+                let path = post2path(post)
+                // should add commas to post_comments here
+                var latest = `<a href='${path}'>${post.post_comments}&nbsp;comment${s}</a>, latest <a href='${path}#comment-${post.post_latest_comment_id}' >${ago}</a>`
+            }
+            else var latest = `<a href='${post2path(post)}'>Posted ${ago}</a>`
+
+            if (current_user                                 &&
+                current_user.relationships[post.post_author] &&
+                current_user.relationships[post.post_author].rel_i_ban) var hide = `style='display: none'`
+            else var hide = ''
+
+            var link = `<b>${post_link(post)}</b>`
+            let extlinks = get_external_links(post.post_content)
+            if (extlinks && extlinks.length && URL.parse(extlinks[0]).host) {
+                var host = URL.parse(extlinks[0]).host.replace(/www./, '').substring(0, 31)
+                link += ` (<a href='${brandit(extlinks[0])}' target='_blank' title='original story' >${host})</a>`
+            }
+
+            var utz = current_user ? current_user.user_timezone : 'America/Los_Angeles'
+            var date = render_date(post.post_date, utz, 'D MMM YYYY')
+
+            return `<div class='post' id='post-${post.post_id}' ${hide} >${arrowbox_html}${imgdiv}${link}
+            <br>by <a href='/user/${ post.user_name }'>${ post.user_name }</a> ${hashlink} on ${date}&nbsp;
+            ${latest} ${unread} ${approval_link} ${delete_link} ${nuke_link}<br>${firstwords}</div>`
+        })
+    }
+    else formatted = []
+
+    return formatted.join('')
+}
+
+function get_first_image(post) {
+
+    let c = CHEERIO.load(post.post_content)
+
+    if (!c('img').length) return ''
+
+    if (post.post_nsfw)
+        return `<div class='icon' ><a href='${post2path(post)}' ><img src='/images/nsfw.png' border=0 width=100 align=top hspace=5 vspace=5 ></a></div>`
+    else
+        return `<div class='icon' ><a href='${post2path(post)}' ><img src='${c('img').attr('src')}' border=0 width=100 align=top hspace=5 vspace=5 ></a></div>`
+}
+
+function comment_list(comments, current_user, ip, req) { // format one page of comments
+    let ret = `<div id='comment_list' >`
+    ret = ret +
+        (comments.length ? comments.map(item => {
+            return format_comment(item, current_user, ip, req, comments, _GET(req.url, 'offset')) })
+            .join('') : '<b>no comments found</b>')
+    ret = ret + `</div>`
     return ret
 }
