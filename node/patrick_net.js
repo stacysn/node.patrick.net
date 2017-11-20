@@ -46,13 +46,13 @@ async function render(req, res) {
     const ip   = req.headers['x-forwarded-for']
     const page = segments(req.url)[1] || 'home'
 
-    if (typeof routes[page] !== 'function') return send_html(404, `${page} was not found`, res, db, ip)
+    if (typeof routes[page] !== 'function') return send(res, 404, {'Content-Type' : 'text/html;charset=utf-8'}, `${page} was not found`, null, ip)
 
-    const db = await get_connection_from_pool(ip).catch(e => send_html(429, e, res, null, ip))
+    const db = await get_connection_from_pool(ip).catch(e => send(429, e, context))
 
-    if (!db)                           return send_html(500, 'failed to get db connection from pool', res, db, ip)
-    if (await blocked(db, ip))         return send_html(403, 'ip address blocked', res, db, ip)
-    if (await block_countries(db, ip)) return send_html(403, 'permission denied to evil country', res, db, ip)
+    if (!db)                           return send_html(500, 'failed to get db connection from pool', context)
+    if (await blocked(db, ip))         return send_html(403, 'ip address blocked', context)
+    if (await block_countries(db, ip)) return send_html(403, 'permission denied to evil country', context)
 
     const context = { db, ip, page, req, res }
     context.current_user = await get_user(context)
@@ -64,7 +64,7 @@ async function render(req, res) {
     catch(e) {
         var message = e.message || e.toString()
         console.error(`${Date()} ${context.ip} ${context.req.url} failed with: ${message} ${e.stack || ''}`)
-        return send_html(intval(e.code) || 500, `node server says: ${message}`, res, db, ip)
+        return send_html(intval(e.code) || 500, `node server says: ${message}`, context)
     }
 }
 
@@ -746,7 +746,7 @@ function send(res, code, headers, content, db, ip) {
     release_connection_to_pool(db, ip)
 }
 
-function send_html(code, html, res, db, ip) {
+function send_html(code, html, context) {
 
     //html = html.replace(/\/\/.*/, ' ') // remove js comments
     //html = html.replace(/\s+/g, ' ')   // primitive compression. requires that browser js statements end in semicolon!
@@ -756,7 +756,7 @@ function send_html(code, html, res, db, ip) {
         'Expires'        : new Date().toUTCString()
     }
 
-    send(res, code, headers, html, db, ip)
+    send(context.res, code, headers, html, context.db, context.ip)
 }
 
 async function reset_latest_comment(post_id, db) { // reset post table data about latest comment, esp post_modified time
@@ -1123,7 +1123,7 @@ function die(message, context) {
         )
     )
 
-    send_html(200, content, context.res, context.db, context.ip)
+    send_html(200, content, context)
 }
 
 var routes = {
@@ -1136,12 +1136,12 @@ var routes = {
 
         if (!valid_nonce(context.ip, _GET(context.req.url, 'ts'), _GET(context.req.url, 'nonce'))) { // do not die, because that will return a whole html page to be appended into the #comment_list slot
             // show values for debugging nonce problems
-            return send_html(200, { err: true, content: popup(invalid_nonce_message()) }, context.res, context.db, context.ip)
+            return send_html(200, { err: true, content: popup(invalid_nonce_message()) }, context)
         }
 
         let post_data = await collect_post_data_and_trim(context)
 
-        if (!post_data.comment_content) return send_html(200, JSON.stringify({ err: false, content: '' }), context.res, context.db, context.ip) // empty comment
+        if (!post_data.comment_content) return send_html(200, JSON.stringify({ err: false, content: '' }), context) // empty comment
 
         // rate limit comment insertion by user's ip address
         var ago = await get_var(`select (unix_timestamp(now()) - unix_timestamp(user_last_comment_time)) as ago from users
@@ -1149,8 +1149,7 @@ var routes = {
                                  order by user_last_comment_time desc limit 1`, [context.ip], context.db)
 
         if (ago && ago < 2) { // this ip already commented less than two seconds ago
-            return send_html(200, JSON.stringify({ err: true, content: popup('You are posting comments too quickly! Please slow down') }),
-                             context.res, context.db, context.ip)
+            return send_html(200, JSON.stringify({ err: true, content: popup('You are posting comments too quickly! Please slow down') }), context)
         }
         else {
             post_data.comment_author = context.current_user ? context.current_user.user_id : await find_or_create_anon(context.db, context.ip)
@@ -1158,15 +1157,14 @@ var routes = {
             if (context.current_user && context.current_user.user_id)
                 post_data.comment_author = context.current_user.user_id
             else {
-                return send_html(200, JSON.stringify({ err: true, content: popup('anonymous comments have been disabled, please reg/login') }),
-                context.res, context.db, context.ip)
+                return send_html(200, JSON.stringify({ err: true, content: popup('anonymous comments have been disabled, please reg/login') }), context)
             }
             */
 
             let bans = await user_topic_bans(post_data.comment_author, context.db)
             let topic = (await get_post(post_data.comment_post_id, context.db)).post_topic
             let message = is_user_banned(bans, topic, context.current_user)
-            if (message) return send_html(200, JSON.stringify({ err: true, content: popup(message) }), context.res, context.db, context.ip)
+            if (message) return send_html(200, JSON.stringify({ err: true, content: popup(message) }), context)
 
             post_data.comment_content  = strip_tags(post_data.comment_content.linkify())
             post_data.comment_dislikes = 0
@@ -1182,7 +1180,7 @@ var routes = {
             catch(e) {
                 console.log(`${e} at accept_comment`)
                 let message = 'database failed to accept some part of the content, maybe an emoticon'
-                return send_html(200, JSON.stringify({ err: true, content: popup(message) }), context.res, context.db, context.ip)
+                return send_html(200, JSON.stringify({ err: true, content: popup(message) }), context)
             }
             let comment_id = insert_result.insertId
 
@@ -1192,8 +1190,7 @@ var routes = {
 
             send_html(200, JSON.stringify(
                 { err: false, content: format_comment(comment, context.current_user, context.ip, context.req, context.comments, _GET(context.req.url,
-                'offset')) }), context.res, context.db, context.ip)
-                // send html fragment
+                'offset')) }), context) // send html fragment
 
             comment_mail(comment, context.db)
 
@@ -1316,34 +1313,34 @@ var routes = {
 
         let comment_id = intval(_GET(context.req.url, 'comment_id'))
 
-        if (!comment_id)                        return send_html(200, '', context.res, context.db, context.ip)
-        if (!context.current_user)                return send_html(200, '', context.res, context.db, context.ip)
-        if (context.current_user.user_level !== 4) return send_html(200, '', context.res, context.db, context.ip)
+        if (!comment_id)                           return send_html(200, '', context)
+        if (!context.current_user)                 return send_html(200, '', context)
+        if (context.current_user.user_level !== 4) return send_html(200, '', context)
         if (!valid_nonce(context.ip, _GET(context.req.url, 'ts'), _GET(context.req.url, 'nonce'))) {
-            return send_html(200, '', context.res, context.db, context.ip)
+            return send_html(200, '', context)
         }
 
         await query('update comments set comment_approved=1, comment_date=now() where comment_id=?', [comment_id], context.db)
         await query('update posts set post_modified=now() where post_id=(select comment_post_id from comments where comment_id=?)',
                     [comment_id], context.db)
 
-        send_html(200, '', context.res, context.db, context.ip) // make it disappear from comment_moderation page
+        send_html(200, '', context) // make it disappear from comment_moderation page
     },
 
     approve_post : async function(context) {
 
         let post_id = intval(_GET(context.req.url, 'post_id'))
 
-        if (!post_id)                            return send_html(200, '', context.res, context.db, context.ip)
-        if (!context.current_user)                 return send_html(200, '', context.res, context.db, context.ip)
-        if (context.current_user.user_level !== 4) return send_html(200, '', context.res, context.db, context.ip)
+        if (!post_id)                              return send_html(200, '', context)
+        if (!context.current_user)                 return send_html(200, '', context)
+        if (context.current_user.user_level !== 4) return send_html(200, '', context)
         if (!valid_nonce(context.ip, _GET(context.req.url, 'ts'), _GET(context.req.url, 'nonce'))) {
-            return send_html(200, '', context.res, context.db, context.ip)
+            return send_html(200, '', context)
         }
 
         await query('update posts set post_approved=1, post_modified=now() where post_id=?', [post_id], context.db)
 
-        send_html(200, '', context.res, context.db, context.ip) // make it disappear from post_moderation page
+        send_html(200, '', context) // make it disappear from post_moderation page
     },
 
     autowatch : async function(context) {
@@ -1365,26 +1362,26 @@ var routes = {
             )
         )
 
-        return send_html(200, content, context.res, context.db, context.ip)
+        return send_html(200, content, context)
     },
 
     ban_from_topic : async function(context) {
 
         if (!valid_nonce(context.ip, _GET(context.req.url, 'ts'), _GET(context.req.url, 'nonce'))) {
-            return send_html(200, invalid_nonce_message(), context.res, context.db, context.ip)
+            return send_html(200, invalid_nonce_message(), context)
         }
 
         let user_id = intval(_GET(context.req.url, 'user_id'))
-        if (!user_id) return send_html(200, 'missing user_id', context.res, context.db, context.ip)
+        if (!user_id) return send_html(200, 'missing user_id', context)
 
         let topic = _GET(context.req.url, 'topic')
-        if (!topic) return send_html(200, 'missing topic', context.res, context.db, context.ip)
+        if (!topic) return send_html(200, 'missing topic', context)
         
         topic = topic.replace(/\W/, '')
 
         let topic_moderator = await get_moderator(topic, context.db)
 
-        if (context.current_user.user_id !== topic_moderator) return send_html(200, 'non-moderator may not ban', context.res, context.db, context.ip)
+        if (context.current_user.user_id !== topic_moderator) return send_html(200, 'non-moderator may not ban', context)
 
         await query(`insert into topicwatches (topicwatch_name, topicwatch_user_id,         topicwatch_banned_until)
                                        values (              ?,                  ?, date_add(now(), interval 1 day))
@@ -1392,7 +1389,7 @@ var routes = {
 
         let bans = await user_topic_bans(user_id, context.db)
         
-        return send_html(200, is_user_banned(bans, topic, context.current_user), context.res, context.db, context.ip)
+        return send_html(200, is_user_banned(bans, topic, context.current_user), context)
     },
 
     best : async function(context) {
@@ -1425,7 +1422,7 @@ var routes = {
             )
         )
 
-        return send_html(200, content, context.res, context.db, context.ip)
+        return send_html(200, content, context)
     },
 
     comment_jail : async function(context) { // no pagination, just most recent 80
@@ -1451,7 +1448,7 @@ var routes = {
             )
         )
 
-        return send_html(200, content, context.res, context.db, context.ip)
+        return send_html(200, content, context)
     },
 
     comment_moderation : async function(context) {
@@ -1474,7 +1471,7 @@ var routes = {
             )
         )
 
-        return send_html(200, content, context.res, context.db, context.ip)
+        return send_html(200, content, context)
     },
 
     comments : async function(context) { // show a list of comments by user, or by comment-frequence, or from a search
@@ -1498,7 +1495,7 @@ var routes = {
             results       = await get_comment_list_by_search(s, offset, 40, context.db)
             message = `<h2>comments that contain "${s}"</h2>`
         }
-        else return send_html(200, `invalid request`, context.res, context.db, context.ip)
+        else return send_html(200, `invalid request`, context)
 
         let comments = results.comments
         comments.found_rows = results.total
@@ -1515,7 +1512,7 @@ var routes = {
             )
         )
 
-        return send_html(200, content, context.res, context.db, context.ip)
+        return send_html(200, content, context)
     },
 
     delete_comment : async function(context) { // delete a comment
@@ -1523,11 +1520,11 @@ var routes = {
         let comment_id = intval(_GET(context.req.url, 'comment_id'))
         let post_id    = intval(_GET(context.req.url, 'post_id'))
 
-        if (!context.current_user)      return send_html(200, '', context.res, context.db, context.ip)
+        if (!context.current_user)      return send_html(200, '', context)
         if (!valid_nonce(context.ip, _GET(context.req.url, 'ts'), _GET(context.req.url, 'nonce'))) {
-            return send_html(200, '', context.res, context.db, context.ip)
+            return send_html(200, '', context)
         }
-        if (!(comment_id && post_id)) return send_html(200, '', context.res, context.db, context.ip)
+        if (!(comment_id && post_id)) return send_html(200, '', context)
 
         var topic = (await get_post(post_id, context.db)).post_topic
         var topic_moderator = intval(await get_moderator(topic, context.db))
@@ -1542,7 +1539,7 @@ var routes = {
 
         await reset_latest_comment(post_id, context.db)
 
-        send_html(200, '', context.res, context.db, context.ip)
+        send_html(200, '', context)
     },
 
     delete_post : async function(context) { // delete a whole post, but not its comments
@@ -1585,7 +1582,7 @@ var routes = {
                                       [user_id, comment_id], context.db)
 
             if (vote.c) { // already voted on this comment
-                return send_html(200, `&#8595;&nbsp; you dislike this (${comment_row.comment_dislikes})`, context.res, context.db, context.ip)
+                return send_html(200, `&#8595;&nbsp; you dislike this (${comment_row.comment_dislikes})`, context)
             }
 
             await query(`update comments set comment_dislikes=comment_dislikes+1 where comment_id=?`, [comment_id], context.db)
@@ -1595,7 +1592,7 @@ var routes = {
 
             await query(`update users set user_dislikes=user_dislikes+1 where user_id=?`, [comment_row.comment_author], context.db)
 
-            send_html(200, `&#8595;&nbsp;you dislike this (${comment_row.comment_dislikes + 1})`, context.res, context.db, context.ip)
+            send_html(200, `&#8595;&nbsp;you dislike this (${comment_row.comment_dislikes + 1})`, context)
 
             // no emailing done of dislikes
 
@@ -1614,7 +1611,7 @@ var routes = {
 
                 let post_row = await get_post(post_id, context.db)
 
-                return send_html(200, String(post_row.post_dislikes), context.res, context.db, context.ip)
+                return send_html(200, String(post_row.post_dislikes), context)
             }
 
             await query(`update posts set post_dislikes=post_dislikes+1 where post_id=?`, [post_id], context.db)
@@ -1626,11 +1623,11 @@ var routes = {
 
             await query(`update users set user_dislikes=user_dislikes+1 where user_id=?`, [post_row.post_author], context.db)
 
-            return send_html(200, String(post_row.post_dislikes), context.res, context.db, context.ip)
+            return send_html(200, String(post_row.post_dislikes), context)
 
             // no email done of post dislikes
         }
-        else return send_html(200, '', context.res, context.db, context.ip) // send empty string if no comment_id or post_id
+        else return send_html(200, '', context) // send empty string if no comment_id or post_id
     },
 
     edit_comment : async function (context) {
@@ -1640,7 +1637,7 @@ var routes = {
         let comment_id = intval(_GET(context.req.url, 'c'))
         let comment = await get_row(`select * from comments left join users on user_id=comment_author where comment_id=?`, [comment_id], context.db)
 
-        if (!comment) return send_html(404, `No comment with id "${comment_id}"`, context.res, context.db, context.ip)
+        if (!comment) return send_html(404, `No comment with id "${comment_id}"`, context)
         else {
 
             let content = html(
@@ -1675,7 +1672,7 @@ var routes = {
                 )
             )
 
-            send_html(200, content, context.res, context.db, context.ip)
+            send_html(200, content, context)
         }
     },
 
@@ -1690,7 +1687,7 @@ var routes = {
             )
         )
 
-        send_html(200, content, context.res, context.db, context.ip)
+        send_html(200, content, context)
     },
 
     follow_topic : async function(context) { // get or turn off emails of posts in a topic; can be called as ajax or full page
@@ -1698,11 +1695,11 @@ var routes = {
         let ajax  = intval(_GET(context.req.url, 'ajax'))
         let topic = _GET(context.req.url, 'topic').replace(/\W/, '').toLowerCase()
 
-        if (!topic)                return ajax ? send_html(200, '', context.res, context.db, context.ip) : die('topic missing', context)
-        if (!context.current_user) return ajax ? send_html(200, '', context.res, context.db, context.ip) : die('must be logged in to follow or unfollow',
+        if (!topic)                return ajax ? send_html(200, '', context) : die('topic missing', context)
+        if (!context.current_user) return ajax ? send_html(200, '', context) : die('must be logged in to follow or unfollow',
         context)
         if (!valid_nonce(context.ip, _GET(context.req.url, 'ts'), _GET(context.req.url, 'nonce'))) {
-            return ajax ? send_html(200, '', context.res, context.db, context.ip) : die(invalid_nonce_message(), context)
+            return ajax ? send_html(200, '', context) : die(invalid_nonce_message(), context)
         }
 
         if (intval(_GET(context.req.url, 'undo'))) {
@@ -1716,7 +1713,7 @@ var routes = {
         }
 
         // either way, output follow button with right context and update this user's follow count
-        ajax ? send_html(200, follow_topic_button(topic, context.current_user, context.ip), context.res, context.db, context.ip) : die('Follow status updated', context)
+        ajax ? send_html(200, follow_topic_button(topic, context.current_user, context.ip), context) : die('Follow status updated', context)
     },
 
     follow_user : async function(context) { // get or turn off emails of a user's new posts; can be called as ajax or full page
@@ -1724,11 +1721,11 @@ var routes = {
         let ajax     = intval(_GET(context.req.url, 'ajax'))
         let other_id = intval(_GET(context.req.url, 'other_id'))
 
-        if (!other_id)             return ajax ? send_html(200, '', context.res, context.db, context.ip) : die('other_id missing', context)
-        if (!context.current_user) return ajax ? send_html(200, '', context.res, context.db, context.ip) : die('must be logged in to follow or unfollow',
+        if (!other_id)             return ajax ? send_html(200, '', context) : die('other_id missing', context)
+        if (!context.current_user) return ajax ? send_html(200, '', context) : die('must be logged in to follow or unfollow',
         context)
         if (!valid_nonce(context.ip, _GET(context.req.url, 'ts'), _GET(context.req.url, 'nonce'))) {
-            return ajax ? send_html(200, '', context.res, context.db, context.ip) : die(invalid_nonce_message(), context)
+            return ajax ? send_html(200, '', context) : die(invalid_nonce_message(), context)
         }
 
         if (intval(_GET(context.req.url, 'undo'))) {
@@ -1741,8 +1738,7 @@ var routes = {
         }
 
         // either way, output follow button with right context and update this user's follow count
-        ajax ? send_html(200, follow_user_button(await get_userrow(other_id, context.db)), context.current_user, context.ip, context.res, context.db,
-        context.ip) : die('Follow status updated', context)
+        ajax ? send_html(200, follow_user_button(await get_userrow(other_id, context.db)), context) : die('Follow status updated', context)
 
         await query(`update users set user_followers=(select count(*) from relationships where rel_i_follow > 0 and rel_other_id=?)
                      where user_id=?`, [other_id, other_id], context.db)
@@ -1787,29 +1783,29 @@ var routes = {
             )
         )
 
-        send_html(200, content, context.res, context.db, context.ip)
+        send_html(200, content, context)
     },
 
     ignore : async function(context) { // ignore a user
 
         let other_id = intval(_GET(context.req.url, 'other_id'))
 
-        if (!context.current_user) return send_html(200, '', context.res, context.db, context.ip)
+        if (!context.current_user) return send_html(200, '', context)
         if (!valid_nonce(context.ip, _GET(context.req.url, 'ts'), _GET(context.req.url, 'nonce'))) {
-            return send_html(200, '', context.res, context.db, context.ip)
+            return send_html(200, '', context)
         }
 
         if (intval(_GET(context.req.url, 'undo'))) {
             await query(`replace into relationships set rel_i_ban=0, rel_self_id=?, rel_other_id=?`,
                         [context.current_user.user_id, other_id], context.db)
 
-            send_html(200, '', context.res, context.db, context.ip) // make the user disappear from edit_profile page
+            send_html(200, '', context) // make the user disappear from edit_profile page
         }
         else {
             await query(`replace into relationships set rel_i_ban=unix_timestamp(now()), rel_self_ID=?, rel_other_ID=?`,
                         [context.current_user.user_id, other_id], context.db)
 
-            send_html(200, '', context.res, context.db, context.ip)
+            send_html(200, '', context)
         }
 
         // either way, update this user's ignore count
@@ -1842,7 +1838,7 @@ var routes = {
                 )
             )
 
-            send_html(200, content, context.res, context.db, context.ip)
+            send_html(200, content, context)
         }
     },
 
@@ -1856,13 +1852,13 @@ var routes = {
 
             let comment_row = await get_row(`select * from comments where comment_id=?`, [comment_id], context.db)
 
-            if (!comment_row) return send_html(200, ``, context.res, context.db, context.ip)
+            if (!comment_row) return send_html(200, ``, context)
 
             let vote = await get_row(`select commentvote_up, count(*) as c from commentvotes where commentvote_user_id=? and commentvote_comment_id=?`,
                                       [user_id, comment_id], context.db)
 
             if (vote && vote.c) { // already voted on this
-                return send_html(200, `&#8593;&nbsp; you like this (${comment_row.comment_likes})`, context.res, context.db, context.ip) // return so we don't send mails
+                return send_html(200, `&#8593;&nbsp; you like this (${comment_row.comment_likes})`, context) // return so we don't send mails
             }
             else {
                 await query(`update comments set comment_likes=comment_likes+1 where comment_id=?`, [comment_id], context.db)
@@ -1872,7 +1868,7 @@ var routes = {
 
                 await query(`update users set user_likes=user_likes+1 where user_id=?`, [comment_row.comment_author], context.db)
 
-                send_html(200, `&#8593;&nbsp;you like this (${comment_row.comment_likes + 1})`, context.res, context.db, context.ip) // don't return, send mails
+                send_html(200, `&#8593;&nbsp;you like this (${comment_row.comment_likes + 1})`, context) // don't return, send mails
             }
 
             // Now mail the comment author that his comment was liked, iff he has user_summonable set
@@ -1910,7 +1906,7 @@ var routes = {
 
             if (vote && vote.c) { // if they have voted before on this, just return
                 let post_row = await get_post(post_id, context.db)
-                return send_html(200, String(post_row.post_likes), context.res, context.db, context.ip)
+                return send_html(200, String(post_row.post_likes), context)
             }
 
             await query(`update posts set post_likes=post_likes+1 where post_id=?`, [post_id], context.db)
@@ -1922,7 +1918,7 @@ var routes = {
 
             await query(`update users set user_likes=user_likes+1 where user_id=?`, [post_row.post_author], context.db)
 
-            send_html(200, String(post_row.post_likes), context.res, context.db, context.ip) // don't return until we send email
+            send_html(200, String(post_row.post_likes), context) // don't return until we send email
 
             let post_url = 'https://' + CONF.domain +  post2path(post_row)
 
@@ -1942,7 +1938,7 @@ var routes = {
                 mail(u.user_email, subject, message)
             }
         }
-        else return send_html(200, '', context.res, context.db, context.ip) // send empty string if no comment_id or post_id
+        else return send_html(200, '', context) // send empty string if no comment_id or post_id
     },
 
     logout : async function(context) {
@@ -1990,7 +1986,7 @@ var routes = {
             )
         }
 
-        send_html(200, content, context.res, context.db, context.ip)
+        send_html(200, content, context)
     },
 
     nuke : async function(context) { // given a user ID, nuke all his posts, comments, and his ID
@@ -2054,7 +2050,7 @@ var routes = {
             )
         )
 
-        send_html(200, content, context.res, context.db, context.ip)
+        send_html(200, content, context)
     },
 
     post : async function(context) { // show a single post and its comments
@@ -2119,7 +2115,7 @@ var routes = {
             )
         )
 
-        send_html(200, content, context.res, context.db, context.ip)
+        send_html(200, content, context)
     },
 
     post_login : async function(context) {
@@ -2142,7 +2138,7 @@ var routes = {
             )
         )
 
-        send_html(200, content, context.res, context.db, context.ip)
+        send_html(200, content, context)
     },
 
     random : async function(context) {
@@ -2168,7 +2164,7 @@ var routes = {
             )
         )
 
-        send_html(200, content, context.res, context.db, context.ip)
+        send_html(200, content, context)
     },
 
     registration : async function(context) {
@@ -2202,7 +2198,7 @@ var routes = {
             midpage(`<h2>${message}</h2>`)
         )
 
-        send_html(200, content, context.res, context.db, context.ip)
+        send_html(200, content, context)
     },
 
     search : async function(context) {
@@ -2241,7 +2237,7 @@ var routes = {
             )
         )
 
-        send_html(200, content, context.res, context.db, context.ip)
+        send_html(200, content, context)
     },
 
     since : async function(context) { // given a post_id and epoch timestamp, redirect to post's first comment after that timestamp
@@ -2303,7 +2299,7 @@ var routes = {
             )
         )
 
-        send_html(200, content, context.res, context.db, context.ip)
+        send_html(200, content, context)
     },
 
     topics : async function (context) {
@@ -2321,7 +2317,7 @@ var routes = {
             )
         )
 
-        send_html(200, content, context.res, context.db, context.ip)
+        send_html(200, content, context)
     },
 
     uncivil : async function(context) { // move a comment to comment jail, or a post to post moderation
@@ -2333,7 +2329,7 @@ var routes = {
                         [context.current_user.user_id, comment_id], context.db)
         }
 
-        send_html(200, '', context.res, context.db, context.ip) // blank response in all cases
+        send_html(200, '', context) // blank response in all cases
     },
 
     update_profile : async function(context) { // accept data from profile_form
@@ -2429,7 +2425,7 @@ var routes = {
                             </script>
                         </html>`
 
-                    send_html(200, content, context.res, context.db, context.ip)
+                    send_html(200, content, context)
                 }
             })
         })
@@ -2473,7 +2469,7 @@ var routes = {
             )
         )
 
-        send_html(200, content, context.res, context.db, context.ip)
+        send_html(200, content, context)
     },
 
     users : async function(context) {
@@ -2567,18 +2563,18 @@ var routes = {
             )
         )
 
-        send_html(200, content, context.res, context.db, context.ip)
+        send_html(200, content, context)
     },
 
     watch : async function(context) { // toggle a watch from a post
 
         let post_id = intval(_GET(context.req.url, 'post_id'))
 
-        if (!context.current_user) return send_html(200, '', context.res, context.db, context.ip)
+        if (!context.current_user) return send_html(200, '', context)
         if (!valid_nonce(context.ip, _GET(context.req.url, 'ts'), _GET(context.req.url, 'nonce'))) {
-            return send_html(200, '', context.res, context.db, context.ip)
+            return send_html(200, '', context)
         }
-        if (!post_id) return send_html(200, '', context.res, context.db, context.ip)
+        if (!post_id) return send_html(200, '', context)
 
         let postview_want_email = await get_var(`select postview_want_email from postviews
                                                  where postview_user_id=? and postview_post_id=?`,
@@ -2591,7 +2587,7 @@ var routes = {
                      on duplicate key update postview_want_email=?`,
                     [context.current_user.user_id, post_id, want_email, want_email], context.db)
 
-        send_html(200, render_watch_indicator(want_email), context.res, context.db, context.ip)
+        send_html(200, render_watch_indicator(want_email), context)
     },
 
 } // end of routes
