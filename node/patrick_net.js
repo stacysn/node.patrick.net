@@ -1417,7 +1417,7 @@ var routes = {
             header(context.header_data, context.post ? context.post.post_topic : null, context.page, context.current_user, context.login_failed_email, context.req.url),
             midpage(
                 m,
-                comment_list(comments, context.current_user, context.ip, context.req)
+                comment_list(comments, context)
             )
         )
 
@@ -1443,7 +1443,7 @@ var routes = {
             midpage(
                 h1('Uncivil Comment Jail'),
                 'These comments were marked as uncivil. Patrick will review them and liberate comments which do not deserve to be here. You can edit your comment here to make it more civil and get it out of jail after the edits are reviewed. Comments not freed within 30 days will be deleted.',
-                comment_list(comments, context.current_user, context.ip, context.req)
+                comment_list(comments, context)
             )
         )
 
@@ -1466,7 +1466,7 @@ var routes = {
             header(context.header_data, context.post ? context.post.post_topic : null, context.page, context.current_user, context.login_failed_email, context.req.url),
             midpage(
                 h1('comment moderation'),
-                comment_list(comments, context.current_user, context.ip, context.req)
+                comment_list(comments, context)
             )
         )
 
@@ -1506,7 +1506,7 @@ var routes = {
             midpage(
                 h1(message),
                 comment_pagination(comments, context.req.url),
-                comment_list(comments, context.current_user, context.ip, context.req),
+                comment_list(comments, context),
                 comment_search_box()
             )
         )
@@ -2108,7 +2108,7 @@ var routes = {
                 topic_nav(p),
                 post(p, context.ip, context.current_user),
                 comment_pagination(comments, context.req.url),
-                comment_list(comments, context.current_user, context.ip, context.req),
+                comment_list(comments, context),
                 comment_pagination(comments, context.req.url),
                 comment_box(p, context.current_user, context.ip)
             )
@@ -3727,11 +3727,11 @@ function get_first_image(post) {
         return `<div class='icon' ><a href='${post2path(post)}' ><img src='${c('img').attr('src')}' border=0 width=100 align=top hspace=5 vspace=5 ></a></div>`
 }
 
-function comment_list(comments, current_user, ip, req) { // format one page of comments
+function comment_list(comments, context) { // format one page of comments
     let ret = `<div id='comment_list' >`
     ret = ret +
         (comments.length ? comments.map(item => {
-            return format_comment(item, current_user, ip, req, comments, _GET(req.url, 'offset')) })
+            return format_comment(item, context.current_user, context.ip, context.req, comments, _GET(context.req.url, 'offset')) })
             .join('') : '<b>no comments found</b>')
     ret = ret + `</div>`
     return ret
