@@ -2596,10 +2596,25 @@ var routes = {
 
 } // end of routes
 
-// from here to end are the html components
+// from here to end are only html components
 // * all pure functions: no reading outside parms, no modification of parms, no side effects, can be replace with ret value
 // * mostly just take (data, context) objects
 // * all return html
+// * all html without unique html tag has id which includes name of the function
+
+function html(query_times, head, ...args) {
+    return `<!DOCTYPE html><html lang='en'>
+    ${ query_times }
+    ${ head }
+    <body>
+        <div class='container' >
+        ${ args.join('') }
+        ${ footer() }
+        </div>
+    </body>
+    <script async src='/jquery.min.js'></script>
+    </html>`
+}
 
 function head(stylesheet, description, title) {
     return `<head>
@@ -2613,22 +2628,8 @@ function head(stylesheet, description, title) {
     </head>`
 }
 
-function html(query_times, head, ...args) {
-    return `<!DOCTYPE html><html lang="en">
-    ${ query_times }
-    ${ head }
-    <body>
-        <div class="container" >
-        ${ args.join('') }
-        ${ footer() }
-        </div>
-    </body>
-    <script async src="/jquery.min.js"></script>
-    </html>`
-}
-
 function h1(message) {
-    return `<h1 style='display: inline;' >${ message }</h1>`
+    return `<h1 style='display: inline;' id='h1' >${ message }</h1>`
 }
 
 function post_pagination(post_count, curpage, extra, url) {
@@ -2656,46 +2657,46 @@ function post_pagination(post_count, curpage, extra, url) {
 
 function footer() {
     return `
-    <p id='footer' >
-    <center>
-    <a href='/users'>users</a> &nbsp;
-    <a href='/about'>about</a> &nbsp;
-    <a href='/post/1302130/2017-01-28-patnet-improvement-suggestions'>suggestions</a> &nbsp;
-    <a href='https://github.com/killelea/node.${CONF.domain}'>source code</a> &nbsp;
-    <a href='mailto:${ CONF.admin_email }' >contact</a> &nbsp;
-    <br>
-    <a href='/topics'>topics</a> &nbsp;
-    <a href='/best'>best comments</a> &nbsp;
-    <a href='/comment_jail'>comment jail</a> &nbsp;
-    <a href='/old?years_ago=1'>old posts by year</a> &nbsp;
-    <br>
-    <a href='/post/1282720/2015-07-11-ten-reasons-it-s-a-terrible-time-to-buy-an-expensive-house'>10 reasons it's a terrible time to buy</a> &nbsp;
-    <br>
-    <a href='/post/1282721/2015-07-11-eight-groups-who-lie-about-the-housing-market'>8 groups who lie about the housing market</a> &nbsp;
-    <br>
-    <a href='/post/1282722/2015-07-11-37-bogus-arguments-about-housing'>37 bogus arguments about housing</a> &nbsp;
-    <br>
-    <a href='/post/1206569/free-bumper-stickers'>get a free bumper sticker:<br><img src='/images/bumpersticker.png' width=300 ></a>
-    <br>
-    <form method='get' action='/search' ><input name='s' type='text' placeholder='search...' size='20' ></form>
-    </center>
-    <div class='fixed'>
-        <a href='#' title='top of page' >top</a> &nbsp; <a href='#footer' title='bottom of page' >bottom</a> &nbsp; <a href='/' title='home page' >home</a>
-    </div>
-    <script>
-    function like(content) {
-        $.get( "/like?comment_id="+content.split("_")[1], function(data) { document.getElementById(content).innerHTML = data; });
-    }
-    function dislike(content) {
-        $.get( "/dislike?comment_id="+content.split("_")[1], function(data) { document.getElementById(content).innerHTML = data; });
-    }
-    function postlike(content) { // For whole post instead of just one comment.
-        $.get( "/like?post_id="+content.split("_")[1]+"_up", function(data) { document.getElementById(content).innerHTML = data; });
-    }
-    function postdislike(content) { // For whole post instead of just one comment.
-        $.get( "/dislike?post_id="+content.split("_")[1]+"_down", function(data) { document.getElementById(content).innerHTML = data; });
-    }
-    </script>`
+    <div id='footer' >
+        <center>
+        <a href='/users'>users</a> &nbsp;
+        <a href='/about'>about</a> &nbsp;
+        <a href='/post/1302130/2017-01-28-patnet-improvement-suggestions'>suggestions</a> &nbsp;
+        <a href='https://github.com/killelea/node.${CONF.domain}'>source code</a> &nbsp;
+        <a href='mailto:${ CONF.admin_email }' >contact</a> &nbsp;
+        <br>
+        <a href='/topics'>topics</a> &nbsp;
+        <a href='/best'>best comments</a> &nbsp;
+        <a href='/comment_jail'>comment jail</a> &nbsp;
+        <a href='/old?years_ago=1'>old posts by year</a> &nbsp;
+        <br>
+        <a href='/post/1282720/2015-07-11-ten-reasons-it-s-a-terrible-time-to-buy-an-expensive-house'>10 reasons it's a terrible time to buy</a> &nbsp;
+        <br>
+        <a href='/post/1282721/2015-07-11-eight-groups-who-lie-about-the-housing-market'>8 groups who lie about the housing market</a> &nbsp;
+        <br>
+        <a href='/post/1282722/2015-07-11-37-bogus-arguments-about-housing'>37 bogus arguments about housing</a> &nbsp;
+        <br>
+        <a href='/post/1206569/free-bumper-stickers'>get a free bumper sticker:<br><img src='/images/bumpersticker.png' width=300 ></a>
+        <br>
+        <form method='get' action='/search' ><input name='s' type='text' placeholder='search...' size='20' ></form>
+        </center>
+        <div class='fixed'>
+            <a href='#' title='top of page' >top</a> &nbsp; <a href='#footer' title='bottom of page' >bottom</a> &nbsp; <a href='/' title='home page' >home</a>
+        </div>
+        <script>
+        function like(content) {
+            $.get( "/like?comment_id="+content.split("_")[1], function(data) { document.getElementById(content).innerHTML = data; });
+        }
+        function dislike(content) {
+            $.get( "/dislike?comment_id="+content.split("_")[1], function(data) { document.getElementById(content).innerHTML = data; });
+        }
+        function postlike(content) { // For whole post instead of just one comment.
+            $.get( "/like?post_id="+content.split("_")[1]+"_up", function(data) { document.getElementById(content).innerHTML = data; });
+        }
+        function postdislike(content) { // For whole post instead of just one comment.
+            $.get( "/dislike?post_id="+content.split("_")[1]+"_down", function(data) { document.getElementById(content).innerHTML = data; });
+        }
+        </script></div>`
 }
 
 function follow_topic_button(t, current_user, ip) { // t is the topic to follow, a \w+ string
