@@ -1777,7 +1777,7 @@ var routes = {
             header(context.header_data, context.post ? context.post.post_topic : null, context.page, context.current_user, context.login_failed_email, context.req.url),
             midpage(
                 tabs(order, '', path),
-                post_list(posts, context.ip, context.req.url, context.current_user),
+                post_list(posts, context),
                 post_pagination(await sql_calc_found_rows(context.db), curpage, `&order=${order}`, context.req.url)
             )
         )
@@ -2045,7 +2045,7 @@ var routes = {
             header(context.header_data, context.post ? context.post.post_topic : null, context.page, context.current_user, context.login_failed_email, context.req.url),
             midpage(
                 h1(`Posts from ${years_ago} year${s} ago`),
-                post_list(posts, context.ip, context.req.url, context.current_user)
+                post_list(posts, context)
             )
         )
 
@@ -2133,7 +2133,7 @@ var routes = {
             head(CONF.stylesheet, CONF.description, context.post ? context.post.post_title : CONF.domain),
             header(context.header_data, context.post ? context.post.post_topic : null, context.page, context.current_user, context.login_failed_email, context.req.url),
             midpage(
-                post_list(posts, context.ip, context.req.url, context.current_user)
+                post_list(posts, context)
             )
         )
 
@@ -2231,7 +2231,7 @@ var routes = {
                 h1(`search results for "${s}"`),
                 post_pagination(found_rows, curpage, `&s=${us}&order=${order}`, context.req.url),
                 tabs(order, `&s=${us}`, path),
-                post_list(posts, context.ip, context.req.url, context.current_user),
+                post_list(posts, context),
                 post_pagination(found_rows, curpage, `&s=${us}&order=${order}`, context.req.url)
             )
         )
@@ -2292,7 +2292,7 @@ var routes = {
                 follow_topic_button(topic, context.current_user, context.ip),
                 moderator_announcement,
                 tabs(order, `&topic=${topic}`, path),
-                post_list(posts, context.ip, context.req.url, context.current_user),
+                post_list(posts, context),
                 post_pagination(await sql_calc_found_rows(context.db), curpage, `&topic=${topic}&order=${order}`, context.req.url),
                 topic_moderation(topic, context.current_user)
             )
@@ -2462,7 +2462,7 @@ var routes = {
             midpage(
                 render_user_info(u, context.current_user, context.ip),
                 tabs(order, '', path),
-                post_list(posts, context.ip, context.req.url, context.current_user),
+                post_list(posts, context),
                 post_pagination(found_post_rows, curpage, `&order=${order}`, context.req.url),
                 admin_user(u, context.current_user, context.ip)
             )
@@ -3636,16 +3636,17 @@ function comment_edit_box(comment, current_user, ip) { // edit existing comment,
     <script type="text/javascript">document.getElementById('ta').focus();</script>`
 }
 
-function post_list(posts, ip, url, current_user) { // format a list of posts from whatever source
+function post_list(posts, context) { // format a list of posts from whatever source
+
+    var current_user = context.current_user
+    var ip           = context.ip
+    var url          = context.req.url
+
+    if (!url) return
 
     if (posts) {
         let nonce_parms = create_nonce_parms(ip)
         let moderation = 0
-
-        if (!url) {
-            console.log('post_list() was passed falsey url')
-            return
-        }
 
         if (URL.parse(url).pathname.match(/post_moderation/) && (current_user.user_level === 4)) moderation = 1
         
@@ -3734,8 +3735,8 @@ function get_first_image(post) {
 function comment_list(comments, context) { // format one page of comments
     let ret = `<div id='comment_list' >`
     ret = ret + (comments.length ?
-                 comments.map(item => format_comment(item, context, comments, _GET(context.req.url, 'offset')) )
-                 .join('') : '<b>no comments found</b>')
+                 comments.map(item => format_comment(item, context, comments, _GET(context.req.url, 'offset')) ) .join('')
+                 : '<b>no comments found</b>')
     ret = ret + `</div>`
     return ret
 }
