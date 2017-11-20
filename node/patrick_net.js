@@ -1188,7 +1188,7 @@ var routes = {
                                           [comment_id], context.db)
 
             send_html(200, JSON.stringify(
-                { err: false, content: format_comment(comment, context.current_user, context.ip, context.req, context.comments, _GET(context.req.url,
+                { err: false, content: format_comment(comment, context, context.comments, _GET(context.req.url,
                 'offset')) }), context) // send html fragment
 
             comment_mail(comment, context.db)
@@ -2767,7 +2767,11 @@ function comment_search_box() {
     </form>`
 }
 
-function format_comment(c, current_user, ip, req, comments, offset) {
+function format_comment(c, context, comments, offset) {
+
+    var current_user = context.current_user
+    var ip           = context.ip
+    var req          = context.req
 
     if (!req.url) return
 
@@ -3729,10 +3733,9 @@ function get_first_image(post) {
 
 function comment_list(comments, context) { // format one page of comments
     let ret = `<div id='comment_list' >`
-    ret = ret +
-        (comments.length ? comments.map(item => {
-            return format_comment(item, context.current_user, context.ip, context.req, comments, _GET(context.req.url, 'offset')) })
-            .join('') : '<b>no comments found</b>')
+    ret = ret + (comments.length ?
+                 comments.map(item => format_comment(item, context, comments, _GET(context.req.url, 'offset')) )
+                 .join('') : '<b>no comments found</b>')
     ret = ret + `</div>`
     return ret
 }
