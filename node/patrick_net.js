@@ -805,10 +805,6 @@ async function repair_referer(req, db) { // look at referer to a bad post; if it
 
 function redirect(redirect_to, context, code=303) { // put the code at the end; then if it isn't there we get a default
 
-    var db  = context.db
-    var ip  = context.ip
-    var res = context.res
-
     var message = `Redirecting to ${ redirect_to }`
 
     var headers =  {
@@ -1550,7 +1546,7 @@ var routes = {
     delete_post : async function(context) { // delete a whole post, but not its comments
 
         if (!context.current_user) return die('you must be logged in to delete a post', context)
-        if (!valid_nonce(context.ip, _GET(context.req.url, 'ts'), _GET(context.req.url, 'nonce')))      return die(invalid_nonce_message(), context)
+        if (!valid_nonce(context.ip, _GET(context.req.url, 'ts'), _GET(context.req.url, 'nonce'))) return die(invalid_nonce_message(), context)
 
         var post_id
         if (post_id = intval(_GET(context.req.url, 'post_id'))) {
@@ -3724,17 +3720,14 @@ function get_first_image(post) {
 
     if (!c('img').length) return ''
 
-    if (post.post_nsfw)
-        return `<div class='icon' ><a href='${post2path(post)}' ><img src='/images/nsfw.png' border=0 width=100 align=top hspace=5 vspace=5 ></a></div>`
-    else
-        return `<div class='icon' ><a href='${post2path(post)}' ><img src='${c('img').attr('src')}' border=0 width=100 align=top hspace=5 vspace=5 ></a></div>`
+    let src = post.post_nsfw ? '/images/nsfw.png' : c('img').attr('src')
+
+    return `<div class='icon' ><a href='${post2path(post)}' ><img src='${src}' border=0 width=100 align=top hspace=5 vspace=5 ></a></div>`
 }
 
 function comment_list(comments, context) { // format one page of comments
-    let ret = `<div id='comment_list' >`
-    ret = ret + (comments.length ?
-                 comments.map(item => format_comment(item, context, comments, _GET(context.req.url, 'offset')) ) .join('')
-                 : '<b>no comments found</b>')
-    ret = ret + `</div>`
-    return ret
+    return `<div id='comment_list' >
+    ${(comments.length ?
+       comments.map(item => format_comment(item, context, comments, _GET(context.req.url, 'offset'))).join('') : '<b>no comments found</b>')}
+    </div>`
 }
