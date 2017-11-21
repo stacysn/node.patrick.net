@@ -1683,7 +1683,7 @@ var routes = {
                 head(CONF.stylesheet, CONF.description, post ? post.post_title : CONF.domain),
                 header(context.header_data, post ? post.post_topic : null, context.page, context.current_user, context.login_failed_email, context.req.url),
                 midpage(
-                    post_form(_GET(context.req.url, 'p'), context.post)
+                    post_form(_GET(context.req.url, 'p'), post)
                 )
             )
 
@@ -1789,8 +1789,8 @@ var routes = {
 
         let content = html(
             render_query_times(context.res.start_time, context.db.queries),
-            head(CONF.stylesheet, CONF.description, context.post ? context.post.post_title : CONF.domain),
-            header(context.header_data, context.post ? context.post.post_topic : null, context.page, context.current_user, context.login_failed_email, context.req.url),
+            head(CONF.stylesheet, CONF.description, CONF.domain),
+            header(context.header_data, null, context.page, context.current_user, context.login_failed_email, context.req.url),
             midpage(
                 tabs(order, '', path),
                 post_list(posts, context),
@@ -1845,8 +1845,8 @@ var routes = {
 
             let content = html(
                 render_query_times(context.res.start_time, context.db.queries),
-                head(CONF.stylesheet, CONF.description, context.post ? context.post.post_title : CONF.domain),
-                header(context.header_data, context.post ? context.post.post_topic : null, context.page, context.current_user, context.login_failed_email, context.req.url),
+                head(CONF.stylesheet, CONF.description, CONF.domain),
+                header(context.header_data, null, context.page, context.current_user, context.login_failed_email, context.req.url),
                 midpage(
                     h1(`Darn, that key has already been used. Please try 'forgot password' if you need to log in.`)
                 )
@@ -1982,8 +1982,8 @@ var routes = {
         if (posts_today >= MAX_POSTS || posts_today > context.current_user.user_comments) {
             var content = html(
                 render_query_times(context.res.start_time, context.db.queries),
-                head(CONF.stylesheet, CONF.description, context.post ? context.post.post_title : CONF.domain),
-                header(context.header_data, context.post ? context.post.post_topic : null, context.page, context.current_user, context.login_failed_email, context.req.url),
+                head(CONF.stylesheet, CONF.description, CONF.domain),
+                header(context.header_data, null, context.page, context.current_user, context.login_failed_email, context.req.url),
                 midpage(
                     `You hit your posting limit for today. Please post more tomorrow!`
                 )
@@ -1992,10 +1992,10 @@ var routes = {
         else {
             var content = html(
                 render_query_times(context.res.start_time, context.db.queries),
-                head(CONF.stylesheet, CONF.description, context.post ? context.post.post_title : CONF.domain),
-                header(context.header_data, context.post ? context.post.post_topic : null, context.page, context.current_user, context.login_failed_email, context.req.url),
+                head(CONF.stylesheet, CONF.description, CONF.domain),
+                header(context.header_data, null, context.page, context.current_user, context.login_failed_email, context.req.url),
                 midpage(
-                    post_form(_GET(context.req.url, 'p'), context.post)
+                    post_form(_GET(context.req.url, 'p'))
                 )
             )
         }
@@ -2271,7 +2271,7 @@ var routes = {
 
     topic : async function(context) {
 
-        var topic = segments(context.req.url)[2] // like /topics/housing
+        var topic = segments(context.req.url)[2] // like /topic/housing
 
         if (!topic) return die('no topic given', context)
 
