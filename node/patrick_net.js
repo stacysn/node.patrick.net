@@ -2506,7 +2506,7 @@ var routes = {
                 order by ${ob} ${d} limit 40 offset ${offset}`, [followersof, ob, d], context.db)
 
             // keep followers-count cache in users table correct
-            await query('update users set user_followers=? where user_id=?', [context.users.length, followersof], context.db)
+            await query('update users set user_followers=? where user_id=?', [users.length, followersof], context.db)
         }
         else if ( _GET(context.req.url, 'following') ) {
             let following = intval(_GET(context.req.url, 'following'))
@@ -2531,7 +2531,7 @@ var routes = {
                                       order by ${ob} ${d} limit 40 offset ${offset}`, [friendsof, ob, d], context.db)
 
             await query(`update users set user_friends=? where user_id=?`,
-                        [context.users.length, friendsof], context.db) // Keep friends-count cache correct.
+                        [users.length, friendsof], context.db) // Keep friends-count cache correct.
         }
         else if ( _GET(context.req.url, 'user_name') ) {
 
@@ -3648,8 +3648,6 @@ function post_list(posts, context) { // format a list of posts from whatever sou
             if (!current_user && post.post_title.match(/thunderdome/gi)) return '' // hide thunderdome posts if not logged in
             if (!current_user && post.post_nsfw)                         return '' // hide porn posts if not logged in
 
-            let net = post.post_likes - post.post_dislikes
-
             if (current_user) { // user is logged in
                 if (!post.postview_last_view)
                     var unread = `<a href='${post2path(post)}' ><img src='/content/unread_post.gif' width='45' height='16' title='You never read this one' ></a>`
@@ -3664,7 +3662,7 @@ function post_list(posts, context) { // format a list of posts from whatever sou
             let firstwords    = `<font size='-1'>${first_words(post.post_content, 30)}</font>`
 
             if (moderation) {
-                var approval_link = `<a href='#' onclick="$.get('/approve_post?post_id=${ post.post_id }&${nonce_parms}', function() { $('#post-${ post.post_id }').remove() }); return false">approve</a>`
+                var approval_link = `<a href='#' onclick="$.get('/approve_post?post_id=${post.post_id}&${nonce_parms}', function() { $('#post-${ post.post_id }').remove() }); return false">approve</a>`
                 var delete_link = ` &nbsp; <a href='/delete_post?post_id=${post.post_id}&${nonce_parms}' onClick="return confirm('Really delete?')" id='delete_post' >delete</a> &nbsp;`
                 var nuke_link = `<a href='/nuke?nuke_id=${post.post_author}&${nonce_parms}' onClick='return confirm("Really?")' >nuke</a>`
             }
