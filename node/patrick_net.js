@@ -3726,8 +3726,10 @@ function get_first_image(post) {
 }
 
 function comment_list(comments, context) { // format one page of comments
+
+    let offset = _GET(context.req.url, 'offset')
+
     return `<div id='comment_list' >
-    ${(comments.length ?
-       comments.map(item => format_comment(item, context, comments, _GET(context.req.url, 'offset'))).join('') : '<b>no comments found</b>')}
+    ${(comments.length ?  comments.map(item => format_comment(item, context, comments, offset)).join('') : '<b>no comments found</b>')}
     </div>`
 }
