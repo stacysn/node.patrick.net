@@ -3659,8 +3659,6 @@ function post_list(posts, context) { // format a list of posts from whatever sou
             }
             else var unread = ''
 
-            let ago           = MOMENT(post.post_modified).fromNow();
-
             if (post.post_topic)
                 var hashlink      = `in <a href='/topic/${post.post_topic}'>#${post.post_topic}</a>`
             else
@@ -3681,13 +3679,7 @@ function post_list(posts, context) { // format a list of posts from whatever sou
                 var nuke_link = ''
             }
 
-            if (post.post_comments) {
-                let s = (post.post_comments === 1) ? '' : 's';
-                let path = post2path(post)
-                // should add commas to post_comments here
-                var latest = `<a href='${path}'>${post.post_comments}&nbsp;comment${s}</a>, latest <a href='${path}#comment-${post.post_latest_comment_id}' >${ago}</a>`
-            }
-            else var latest = `<a href='${post2path(post)}'>Posted ${ago}</a>`
+            var latest = latest_comment(post)
 
             if (current_user                                 &&
                 current_user.relationships[post.post_author] &&
@@ -3712,6 +3704,18 @@ function post_list(posts, context) { // format a list of posts from whatever sou
     else formatted = []
 
     return formatted.join('')
+}
+
+function latest_comment(post) {
+
+    let ago  = MOMENT(post.post_modified).fromNow()
+    let num  = post.post_comments.number_format()
+    let path = post2path(post)
+    let s    = post.post_comments === 1 ? '' : 's'
+
+    return post.post_comments ?
+        `<a href='${path}'>${num}&nbsp;comment${s}</a>, latest <a href='${path}#comment-${post.post_latest_comment_id}' >${ago}</a>` :
+        `<a href='${post2path(post)}'>Posted ${ago}</a>`
 }
 
 function get_first_image(post) {
