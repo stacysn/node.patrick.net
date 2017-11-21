@@ -1457,7 +1457,7 @@ var routes = {
         if (!context.current_user) return die('you must be logged in to moderate comments', context)
 
         let comments = await query(`select * from comments left join users on user_id=comment_author
-                                      where comment_approved = 0`, [], context.db)
+                                      where comment_approved = 0 or comment_approved is null`, [], context.db)
 
         let offset = 0
         comments = comments.map(comment => { comment.row_number = ++offset; return comment })
@@ -2127,7 +2127,7 @@ var routes = {
 
         if (!context.current_user) return die('you must be logged in to moderate posts', context)
 
-        let posts = await query(`select * from posts left join users on user_id=post_author where post_approved=0`, [], context.db)
+        let posts = await query(`select * from posts left join users on user_id=post_author where post_approved=0 or post_approved is null`, [], context.db)
 
         let content = html(
             render_query_times(context.res.start_time, context.db.queries),
@@ -3660,16 +3660,13 @@ function post_list(posts, context) { // format a list of posts from whatever sou
             let arrowbox_html = arrowbox(post)
             let firstwords    = `<font size='-1'>${first_words(post.post_content, 30)}</font>`
 
-            if (moderation) {
-                var approval_link = `<a href='#' onclick="$.get('/approve_post?post_id=${post.post_id}&${nonce_parms}', function() { $('#post-${ post.post_id }').remove() }); return false">approve</a>`
-                var delete_link = ` &nbsp; <a href='/delete_post?post_id=${post.post_id}&${nonce_parms}' onClick="return confirm('Really delete?')" id='delete_post' >delete</a> &nbsp;`
-                var nuke_link = `<a href='/nuke?nuke_id=${post.post_author}&${nonce_parms}' onClick='return confirm("Really?")' >nuke</a>`
-            }
-            else {
-                var approval_link = ''
-                var delete_link = ''
-                var nuke_link = ''
-            }
+            var approval_link = moderation ? ` <a href='#' onclick="$.get('/approve_post?post_id=${post.post_id}&${nonce_parms}',
+                function() { $('#post-${ post.post_id }').remove() }); return false">approve</a>` : ''
+
+            var delete_link = moderation ? ` <a href='/delete_post?post_id=${post.post_id}&${nonce_parms}'
+                onClick="return confirm('Really delete?')" id='delete_post' >delete</a> &nbsp;` : ''
+
+            var nuke_link = moderation ? ` <a href='/nuke?nuke_id=${post.post_author}&${nonce_parms}' onClick='return confirm("Really?")' >nuke</a>` : ''
 
             var latest = latest_comment(post)
 
