@@ -504,10 +504,7 @@ Array.prototype.sortByProp = function(p){
 
 function segments(path) { // return url path split up as array of cleaned \w strings
 
-    if (!path) {
-        console.log('segments() was passed falsey path')
-        return
-    }
+    if (!path) return
 
     return URL.parse(path).path.replace(/\?.*/,'').split('/').map(segment => segment.replace(/[^\w%]/g,''))
 }
@@ -3182,17 +3179,14 @@ function top_topics() {
 
 function tabs(order, extra='', path) {
 
+    if (!path) return
+
     let selected_tab = []
     selected_tab['active']   = ''
     selected_tab['comments'] = ''
     selected_tab['likes']    = ''
     selected_tab['new']      = ''
     selected_tab[order]      = `class='active'` // default is active
-
-    if (!path) {
-        console.log('tabs() was passed falsey path, derived from req.url')
-        return
-    }
 
     return `<ul class='nav nav-tabs'>
         <li ${selected_tab['active']}   > <a href='${path}?order=active${extra}'   title='most recent comments'       >active</a></li>
@@ -3446,11 +3440,7 @@ function get_edit_link(c, current_user, ip) {
 function get_nuke_link(c, current_user, ip, req) {
 
     if (!current_user) return ''
-
-    if (!req.url) {
-        console.log('get_nuke_link() was passed falsey req.url')
-        return
-    }
+    if (!req.url)      return ''
 
     return (URL.parse(req.url).pathname.match(/comment_moderation/) && (current_user.user_level === 4)) ?
         `<a href='/nuke?nuke_id=${c.comment_author}&${create_nonce_parms(ip)}' onClick='return confirm("Really?")' >nuke</a>`
@@ -3522,13 +3512,10 @@ function comment_pagination(comments, url) { // get pagination links for a singl
 
     if (!comments)                 return
     if (comments.found_rows <= 40) return // no pagination links needed if one page or less
+    if (!url)                      return
 
     let total    = comments.found_rows
     let ret      = `<p id='comments'>`
-    if (!url) {
-        console.log('comment_pagination() was passed falsey url')
-        return
-    }
     let pathname = URL.parse(url).pathname // "pathNAME" is url path without the ? parms, unlike "path"
     let query    = URL.parse(url).query
 
