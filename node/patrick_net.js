@@ -3062,7 +3062,7 @@ function render_ban_link(user, topic, current_user, ip) {
          >ban ${user.user_name} from ${topic} for a day</a>` : ''
 }
 
-function render_unread_comments_icon(post, last_view, current_user) { // return the blinky icon if there are unread comments in a post
+function render_unread_comments_icon(post, current_user) { // return the blinky icon if there are unread comments in a post
 
     // if post.post_latest_commenter_id is an ignored user, just return
     // prevents user from seeing blinky for ignored users, but unfortunately also prevents blinky for wanted unread comments before that
@@ -3072,7 +3072,7 @@ function render_unread_comments_icon(post, last_view, current_user) { // return 
      && current_user.relationships[post.post_latest_commenter_id].rel_i_ban) { return '' }
 
     // if post_modified > last time they viewed this post, then give them a link to earliest unread comment
-    let last_viewed = Date.parse(last_view) / 1000
+    let last_viewed = Date.parse(post.postview_last_view) / 1000
     let modified    = Date.parse(post.post_modified) / 1000
 
     if (modified > last_viewed) {
@@ -3652,7 +3652,7 @@ function post_list(posts, context) { // format a list of posts from whatever sou
                 if (!post.postview_last_view)
                     var unread = `<a href='${post2path(post)}' ><img src='/content/unread_post.gif' width='45' height='16' title='You never read this one' ></a>`
                 else 
-                    var unread = render_unread_comments_icon(post, post.postview_last_view, current_user) // last view by this user, from left join
+                    var unread = render_unread_comments_icon(post, current_user) // last view by this user, from left join
             }
             else var unread = ''
 
