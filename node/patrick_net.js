@@ -70,6 +70,25 @@ async function render(req, res) {
     }
 }
 
+function send(code, headers, content, context) {
+    context.res.writeHead(code, headers)
+    context.res.end(content)
+    release_connection_to_pool(context.db, context.ip)
+}
+
+function send_html(code, html, context) {
+
+    //html = html.replace(/\/\/.*/, ' ') // remove js comments
+    //html = html.replace(/\s+/g, ' ')   // primitive compression. requires that browser js statements end in semicolon!
+
+    var headers =    {
+        'Content-Type'   : 'text/html;charset=utf-8',
+        'Expires'        : new Date().toUTCString()
+    }
+
+    send(code, headers, html, context)
+}
+
 function get_connection_from_pool(ip) {
 
     return new Promise(function(resolve, reject) {
@@ -233,8 +252,6 @@ function md5(str) {
 function ip2anon(ip) {
     return 'anon_' + md5(ip).substring(0, 5)
 }
-
-function debug(s) { console.log(s) } // so that we can grep and remove lines from the source more easily
 
 function intval(s) { // return integer from a string or float
     return parseInt(s) ? parseInt(s) : 0
@@ -587,12 +604,11 @@ function create_nonce_parms(ip) {
 }
 
 function is_user_banned(bans, topic, current_user) {
-
     let ban = bans.filter(item => (item.topic === topic))[0]; // there should be only one per topic
-
-    var utz = current_user ? current_user.user_timezone : 'America/Los_Angeles'
+    let utz = current_user ? current_user.user_timezone : 'America/Los_Angeles'
     return ban ? `banned from ${ban.topic} until ${render_date(ban.until, utz)}` : ''
 }
+
 function slugify(s) { // url-safe pretty chars only; not used for navigation, only for seo and humans
     return s.replace(/\W+/g,'-').toLowerCase().replace(/-+/,'-').replace(/^-+|-+$/,'')
 }
@@ -617,9 +633,7 @@ function invalid_nonce_message() {
 }
 
 function get_external_links(content) {
-
     let c = CHEERIO.load(content)
-
     let extlinks = [];
 
     c('a').each(function(i, elem) {
@@ -668,10 +682,8 @@ function clean_upload_path(path, filename, current_user) {
 }
 
 function which_page(page, order) { // tell homepage, search, userpage, topic which page we are on
-
     let curpage = Math.floor(page) ? Math.floor(page) : 1
     let slimit  = (curpage - 1) * 20 + ', 20' // sql limit for pagination of results.
-
     let orders = { // maps order parm to a posts table column name to order by
         'active'   : 'post_modified',
         'comments' : 'post_comments',
@@ -737,25 +749,6 @@ async function send_login_link(ip, db, post_data) {
         return `Please check your ${post_data.user_email} email for the login link`
     }
     else return `Could not find user with email ${ post_data.user_email }`
-}
-
-function send(code, headers, content, context) {
-    context.res.writeHead(code, headers)
-    context.res.end(content)
-    release_connection_to_pool(context.db, context.ip)
-}
-
-function send_html(code, html, context) {
-
-    //html = html.replace(/\/\/.*/, ' ') // remove js comments
-    //html = html.replace(/\s+/g, ' ')   // primitive compression. requires that browser js statements end in semicolon!
-
-    var headers =    {
-        'Content-Type'   : 'text/html;charset=utf-8',
-        'Expires'        : new Date().toUTCString()
-    }
-
-    send(code, headers, html, context)
 }
 
 async function reset_latest_comment(post_id, db) { // reset post table data about latest comment, esp post_modified time
