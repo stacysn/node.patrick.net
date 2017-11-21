@@ -3633,13 +3633,12 @@ function comment_edit_box(comment, context) { // edit existing comment, redirect
 function post_list(posts, context) { // format a list of posts from whatever source
 
     var current_user = context.current_user
-    var ip           = context.ip
     var url          = context.req.url
 
     if (!url) return
 
     if (posts) {
-        let nonce_parms = create_nonce_parms(ip)
+        let nonce_parms = create_nonce_parms(context.ip)
         let moderation = 0
 
         if (URL.parse(url).pathname.match(/post_moderation/) && (current_user.user_level === 4)) moderation = 1
@@ -3659,11 +3658,7 @@ function post_list(posts, context) { // format a list of posts from whatever sou
             }
             else var unread = ''
 
-            if (post.post_topic)
-                var hashlink      = `in <a href='/topic/${post.post_topic}'>#${post.post_topic}</a>`
-            else
-                var hashlink      = ``
-
+            let hashlink      = post.post_topic ? `in <a href='/topic/${post.post_topic}'>#${post.post_topic}</a>` : ''
             let imgdiv        = (current_user && current_user.user_hide_post_list_photos) ? '' : get_first_image(post)
             let arrowbox_html = arrowbox(post)
             let firstwords    = `<font size='-1'>${first_words(post.post_content, 30)}</font>`
@@ -3671,7 +3666,7 @@ function post_list(posts, context) { // format a list of posts from whatever sou
             if (moderation) {
                 var approval_link = `<a href='#' onclick="$.get('/approve_post?post_id=${ post.post_id }&${nonce_parms}', function() { $('#post-${ post.post_id }').remove() }); return false">approve</a>`
                 var delete_link = ` &nbsp; <a href='/delete_post?post_id=${post.post_id}&${nonce_parms}' onClick="return confirm('Really delete?')" id='delete_post' >delete</a> &nbsp;`
-                var nuke_link = `<a href='/nuke?nuke_id=${post.post_author}&${create_nonce_parms(ip)}' onClick='return confirm("Really?")' >nuke</a>`
+                var nuke_link = `<a href='/nuke?nuke_id=${post.post_author}&${nonce_parms}' onClick='return confirm("Really?")' >nuke</a>`
             }
             else {
                 var approval_link = ''
@@ -3686,12 +3681,7 @@ function post_list(posts, context) { // format a list of posts from whatever sou
                 current_user.relationships[post.post_author].rel_i_ban) var hide = `style='display: none'`
             else var hide = ''
 
-            var link = `<b>${post_link(post)}</b>`
-            let extlinks = get_external_links(post.post_content)
-            if (extlinks && extlinks.length && URL.parse(extlinks[0]).host) {
-                var host = URL.parse(extlinks[0]).host.replace(/www./, '').substring(0, 31)
-                link += ` (<a href='${brandit(extlinks[0])}' target='_blank' title='original story' >${host})</a>`
-            }
+            var link = `<b>${post_link(post)}</b>${extlink(post)}`
 
             var utz = current_user ? current_user.user_timezone : 'America/Los_Angeles'
             var date = render_date(post.post_date, utz, 'D MMM YYYY')
@@ -3704,6 +3694,15 @@ function post_list(posts, context) { // format a list of posts from whatever sou
     else formatted = []
 
     return formatted.join('')
+}
+
+function extlink(post) { // format first external link from post
+    let extlinks = get_external_links(post.post_content)
+    if (extlinks && extlinks.length && URL.parse(extlinks[0]).host) {
+        var host = URL.parse(extlinks[0]).host.replace(/www./, '').substring(0, 31)
+        return ` (<a href='${brandit(extlinks[0])}' target='_blank' title='original story' >${host})</a>`
+    }
+    else return ''
 }
 
 function latest_comment(post) {
