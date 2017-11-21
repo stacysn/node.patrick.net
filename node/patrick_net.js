@@ -3064,12 +3064,17 @@ function render_ban_link(user, topic, current_user, ip) {
 
 function render_unread_comments_icon(post, current_user) { // return the blinky icon if there are unread comments in a post
 
+    if (!current_user) return ''
+
     // if post.post_latest_commenter_id is an ignored user, just return
     // prevents user from seeing blinky for ignored users, but unfortunately also prevents blinky for wanted unread comments before that
     if (current_user
      && current_user.relationships
      && current_user.relationships[post.post_latest_commenter_id]
-     && current_user.relationships[post.post_latest_commenter_id].rel_i_ban) { return '' }
+     && current_user.relationships[post.post_latest_commenter_id].rel_i_ban) return ''
+
+    if (!post.postview_last_view)
+        return `<a href='${post2path(post)}' ><img src='/content/unread_post.gif' width='45' height='16' title='You never read this one' ></a>`
 
     // if post_modified > last time they viewed this post, then give them a link to earliest unread comment
     let last_viewed = Date.parse(post.postview_last_view) / 1000
@@ -3648,14 +3653,8 @@ function post_list(posts, context) { // format a list of posts from whatever sou
             if (!current_user && post.post_title.match(/thunderdome/gi)) return '' // hide thunderdome posts if not logged in
             if (!current_user && post.post_nsfw)                         return '' // hide porn posts if not logged in
 
-            if (current_user) { // user is logged in
-                if (!post.postview_last_view)
-                    var unread = `<a href='${post2path(post)}' ><img src='/content/unread_post.gif' width='45' height='16' title='You never read this one' ></a>`
-                else 
-                    var unread = render_unread_comments_icon(post, current_user) // last view by this user, from left join
-            }
-            else var unread = ''
-
+            var unread = render_unread_comments_icon(post, current_user) // last view by this user, from left join
+            
             let hashlink      = post.post_topic ? `in <a href='/topic/${post.post_topic}'>#${post.post_topic}</a>` : ''
             let imgdiv        = (current_user && current_user.user_hide_post_list_photos) ? '' : get_first_image(post)
             let arrowbox_html = arrowbox(post)
