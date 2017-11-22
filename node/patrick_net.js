@@ -1154,14 +1154,15 @@ var routes = {
             return send_html(200, JSON.stringify({ err: true, content: popup('You are posting comments too quickly! Please slow down') }), context)
         }
         else {
-            post_data.comment_author = context.current_user ? context.current_user.user_id : await find_or_create_anon(context.db, context.ip)
-            /*
-            if (context.current_user && context.current_user.user_id)
+            if (context.current_user && context.current_user.user_id) {
                 post_data.comment_author = context.current_user.user_id
-            else {
-                return send_html(200, JSON.stringify({ err: true, content: popup('anonymous comments have been disabled, please reg/login') }), context)
+                post_data.comment_approved = 1
             }
-            */
+            else {
+                post_data.comment_author = await find_or_create_anon(context.db, context.ip)
+                post_data.comment_approved = 0 // anon comments go into moderation
+                //return send_html(200, JSON.stringify({ err: true, content: popup('anonymous comments have been disabled, please reg/login') }), context)
+            }
 
             let bans = await user_topic_bans(post_data.comment_author, context.db)
             let topic = (await get_post(post_data.comment_post_id, context.db)).post_topic
@@ -1172,9 +1173,6 @@ var routes = {
             post_data.comment_dislikes = 0
             post_data.comment_likes    = 0
             post_data.comment_date     = new Date().toISOString().slice(0, 19).replace('T', ' ') // mysql datetime format
-
-            var extlink_count = get_external_links(post_data.comment_content).length // appr anon comment if no external links
-            if (context.current_user || (extlink_count === 0)) post_data.comment_approved = 1
 
             try {
                 var insert_result = await query('insert into comments set ?', post_data, context.db)
@@ -1842,6 +1840,21 @@ var routes = {
             send_html(200, content, context)
         }
     },
+
+    liberate : async function(context) { // liberate a comment from comment jail
+
+        const comment_id = intval(_GET(context.req.url, 'comment_id'))
+
+        if (!context.current_user)                                                                 return send_html(200, '', context)
+        if (!valid_nonce(context.ip, _GET(context.req.url, 'ts'), _GET(context.req.url, 'nonce'))) return send_html(200, '', context)
+        if (!comment_id)                                                                           return send_html(200, '', context)
+
+        await query(`update comments set comment_adhom_when=null where comment_id = ? and (1 = ?)`,
+                    [comment_id, context.current_user.user_id], context.db)
+
+        send_html(200, '', context)
+    },
+
 
     like : async function(context) { // given a comment or post, upvote it
 
@@ -2841,7 +2854,10 @@ function contextual_link(c, current_user, url, ip) { // a link in the comment he
     if (!url)          return ''
 
     if (URL.parse(url).pathname.match(/jail/) && (current_user.user_level === 4)) {
-         return `<a href='/liberate?comment_id=${c.comment_id}' >liberate</a>`
+        return `<a href='#'
+                   onclick="$.get('/liberate?comment_id=${c.comment_id}&${create_nonce_parms(ip)}',
+                            function() { $('#comment-${ c.comment_id }').remove() }); return false"
+                >liberate</a>`
     }
     
     if (URL.parse(url).pathname.match(/comment_moderation/) && (current_user.user_level === 4)) {

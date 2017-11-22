@@ -13,5 +13,8 @@
     "moment-timezone": "^0.5.13",
     "mysql": "^2.5.4",
     "nodemailer": "^4.0.1"
+  },
+  "devDependencies": {
+    "eslint": "^4.11.0"
   }
 }
