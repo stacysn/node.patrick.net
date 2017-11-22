@@ -759,8 +759,7 @@ async function reset_latest_comment(post_id, db) { // reset post table data abou
                                      order by comment_date desc limit 1`, [post_id], db)
 
     if (comment_row) { // this is at least one comment on this post
-        let post_comments = await get_var(`select count(*) as c from comments where comment_post_id=? and comment_approved=1`,
-                                          [post_id], db)
+        let post_comments = await get_var(`select count(*) as c from comments where comment_post_id=? and comment_approved=1`, [post_id], db)
 
         let firstwords = first_words(comment_row.comment_content, 40)
 
@@ -1194,11 +1193,7 @@ var routes = {
 
             comment_mail(comment, context.db)
 
-            await query(`update posts set post_modified = ?,
-                                          post_latest_comment_id = ?,
-                                          post_comments=(select count(*) from comments where comment_post_id=?) where post_id = ?`,
-                        [post_data.comment_date, comment_id, post_data.comment_post_id, post_data.comment_post_id], context.db)
-                        // we select the count(*) from comments to make the comment counts self-correcting in case they get off somehow
+            await reset_latest_comment(post_data.comment_post_id, context.db)
 
             if (context.current_user) { // update postviews so that user does not see his own comment as unread
                 await query(`insert into postviews (postview_user_id, postview_post_id, postview_last_view)
@@ -1311,9 +1306,9 @@ var routes = {
 
     approve_comment : async function(context) {
 
-        let comment_id = intval(_GET(context.req.url, 'comment_id'))
+        const comment_id = intval(_GET(context.req.url, 'comment_id'))
+        if (!comment_id) return send_html(200, '', context)
 
-        if (!comment_id)                           return send_html(200, '', context)
         if (!context.current_user)                 return send_html(200, '', context)
         if (context.current_user.user_level !== 4) return send_html(200, '', context)
         if (!valid_nonce(context.ip, _GET(context.req.url, 'ts'), _GET(context.req.url, 'nonce'))) {
@@ -1321,8 +1316,9 @@ var routes = {
         }
 
         await query('update comments set comment_approved=1, comment_date=now() where comment_id=?', [comment_id], context.db)
-        await query('update posts set post_modified=now() where post_id=(select comment_post_id from comments where comment_id=?)',
-                    [comment_id], context.db)
+
+        const post_id = await get_var('select comment_post_id from comments where comment_id=?', [comment_id], context.db)
+        await reset_latest_comment(post_id, context.db)
 
         send_html(200, '', context) // make it disappear from comment_moderation page
     },
