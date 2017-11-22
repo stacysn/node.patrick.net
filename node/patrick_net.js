@@ -1135,7 +1135,8 @@ var routes = {
 
     accept_comment : async function(context) { // insert new comment
 
-        if (!valid_nonce(context.ip, _GET(context.req.url, 'ts'), _GET(context.req.url, 'nonce'))) { // do not die, because that will return a whole html page to be appended into the #comment_list slot
+        if (!valid_nonce(context.ip, _GET(context.req.url, 'ts'), _GET(context.req.url, 'nonce'))) {
+            // do not die, because that will return a whole html page to be appended into the #comment_list slot
             // show values for debugging nonce problems
             return send_html(200, { err: true, content: popup(invalid_nonce_message()) }, context)
         }
@@ -1432,8 +1433,8 @@ var routes = {
         await query(`delete from comments where comment_adhom_when < date_sub(now(), interval 30 day)`, [], context.db)
 
         let comments = await query(`select sql_calc_found_rows * from comments
-                                      left join users on user_id=comment_author
-                                      where comment_adhom_when is not null order by comment_date desc`, [], context.db)
+                                    left join users on user_id=comment_author
+                                    where comment_adhom_when is not null order by comment_date desc`, [], context.db)
 
         let offset = 0
         comments = comments.map(comment => { comment.row_number = ++offset; return comment })
@@ -1444,7 +1445,7 @@ var routes = {
             header(context.header_data, context.post ? context.post.post_topic : null, context.page, context.current_user, context.login_failed_email, context.req.url),
             midpage(
                 h1('Uncivil Comment Jail'),
-                'These comments were marked as uncivil. Patrick will review them and liberate comments which do not deserve to be here. You can edit your comment here to make it more civil and get it out of jail after the edits are reviewed. Comments not freed within 30 days will be deleted.',
+                'These comments were marked as uncivil. Patrick will review them and liberate comments which do not deserve to be here. You can edit your comment here to make it more civil and get it out of jail. Comments not freed within 30 days will be deleted.',
                 comment_list(comments, context)
             )
         )
