@@ -3668,10 +3668,10 @@ function post_list(posts, context) { // format a list of posts from whatever sou
 
     let moderation = (URL.parse(url).pathname.match(/post_moderation/) && (current_user.user_level === 4)) ? 1 : 0
 
-    return posts.map(post => post_summary(post, current_user, moderation)).join('')
+    return posts.map(post => post_summary(post, current_user, moderation, nonce_parms)).join('')
 }
 
-function post_summary(post, current_user, moderation) { // format item in list of posts according to user and whether post is in moderation
+function post_summary(post, current_user, moderation, nonce_parms) { // format item in list of posts according to user and whether post is in moderation
     const unread        = render_unread_comments_icon(post, current_user) // last view by this user, from left join
     const hashlink      = post.post_topic ? `in <a href='/topic/${post.post_topic}'>#${post.post_topic}</a>` : ''
     const imgdiv        = (current_user && current_user.user_hide_post_list_photos) ? '' : get_first_image(post)
