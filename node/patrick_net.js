@@ -3650,54 +3650,53 @@ function post_list(posts, context) { // format a list of posts from whatever sou
     var current_user = context.current_user
     var url          = context.req.url
 
-    if (!url) return
+    if (!url) return ''
+    if (!posts) return ''
 
-    if (posts) {
-        let nonce_parms = create_nonce_parms(context.ip)
-        let moderation = 0
+    let nonce_parms = create_nonce_parms(context.ip)
+    
+    posts = posts.filter(post => {
+        if (!current_user && post.post_title.match(/thunderdome/gi)) return false // hide thunderdome posts if not logged in
+        if (!current_user && post.post_nsfw)                         return false // hide porn posts if not logged in
+        return true
+    })
 
-        if (URL.parse(url).pathname.match(/post_moderation/) && (current_user.user_level === 4)) moderation = 1
-        
-        var formatted = posts.map(post => {
+    let moderation = (URL.parse(url).pathname.match(/post_moderation/) && (current_user.user_level === 4)) ? 1 : 0
 
-            if (!current_user && post.post_title.match(/thunderdome/gi)) return '' // hide thunderdome posts if not logged in
-            if (!current_user && post.post_nsfw)                         return '' // hide porn posts if not logged in
+    return posts.map(post => post_summary(post, current_user, moderation)).join('')
+}
 
-            var unread = render_unread_comments_icon(post, current_user) // last view by this user, from left join
-            
-            let hashlink      = post.post_topic ? `in <a href='/topic/${post.post_topic}'>#${post.post_topic}</a>` : ''
-            let imgdiv        = (current_user && current_user.user_hide_post_list_photos) ? '' : get_first_image(post)
-            let arrowbox_html = arrowbox(post)
-            let firstwords    = `<font size='-1'>${first_words(post.post_content, 30)}</font>`
+function post_summary(post, current_user, moderation) {
+    var unread = render_unread_comments_icon(post, current_user) // last view by this user, from left join
+    
+    let hashlink      = post.post_topic ? `in <a href='/topic/${post.post_topic}'>#${post.post_topic}</a>` : ''
+    let imgdiv        = (current_user && current_user.user_hide_post_list_photos) ? '' : get_first_image(post)
+    let arrowbox_html = arrowbox(post)
+    let firstwords    = `<font size='-1'>${first_words(post.post_content, 30)}</font>`
 
-            var approval_link = moderation ? ` <a href='#' onclick="$.get('/approve_post?post_id=${post.post_id}&${nonce_parms}',
-                function() { $('#post-${ post.post_id }').remove() }); return false">approve</a>` : ''
+    var approval_link = moderation ? ` <a href='#' onclick="$.get('/approve_post?post_id=${post.post_id}&${nonce_parms}',
+        function() { $('#post-${ post.post_id }').remove() }); return false">approve</a>` : ''
 
-            var delete_link = moderation ? ` <a href='/delete_post?post_id=${post.post_id}&${nonce_parms}'
-                onClick="return confirm('Really delete?')" id='delete_post' >delete</a> &nbsp;` : ''
+    var delete_link = moderation ? ` <a href='/delete_post?post_id=${post.post_id}&${nonce_parms}'
+        onClick="return confirm('Really delete?')" id='delete_post' >delete</a> &nbsp;` : ''
 
-            var nuke_link = moderation ? ` <a href='/nuke?nuke_id=${post.post_author}&${nonce_parms}' onClick='return confirm("Really?")' >nuke</a>` : ''
+    var nuke_link = moderation ? ` <a href='/nuke?nuke_id=${post.post_author}&${nonce_parms}' onClick='return confirm("Really?")' >nuke</a>` : ''
 
-            var latest = latest_comment(post)
+    var latest = latest_comment(post)
 
-            if (current_user                                 &&
-                current_user.relationships[post.post_author] &&
-                current_user.relationships[post.post_author].rel_i_ban) var hide = `style='display: none'`
-            else var hide = ''
+    if (current_user                                 &&
+        current_user.relationships[post.post_author] &&
+        current_user.relationships[post.post_author].rel_i_ban) var hide = `style='display: none'`
+    else var hide = ''
 
-            var link = `<b>${post_link(post)}</b>${extlink(post)}`
+    var link = `<b>${post_link(post)}</b>${extlink(post)}`
 
-            var utz = current_user ? current_user.user_timezone : 'America/Los_Angeles'
-            var date = render_date(post.post_date, utz, 'D MMM YYYY')
+    var utz = current_user ? current_user.user_timezone : 'America/Los_Angeles'
+    var date = render_date(post.post_date, utz, 'D MMM YYYY')
 
-            return `<div class='post' id='post-${post.post_id}' ${hide} >${arrowbox_html}${imgdiv}${link}
-            <br>by <a href='/user/${ post.user_name }'>${ post.user_name }</a> ${hashlink} on ${date}&nbsp;
-            ${latest} ${unread} ${approval_link} ${delete_link} ${nuke_link}<br>${firstwords}</div>`
-        })
-    }
-    else formatted = []
-
-    return formatted.join('')
+    return `<div class='post' id='post-${post.post_id}' ${hide} >${arrowbox_html}${imgdiv}${link}
+    <br>by <a href='/user/${ post.user_name }'>${ post.user_name }</a> ${hashlink} on ${date}&nbsp;
+    ${latest} ${unread} ${approval_link} ${delete_link} ${nuke_link}<br>${firstwords}</div>`
 }
 
 function extlink(post) { // format first external link from post
