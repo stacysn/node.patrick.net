@@ -3666,33 +3666,31 @@ function post_list(posts, context) { // format a list of posts from whatever sou
     return posts.map(post => post_summary(post, current_user, moderation)).join('')
 }
 
-function post_summary(post, current_user, moderation) {
-    var unread = render_unread_comments_icon(post, current_user) // last view by this user, from left join
-    
-    let hashlink      = post.post_topic ? `in <a href='/topic/${post.post_topic}'>#${post.post_topic}</a>` : ''
-    let imgdiv        = (current_user && current_user.user_hide_post_list_photos) ? '' : get_first_image(post)
-    let arrowbox_html = arrowbox(post)
-    let firstwords    = `<font size='-1'>${first_words(post.post_content, 30)}</font>`
+function post_summary(post, current_user, moderation) { // format item in list of posts according to user and whether post is in moderation
+    const unread        = render_unread_comments_icon(post, current_user) // last view by this user, from left join
+    const hashlink      = post.post_topic ? `in <a href='/topic/${post.post_topic}'>#${post.post_topic}</a>` : ''
+    const imgdiv        = (current_user && current_user.user_hide_post_list_photos) ? '' : get_first_image(post)
+    const arrowbox_html = arrowbox(post)
+    const firstwords    = `<font size='-1'>${first_words(post.post_content, 30)}</font>`
 
-    var approval_link = moderation ? ` <a href='#' onclick="$.get('/approve_post?post_id=${post.post_id}&${nonce_parms}',
+    const approval_link = moderation ? ` <a href='#' onclick="$.get('/approve_post?post_id=${post.post_id}&${nonce_parms}',
         function() { $('#post-${ post.post_id }').remove() }); return false">approve</a>` : ''
 
-    var delete_link = moderation ? ` <a href='/delete_post?post_id=${post.post_id}&${nonce_parms}'
+    const delete_link = moderation ? ` <a href='/delete_post?post_id=${post.post_id}&${nonce_parms}'
         onClick="return confirm('Really delete?')" id='delete_post' >delete</a> &nbsp;` : ''
 
-    var nuke_link = moderation ? ` <a href='/nuke?nuke_id=${post.post_author}&${nonce_parms}' onClick='return confirm("Really?")' >nuke</a>` : ''
+    const nuke_link = moderation ? ` <a href='/nuke?nuke_id=${post.post_author}&${nonce_parms}' onClick='return confirm("Really?")' >nuke</a>` : ''
 
-    var latest = latest_comment(post)
+    const latest = latest_comment(post)
 
-    if (current_user                                 &&
-        current_user.relationships[post.post_author] &&
-        current_user.relationships[post.post_author].rel_i_ban) var hide = `style='display: none'`
-    else var hide = ''
+    const hide = (current_user                                 &&
+                  current_user.relationships[post.post_author] &&
+                  current_user.relationships[post.post_author].rel_i_ban) ? `style='display: none'` : ''
 
-    var link = `<b>${post_link(post)}</b>${extlink(post)}`
+    const link = `<b>${post_link(post)}</b>${extlink(post)}`
 
-    var utz = current_user ? current_user.user_timezone : 'America/Los_Angeles'
-    var date = render_date(post.post_date, utz, 'D MMM YYYY')
+    const utz = current_user ? current_user.user_timezone : 'America/Los_Angeles'
+    const date = render_date(post.post_date, utz, 'D MMM YYYY')
 
     return `<div class='post' id='post-${post.post_id}' ${hide} >${arrowbox_html}${imgdiv}${link}
     <br>by <a href='/user/${ post.user_name }'>${ post.user_name }</a> ${hashlink} on ${date}&nbsp;
