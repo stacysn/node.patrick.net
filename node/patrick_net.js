@@ -89,6 +89,16 @@ function send_html(code, html, context) {
     send(code, headers, html, context)
 }
 
+function send_json(code, obj, context) {
+
+    var headers =    {
+        'Content-Type'   : 'text/html;charset=utf-8',
+        'Expires'        : new Date().toUTCString()
+    }
+
+    send(code, headers, JSON.stringify(obj), context)
+}
+
 function get_connection_from_pool(ip) {
 
     return new Promise(function(resolve, reject) {
@@ -1134,12 +1144,12 @@ var routes = {
         if (!valid_nonce(context.ip, _GET(context.req.url, 'ts'), _GET(context.req.url, 'nonce'))) {
             // do not die, because that will return a whole html page to be appended into the #comment_list slot
             // show values for debugging nonce problems
-            return send_html(200, { err: true, content: popup(invalid_nonce_message()) }, context)
+            return send_json(200, { err: true, content: popup(invalid_nonce_message()) }, context)
         }
 
         let post_data = await collect_post_data_and_trim(context)
 
-        if (!post_data.comment_content) return send_html(200, JSON.stringify({ err: false, content: '' }), context) // empty comment
+        if (!post_data.comment_content) return send_json(200, { err: false, content: '' }, context) // empty comment
 
         // rate limit comment insertion by user's ip address
         var ago = await get_var(`select (unix_timestamp(now()) - unix_timestamp(user_last_comment_time)) as ago from users
@@ -1147,7 +1157,7 @@ var routes = {
                                  order by user_last_comment_time desc limit 1`, [context.ip], context.db)
 
         if (ago && ago < 2) { // this ip already commented less than two seconds ago
-            return send_html(200, JSON.stringify({ err: true, content: popup('You are posting comments too quickly! Please slow down') }), context)
+            return send_json(200, { err: true, content: popup('You are posting comments too quickly! Please slow down') }, context)
         }
         else {
             if (context.current_user && context.current_user.user_id) {
@@ -1157,13 +1167,13 @@ var routes = {
             else {
                 post_data.comment_author = await find_or_create_anon(context.db, context.ip)
                 post_data.comment_approved = 0 // anon comments go into moderation
-                //return send_html(200, JSON.stringify({ err: true, content: popup('anonymous comments have been disabled, please reg/login') }), context)
+                //return send_json(200, { err: true, content: popup('anonymous comments have been disabled, please reg/login') }, context)
             }
 
             let bans = await user_topic_bans(post_data.comment_author, context.db)
             let topic = (await get_post(post_data.comment_post_id, context.db)).post_topic
             let message = is_user_banned(bans, topic, context.current_user)
-            if (message) return send_html(200, JSON.stringify({ err: true, content: popup(message) }), context)
+            if (message) return send_json(200, { err: true, content: popup(message) }, context)
 
             post_data.comment_content  = strip_tags(post_data.comment_content.linkify())
             post_data.comment_dislikes = 0
@@ -1176,17 +1186,15 @@ var routes = {
             catch(e) {
                 console.error(`${e} at accept_comment`)
                 let message = 'database failed to accept some part of the content, maybe an emoticon'
-                return send_html(200, JSON.stringify({ err: true, content: popup(message) }), context)
+                return send_json(200, { err: true, content: popup(message) }, context)
             }
             let comment_id = insert_result.insertId
 
             // now select the inserted row so that we pick up the comment_date time and user data for displaying the comment
-            let comment = await get_row('select * from comments left join users on comment_author=user_id where comment_id = ?',
-                                          [comment_id], context.db)
+            let comment = await get_row('select * from comments left join users on comment_author=user_id where comment_id = ?', [comment_id], context.db)
 
-            send_html(200, JSON.stringify(
-                { err: false, content: format_comment(comment, context, context.comments, _GET(context.req.url,
-                'offset')) }), context) // send html fragment
+            // send html fragment
+            send_json(200, { err: false, content: format_comment(comment, context, context.comments, _GET(context.req.url, 'offset')) }, context)
 
             comment_mail(comment, context.db)
 
