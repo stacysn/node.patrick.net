@@ -3658,6 +3658,11 @@ function post_list(posts, context) { // format a list of posts from whatever sou
     posts = posts.filter(post => {
         if (!current_user && post.post_title.match(/thunderdome/gi)) return false // hide thunderdome posts if not logged in
         if (!current_user && post.post_nsfw)                         return false // hide porn posts if not logged in
+
+        if (current_user                                 &&
+            current_user.relationships[post.post_author] &&
+            current_user.relationships[post.post_author].rel_i_ban)  return false
+
         return true
     })
 
@@ -3683,16 +3688,12 @@ function post_summary(post, current_user, moderation) { // format item in list o
 
     const latest = latest_comment(post)
 
-    const hide = (current_user                                 &&
-                  current_user.relationships[post.post_author] &&
-                  current_user.relationships[post.post_author].rel_i_ban) ? `style='display: none'` : ''
-
     const link = `<b>${post_link(post)}</b>${extlink(post)}`
 
     const utz = current_user ? current_user.user_timezone : 'America/Los_Angeles'
     const date = render_date(post.post_date, utz, 'D MMM YYYY')
 
-    return `<div class='post' id='post-${post.post_id}' ${hide} >${arrowbox_html}${imgdiv}${link}
+    return `<div class='post' id='post-${post.post_id}' >${arrowbox_html}${imgdiv}${link}
     <br>by <a href='/user/${ post.user_name }'>${ post.user_name }</a> ${hashlink} on ${date}&nbsp;
     ${latest} ${unread} ${approval_link} ${delete_link} ${nuke_link}<br>${firstwords}</div>`
 }
