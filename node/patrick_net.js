@@ -577,7 +577,7 @@ function resize_image(file, max_dim = 600) { // max_dim is maximum dimension in 
                     console.trace()
                     reject(`mogrify error: ${code}`) // todo: if code is non-zero, remove the file because something is wrong with it
                 }
-                else          resolve(true)
+                else resolve(true)
             })
         } else {
             console.trace()
@@ -586,7 +586,12 @@ function resize_image(file, max_dim = 600) { // max_dim is maximum dimension in 
     })
 }
 
-function valid_nonce(ip, ts, nonce) {
+function valid_nonce(context) {
+
+    const ip    = context.ip
+    const ts    = _GET(context.req.url, 'ts')
+    const nonce = _GET(context.req.url, 'nonce')
+
     if (intval(ts) < (Date.now() - 7200000)) return false // don't accept timestamps older than two hours
 
     if (get_nonce(ts, ip) === nonce) return true
@@ -1141,11 +1146,8 @@ var routes = {
 
     accept_comment : async function(context) { // insert new comment
 
-        if (!valid_nonce(context.ip, _GET(context.req.url, 'ts'), _GET(context.req.url, 'nonce'))) {
-            // do not die, because that will return a whole html page to be appended into the #comment_list slot
-            // show values for debugging nonce problems
-            return send_json(200, { err: true, content: popup(invalid_nonce_message()) }, context)
-        }
+        // do not die, because that will return a whole html page to be appended into the #comment_list slot
+        if (!valid_nonce(context)) return send_json(200, { err: true, content: popup(invalid_nonce_message()) }, context)
 
         let post_data = await collect_post_data_and_trim(context)
 
@@ -1159,68 +1161,67 @@ var routes = {
         if (ago && ago < 2) { // this ip already commented less than two seconds ago
             return send_json(200, { err: true, content: popup('You are posting comments too quickly! Please slow down') }, context)
         }
+
+        if (context.current_user && context.current_user.user_id) {
+            post_data.comment_author = context.current_user.user_id
+            post_data.comment_approved = 1
+        }
         else {
-            if (context.current_user && context.current_user.user_id) {
-                post_data.comment_author = context.current_user.user_id
-                post_data.comment_approved = 1
-            }
-            else {
-                post_data.comment_author = await find_or_create_anon(context.db, context.ip)
-                post_data.comment_approved = 0 // anon comments go into moderation
-                //return send_json(200, { err: true, content: popup('anonymous comments have been disabled, please reg/login') }, context)
-            }
+            post_data.comment_author = await find_or_create_anon(context.db, context.ip)
+            post_data.comment_approved = 0 // anon comments go into moderation
+            //return send_json(200, { err: true, content: popup('anonymous comments have been disabled, please reg/login') }, context)
+        }
 
-            let bans = await user_topic_bans(post_data.comment_author, context.db)
-            let topic = (await get_post(post_data.comment_post_id, context.db)).post_topic
-            let message = is_user_banned(bans, topic, context.current_user)
-            if (message) return send_json(200, { err: true, content: popup(message) }, context)
+        let bans = await user_topic_bans(post_data.comment_author, context.db)
+        let topic = (await get_post(post_data.comment_post_id, context.db)).post_topic
+        let message = is_user_banned(bans, topic, context.current_user)
+        if (message) return send_json(200, { err: true, content: popup(message) }, context)
 
-            post_data.comment_content  = strip_tags(post_data.comment_content.linkify())
-            post_data.comment_dislikes = 0
-            post_data.comment_likes    = 0
-            post_data.comment_date     = new Date().toISOString().slice(0, 19).replace('T', ' ') // mysql datetime format
+        post_data.comment_content  = strip_tags(post_data.comment_content.linkify())
+        post_data.comment_dislikes = 0
+        post_data.comment_likes    = 0
+        post_data.comment_date     = new Date().toISOString().slice(0, 19).replace('T', ' ') // mysql datetime format
 
-            try {
-                var insert_result = await query('insert into comments set ?', post_data, context.db)
-            }
-            catch(e) {
-                console.error(`${e} at accept_comment`)
-                let message = 'database failed to accept some part of the content, maybe an emoticon'
-                return send_json(200, { err: true, content: popup(message) }, context)
-            }
-            let comment_id = insert_result.insertId
+        try {
+            var insert_result = await query('insert into comments set ?', post_data, context.db)
+        }
+        catch(e) {
+            console.error(`${e} at accept_comment`)
+            let message = 'database failed to accept some part of the content, maybe an emoticon'
+            return send_json(200, { err: true, content: popup(message) }, context)
+        }
+        let comment_id = insert_result.insertId
 
-            // now select the inserted row so that we pick up the comment_date time and user data for displaying the comment
-            let comment = await get_row('select * from comments left join users on comment_author=user_id where comment_id = ?', [comment_id], context.db)
+        // now select the inserted row so that we pick up the comment_date time and user data for displaying the comment
+        let comment = await get_row('select * from comments left join users on comment_author=user_id where comment_id = ?', [comment_id], context.db)
 
-            // send html fragment
-            send_json(200, { err: false, content: format_comment(comment, context, context.comments, _GET(context.req.url, 'offset')) }, context)
+        // send html fragment
+        send_json(200, { err: false, content: format_comment(comment, context, context.comments, _GET(context.req.url, 'offset')) }, context)
 
-            comment_mail(comment, context.db)
+        comment_mail(comment, context.db)
 
-            await reset_latest_comment(post_data.comment_post_id, context.db)
+        await reset_latest_comment(post_data.comment_post_id, context.db)
 
-            if (context.current_user) { // update postviews so that user does not see his own comment as unread
-                await query(`insert into postviews (postview_user_id, postview_post_id, postview_last_view)
-                             values (?, ?, now()) on duplicate key update postview_last_view=now()`,
-                             [context.current_user.user_id, post_data.comment_post_id], context.db)
-            }
+        if (context.current_user) { // update postviews so that user does not see his own comment as unread
+            await query(`insert into postviews (postview_user_id, postview_post_id, postview_last_view)
+                         values (?, ?, now()) on duplicate key update postview_last_view=now()`,
+                         [context.current_user.user_id, post_data.comment_post_id], context.db)
+        }
 
-            // update comment count whether logged in or anon user
-            await query(`update users set user_last_comment_ip = ?,
-                         user_comments=(select count(*) from comments where comment_author = ?)
-                         where user_id = ?`, [context.ip, post_data.comment_author, post_data.comment_author], context.db)
+        // update comment count whether logged in or anon user
+        await query(`update users set user_last_comment_ip = ?,
+                     user_comments=(select count(*) from comments where comment_author = ?)
+                     where user_id = ?`, [context.ip, post_data.comment_author, post_data.comment_author], context.db)
 
-            if (!post_data.comment_approved) { // email moderator if comment not approved
-                mail(CONF.admin_email, 'new comment needs review',
-                `${post_data.comment_content}<p><a href='https://${CONF.domain}/comment_moderation'>moderation page</a>`)
-            }
+        if (!post_data.comment_approved) { // email moderator if comment not approved
+            mail(CONF.admin_email, 'new comment needs review',
+            `${post_data.comment_content}<p><a href='https://${CONF.domain}/comment_moderation'>moderation page</a>`)
         }
     },
 
     accept_edited_comment : async function(context) { // update old comment
 
-        if (!valid_nonce(context.ip, _GET(context.req.url, 'ts'), _GET(context.req.url, 'nonce'))) return die(invalid_nonce_message(), context)
+        if (!valid_nonce(context)) return die(invalid_nonce_message(), context)
 
         let post_data = await collect_post_data_and_trim(context)
 
@@ -1316,9 +1317,7 @@ var routes = {
 
         if (!context.current_user)                 return send_html(200, '', context)
         if (context.current_user.user_level !== 4) return send_html(200, '', context)
-        if (!valid_nonce(context.ip, _GET(context.req.url, 'ts'), _GET(context.req.url, 'nonce'))) {
-            return send_html(200, '', context)
-        }
+        if (!valid_nonce(context))                 return send_html(200, '', context)
 
         await query('update comments set comment_approved=1, comment_date=now() where comment_id=?', [comment_id], context.db)
 
@@ -1335,9 +1334,7 @@ var routes = {
         if (!post_id)                              return send_html(200, '', context)
         if (!context.current_user)                 return send_html(200, '', context)
         if (context.current_user.user_level !== 4) return send_html(200, '', context)
-        if (!valid_nonce(context.ip, _GET(context.req.url, 'ts'), _GET(context.req.url, 'nonce'))) {
-            return send_html(200, '', context)
-        }
+        if (!valid_nonce(context))                 return send_html(200, '', context)
 
         await query('update posts set post_approved=1, post_modified=now() where post_id=?', [post_id], context.db)
 
@@ -1368,9 +1365,7 @@ var routes = {
 
     ban_from_topic : async function(context) {
 
-        if (!valid_nonce(context.ip, _GET(context.req.url, 'ts'), _GET(context.req.url, 'nonce'))) {
-            return send_html(200, invalid_nonce_message(), context)
-        }
+        if (!valid_nonce(context)) return send_html(200, invalid_nonce_message(), context)
 
         let user_id = intval(_GET(context.req.url, 'user_id'))
         if (!user_id) return send_html(200, 'missing user_id', context)
@@ -1521,10 +1516,8 @@ var routes = {
         let comment_id = intval(_GET(context.req.url, 'comment_id'))
         let post_id    = intval(_GET(context.req.url, 'post_id'))
 
-        if (!context.current_user)      return send_html(200, '', context)
-        if (!valid_nonce(context.ip, _GET(context.req.url, 'ts'), _GET(context.req.url, 'nonce'))) {
-            return send_html(200, '', context)
-        }
+        if (!context.current_user)    return send_html(200, '', context)
+        if (!valid_nonce(context))    return send_html(200, '', context)
         if (!(comment_id && post_id)) return send_html(200, '', context)
 
         var topic = (await get_post(post_id, context.db)).post_topic
@@ -1546,7 +1539,7 @@ var routes = {
     delete_post : async function(context) { // delete a whole post, but not its comments
 
         if (!context.current_user) return die('you must be logged in to delete a post', context)
-        if (!valid_nonce(context.ip, _GET(context.req.url, 'ts'), _GET(context.req.url, 'nonce'))) return die(invalid_nonce_message(), context)
+        if (!valid_nonce(context)) return die(invalid_nonce_message(), context)
 
         var post_id
         if (post_id = intval(_GET(context.req.url, 'post_id'))) {
@@ -1633,7 +1626,7 @@ var routes = {
 
     edit_comment : async function (context) {
 
-        if (!valid_nonce(context.ip, _GET(context.req.url, 'ts'), _GET(context.req.url, 'nonce'))) return die(invalid_nonce_message(), context)
+        if (!valid_nonce(context)) return die(invalid_nonce_message(), context)
 
         let comment_id = intval(_GET(context.req.url, 'c'))
         let comment = await get_row(`select * from comments left join users on user_id=comment_author where comment_id=?`, [comment_id], context.db)
@@ -1656,7 +1649,7 @@ var routes = {
 
     edit_post : async function (context) {
 
-        if (!valid_nonce(context.ip, _GET(context.req.url, 'ts'), _GET(context.req.url, 'nonce'))) return die(invalid_nonce_message(), context)
+        if (!valid_nonce(context)) return die(invalid_nonce_message(), context)
 
         let post_id = intval(_GET(context.req.url, 'p'))
         let post = await get_row(`select * from posts left join users on user_id=post_author where post_id=?`, [post_id], context.db)
@@ -1697,11 +1690,8 @@ var routes = {
         let topic = _GET(context.req.url, 'topic').replace(/\W/, '').toLowerCase()
 
         if (!topic)                return ajax ? send_html(200, '', context) : die('topic missing', context)
-        if (!context.current_user) return ajax ? send_html(200, '', context) : die('must be logged in to follow or unfollow',
-        context)
-        if (!valid_nonce(context.ip, _GET(context.req.url, 'ts'), _GET(context.req.url, 'nonce'))) {
-            return ajax ? send_html(200, '', context) : die(invalid_nonce_message(), context)
-        }
+        if (!context.current_user) return ajax ? send_html(200, '', context) : die('must be logged in to follow or unfollow', context)
+        if (!valid_nonce(context)) return ajax ? send_html(200, '', context) : die(invalid_nonce_message(), context)
 
         if (intval(_GET(context.req.url, 'undo'))) {
 
@@ -1723,11 +1713,8 @@ var routes = {
         let other_id = intval(_GET(context.req.url, 'other_id'))
 
         if (!other_id)             return ajax ? send_html(200, '', context) : die('other_id missing', context)
-        if (!context.current_user) return ajax ? send_html(200, '', context) : die('must be logged in to follow or unfollow',
-        context)
-        if (!valid_nonce(context.ip, _GET(context.req.url, 'ts'), _GET(context.req.url, 'nonce'))) {
-            return ajax ? send_html(200, '', context) : die(invalid_nonce_message(), context)
-        }
+        if (!context.current_user) return ajax ? send_html(200, '', context) : die('must be logged in to follow or unfollow', context)
+        if (!valid_nonce(context)) return ajax ? send_html(200, '', context) : die(invalid_nonce_message(), context)
 
         if (intval(_GET(context.req.url, 'undo'))) {
             await query(`replace into relationships set rel_i_follow=0, rel_self_id=?, rel_other_id=?`,
@@ -1792,9 +1779,7 @@ var routes = {
         let other_id = intval(_GET(context.req.url, 'other_id'))
 
         if (!context.current_user) return send_html(200, '', context)
-        if (!valid_nonce(context.ip, _GET(context.req.url, 'ts'), _GET(context.req.url, 'nonce'))) {
-            return send_html(200, '', context)
-        }
+        if (!valid_nonce(context)) return send_html(200, '', context)
 
         if (intval(_GET(context.req.url, 'undo'))) {
             await query(`replace into relationships set rel_i_ban=0, rel_self_id=?, rel_other_id=?`,
@@ -1846,12 +1831,11 @@ var routes = {
 
         const comment_id = intval(_GET(context.req.url, 'comment_id'))
 
-        if (!context.current_user)                                                                 return send_html(200, '', context)
-        if (!valid_nonce(context.ip, _GET(context.req.url, 'ts'), _GET(context.req.url, 'nonce'))) return send_html(200, '', context)
-        if (!comment_id)                                                                           return send_html(200, '', context)
+        if (!comment_id)           return send_html(200, '', context)
+        if (!context.current_user) return send_html(200, '', context)
+        if (!valid_nonce(context)) return send_html(200, '', context)
 
-        await query(`update comments set comment_adhom_when=null where comment_id = ? and (1 = ?)`,
-                    [comment_id, context.current_user.user_id], context.db)
+        await query(`update comments set comment_adhom_when=null where comment_id = ? and (1 = ?)`, [comment_id, context.current_user.user_id], context.db)
 
         send_html(200, '', context)
     },
@@ -2009,11 +1993,9 @@ var routes = {
         let nuke_id = intval(_GET(context.req.url, 'nuke_id'))
         let u = await get_userrow(nuke_id, context.db)
 
-        if (!valid_nonce(context.ip, _GET(context.req.url, 'ts'), _GET(context.req.url, 'nonce'))) {
-            return die(invalid_nonce_message(), context)
-        }
+        if (!valid_nonce(context))              return die(invalid_nonce_message(), context)
         if (1 !== context.current_user.user_id) return die('non-admin may not nuke', context)
-        if (1 === nuke_id)                    return die('admin cannot nuke himself', context)
+        if (1 === nuke_id)                      return die('admin cannot nuke himself', context)
 
         let country = await ip2country(u.user_last_comment_ip, context.db)
 
@@ -2339,7 +2321,7 @@ var routes = {
 
         let comment_id = intval(_GET(context.req.url, 'c'))
 
-        if (context.current_user && (context.current_user.user_pbias > 3) && valid_nonce(context.ip, _GET(context.req.url, 'ts'), _GET(context.req.url, 'nonce')) && comment_id) {
+        if (context.current_user && (context.current_user.user_pbias > 3) && valid_nonce(context) && comment_id) {
             await query(`update comments set comment_adhom_reporter=?, comment_adhom_when=now() where comment_id = ?`,
                         [context.current_user.user_id, comment_id], context.db)
         }
@@ -2349,7 +2331,7 @@ var routes = {
 
     update_profile : async function(context) { // accept data from profile_form
 
-        if (!valid_nonce(context.ip, _GET(context.req.url, 'ts'), _GET(context.req.url, 'nonce'))) return die(invalid_nonce_message(), context)
+        if (!valid_nonce(context)) return die(invalid_nonce_message(), context)
         if (!context.current_user) return die('must be logged in to update profile', context)
 
         let post_data = await collect_post_data_and_trim(context)
@@ -2586,10 +2568,8 @@ var routes = {
         let post_id = intval(_GET(context.req.url, 'post_id'))
 
         if (!context.current_user) return send_html(200, '', context)
-        if (!valid_nonce(context.ip, _GET(context.req.url, 'ts'), _GET(context.req.url, 'nonce'))) {
-            return send_html(200, '', context)
-        }
-        if (!post_id) return send_html(200, '', context)
+        if (!valid_nonce(context)) return send_html(200, '', context)
+        if (!post_id)              return send_html(200, '', context)
 
         let postview_want_email = await get_var(`select postview_want_email from postviews
                                                  where postview_user_id=? and postview_post_id=?`,
