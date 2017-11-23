@@ -3365,16 +3365,11 @@ function post(post, ip, current_user) { // format a single post for display
     document.getElementById('watch').innerHTML = data; });
     return false" title='comments by email'>${render_watch_indicator(post.postview_want_email)}</a>`
 
-    let edit_link = ''
-    if (current_user && ((current_user.user_id === post.post_author) || (current_user.user_level >= 4)) ) {
-        edit_link = `<a href='/edit_post?p=${post.post_id}&${nonce_parms}'>edit</a> &nbsp; `
-    }
+    let edit_link = (current_user && ((current_user.user_id === post.post_author) || (current_user.user_level >= 4)) ) ?
+        `<a href='/edit_post?p=${post.post_id}&${nonce_parms}'>edit</a> ` : ''
 
-    let delete_link = ''
-    if (current_user && ((current_user.user_id === post.post_author && !post.post_comments) || (current_user.user_level >= 4))) {
-        delete_link = ` &nbsp; <a href='/delete_post?post_id=${post.post_id}&${nonce_parms}' 
-                       onClick="return confirm('Really delete?')" id='delete_post' >delete</a> &nbsp;` 
-    }
+    let delete_link = (current_user && ((current_user.user_id === post.post_author && !post.post_comments) || (current_user.user_level >= 4))) ?
+        `<a href='/delete_post?post_id=${post.post_id}&${nonce_parms}' onClick="return confirm('Really delete?')" id='delete_post' >delete</a> ` : ''
 
     post.user_name = post.user_name || 'anonymous' // so we don't display 'null' in case the post is anonymous
 
@@ -3386,7 +3381,7 @@ function post(post, ip, current_user) { // format a single post for display
             ${watcheye} &nbsp;
             <a href="#commentform" onclick="addquote( '${post.post_id}', '0', '0', '${post.user_name}' ); return false;"
                title="Select some text then click this to quote" >quote</a> &nbsp;
-            &nbsp; ${share_post(post)} &nbsp; ${edit_link} ${delete_link}
+            &nbsp; ${share_post(post)} &nbsp; ${edit_link} &nbsp; ${delete_link}
             <p><hr><div class="entry" class="alt" id="comment-0-text" >${ post.post_content }</div></div>`
 }
 
