@@ -26,15 +26,15 @@ const BASEURL     = ('dev' === process.env.environment) ? CONF.baseurl_dev : CON
 const POOL        = MYSQL.createPool(CONF.db)
 
 process.on('unhandledRejection', (reason, p) => { // very valuable for debugging unhandled promise rejections
-    console.log('Unhandled Rejection at promise:', p, 'reason:', reason)
-    console.log(reason.stack)
+    console.error('Unhandled Rejection at promise:', p, 'reason:', reason)
+    console.error(reason.stack)
 })
 
 if (CLUSTER.isMaster && !('dev' === process.env.environment)) { // to keep debugging simpler, do not fork in dev
     for (var i = 0; i < OS.cpus().length; i++) CLUSTER.fork()
 
     CLUSTER.on('exit', function(worker, code, signal) {
-        console.log(`worker pid ${worker.process.pid} died with code ${code} from signal ${signal}, replacing that worker`)
+        console.error(`worker pid ${worker.process.pid} died with code ${code} from signal ${signal}, replacing that worker`)
         CLUSTER.fork()
     })
 } else HTTP.createServer(render).listen(CONF.http_port)
@@ -93,10 +93,7 @@ function get_connection_from_pool(ip) {
 
     return new Promise(function(resolve, reject) {
 
-        if (LOCKS[ip]) {
-            console.log(`rate limit exceeded by ${ip}`)
-            return reject('rate limit exceeded')
-        }
+        if (LOCKS[ip]) return reject('rate limit exceeded')
 
         LOCKS[ip] = Date.now() // set a database lock for this ip; each ip is allowed only one outstanding connection at a time
 
@@ -209,7 +206,7 @@ async function get_user(context) { // update context with whether they are logge
         return current_user
     }
     catch(e) { // no valid cookie
-        console.log(e)
+        console.error(e)
         return null
     }
 }
@@ -327,7 +324,7 @@ function mail(email, subject, message) {
     }
 
     get_transporter().sendMail(mailOptions, (error, info) => {
-        if (error) console.log('error in mail: ' + error)
+        if (error) console.error('error in mail: ' + error)
     })
 }
 
@@ -1177,7 +1174,7 @@ var routes = {
                 var insert_result = await query('insert into comments set ?', post_data, context.db)
             }
             catch(e) {
-                console.log(`${e} at accept_comment`)
+                console.error(`${e} at accept_comment`)
                 let message = 'database failed to accept some part of the content, maybe an emoticon'
                 return send_html(200, JSON.stringify({ err: true, content: popup(message) }), context)
             }
@@ -2027,7 +2024,7 @@ var routes = {
             await query(`insert into nukes (nuke_date, nuke_email, nuke_username,                nuke_ip,  nuke_country) values
                        (now(), ?, ?, ?, ?)`, [u.user_email, u.user_name, u.user_last_comment_ip, country], context.db)
         }
-        catch(e) { console.log(e) } // try-catch for case where ip is already in nukes table somehow
+        catch(e) { console.error(e) } // try-catch for case where ip is already in nukes table somehow
 
         redirect(context.req.headers.referer, context) 
     },
