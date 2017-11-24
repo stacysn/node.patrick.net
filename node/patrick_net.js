@@ -1158,7 +1158,6 @@ var routes = {
         if (!valid_nonce(context)) return send_json(200, { err: true, content: popup(invalid_nonce_message()) }, context)
 
         let post_data = await collect_post_data_and_trim(context)
-
         if (!post_data.comment_content) return send_json(200, { err: false, content: '' }, context) // empty comment, empty response
 
         if (await too_fast(context.ip, context.db)) return send_json(200, { err: true, content: popup('You are posting comments too quickly') }, context)
@@ -1188,8 +1187,7 @@ var routes = {
         }
         catch(e) {
             console.error(`${e} at accept_comment`)
-            let message = 'database failed to accept some part of the content, maybe an emoticon'
-            return send_json(200, { err: true, content: popup(message) }, context)
+            return send_json(200, { err: true, content: popup('database failed to accept some part of the content, maybe an emoticon') }, context)
         }
         let comment_id = insert_result.insertId
 
@@ -1198,8 +1196,6 @@ var routes = {
 
         // send html fragment
         send_json(200, { err: false, content: format_comment(comment, context, context.comments, _GET(context.req.url, 'offset')) }, context)
-
-        comment_mail(comment, context.db)
 
         await reset_latest_comment(post_data.comment_post_id, context.db)
 
@@ -1218,6 +1214,7 @@ var routes = {
             mail(CONF.admin_email, 'new comment needs review',
             `${post_data.comment_content}<p><a href='https://${CONF.domain}/comment_moderation'>moderation page</a>`)
         }
+        else comment_mail(comment, context.db)
     },
 
     accept_edited_comment : async function(context) { // update old comment
@@ -1308,8 +1305,7 @@ var routes = {
     approve_comment : async function(context) {
 
         const comment_id = intval(_GET(context.req.url, 'comment_id'))
-        if (!comment_id) return send_html(200, '', context)
-
+        if (!comment_id)                           return send_html(200, '', context)
         if (!context.current_user)                 return send_html(200, '', context)
         if (context.current_user.user_level !== 4) return send_html(200, '', context)
         if (!valid_nonce(context))                 return send_html(200, '', context)
