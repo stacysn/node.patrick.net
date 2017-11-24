@@ -743,6 +743,14 @@ async function sql_calc_found_rows(db) {
     return await get_var('select found_rows() as f', [], db)
 }
 
+async function too_fast(ip, db) { // rate limit comment insertion by user's ip address
+    const ago = await get_var(`select (unix_timestamp(now()) - unix_timestamp(user_last_comment_time)) as ago from users
+                               where user_last_comment_time is not null and user_last_comment_ip = ?
+                               order by user_last_comment_time desc limit 1`, [ip], db)
+
+    return (ago && ago < 2) ? true : false // return true if this ip already commented less than two seconds ago
+}
+
 async function send_login_link(ip, db, post_data) {
 
     if (!valid_email(post_data.user_email)) return `Please go back and enter a valid email`
@@ -1151,16 +1159,9 @@ var routes = {
 
         let post_data = await collect_post_data_and_trim(context)
 
-        if (!post_data.comment_content) return send_json(200, { err: false, content: '' }, context) // empty comment
+        if (!post_data.comment_content) return send_json(200, { err: false, content: '' }, context) // empty comment, empty response
 
-        // rate limit comment insertion by user's ip address
-        var ago = await get_var(`select (unix_timestamp(now()) - unix_timestamp(user_last_comment_time)) as ago from users
-                                 where user_last_comment_time is not null and user_last_comment_ip = ?
-                                 order by user_last_comment_time desc limit 1`, [context.ip], context.db)
-
-        if (ago && ago < 2) { // this ip already commented less than two seconds ago
-            return send_json(200, { err: true, content: popup('You are posting comments too quickly! Please slow down') }, context)
-        }
+        if (await too_fast(context.ip, context.db)) return send_json(200, { err: true, content: popup('You are posting comments too quickly') }, context)
 
         if (context.current_user && context.current_user.user_id) {
             post_data.comment_author = context.current_user.user_id
@@ -1228,30 +1229,24 @@ var routes = {
         if (!post_data.comment_content) return die('please go back and enter some content', context)
 
         // rate limit by user's ip address
-        var ago = await get_var('select (unix_timestamp(now()) - unix_timestamp(user_last_comment_time)) as ago from users where user_last_comment_time is not null and user_last_comment_ip = ? order by user_last_comment_time desc limit 1',
-            [context.ip], context.db)
+        if (await too_fast(context.ip, context.db)) return send_json(200, { err: true, content: popup('You are posting comments too quickly') }, context)
 
-        if (ago && ago < 2) { // this ip already commented less than two seconds ago
-            return die('You are posting comments too quickly! Please slow down', context)
-        }
+        post_data.comment_content  = strip_tags(post_data.comment_content.linkify())
+        post_data.comment_dislikes = 0
+        post_data.comment_likes    = 0
+        post_data.comment_approved = 1
+
+        let comment_id = post_data.comment_id
+        await query('update comments set ? where comment_id = ? and (comment_author = ? or 1 = ?)',
+                    [post_data, comment_id, context.current_user.user_id, context.current_user.user_id], context.db)
+
+        // now select the inserted row so that we pick up the comment_post_id
+        let comment = await get_row('select * from comments where comment_id = ?', [comment_id], context.db)
+
+        if (comment.comment_adhom_when) redirect(`/comment_jail#comment-${comment_id}`, context)
         else {
-            post_data.comment_content  = strip_tags(post_data.comment_content.linkify())
-            post_data.comment_dislikes = 0
-            post_data.comment_likes    = 0
-            post_data.comment_approved = 1
-
-            let comment_id = post_data.comment_id
-            await query('update comments set ? where comment_id = ? and (comment_author = ? or 1 = ?)',
-                        [post_data, comment_id, context.current_user.user_id, context.current_user.user_id], context.db)
-
-            // now select the inserted row so that we pick up the comment_post_id
-            let comment = await get_row('select * from comments where comment_id = ?', [comment_id], context.db)
-
-            if (comment.comment_adhom_when) redirect(`/comment_jail#comment-${comment_id}`, context)
-            else {
-                let offset = await cid2offset(comment.comment_post_id, comment_id, context.db)
-                redirect(`/post/${comment.comment_post_id}?offset=${offset}#comment-${comment_id}`, context)
-            }
+            let offset = await cid2offset(comment.comment_post_id, comment_id, context.db)
+            redirect(`/post/${comment.comment_post_id}?offset=${offset}#comment-${comment_id}`, context)
         }
     },
 
