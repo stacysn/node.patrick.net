@@ -1184,8 +1184,6 @@ var routes = {
         if (result.err) return send_json(200, result, context)
 
         post_data.comment_content  = strip_tags(post_data.comment_content.linkify())
-        post_data.comment_dislikes = 0
-        post_data.comment_likes    = 0
         post_data.comment_date     = new Date().toISOString().slice(0, 19).replace('T', ' ') // mysql datetime format
 
         try {
