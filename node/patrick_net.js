@@ -1154,7 +1154,6 @@ var routes = {
 
     accept_comment : async function(context) { // insert new comment
 
-        // do not die, because that will return a whole html page to be appended into the #comment_list slot
         if (!valid_nonce(context)) return send_json(200, { err: true, content: popup(invalid_nonce_message()) }, context)
 
         let post_data = await collect_post_data_and_trim(context)
@@ -1184,17 +1183,15 @@ var routes = {
 
         try {
             var insert_result = await query('insert into comments set ?', post_data, context.db)
+            var comment_id = insert_result.insertId
         }
         catch(e) {
             console.error(`${e} at accept_comment`)
             return send_json(200, { err: true, content: popup('database failed to accept some part of the content, maybe an emoticon') }, context)
         }
-        let comment_id = insert_result.insertId
 
-        // now select the inserted row so that we pick up the comment_date time and user data for displaying the comment
         let comment = await get_row('select * from comments left join users on comment_author=user_id where comment_id = ?', [comment_id], context.db)
 
-        // send html fragment
         send_json(200, { err: false, content: format_comment(comment, context, context.comments, _GET(context.req.url, 'offset')) }, context)
 
         await reset_latest_comment(post_data.comment_post_id, context.db)
@@ -3709,6 +3706,6 @@ function comment_list(comments, context) { // format one page of comments
     let offset = _GET(context.req.url, 'offset')
 
     return `<div id='comment_list' >
-    ${(comments.length ?  comments.map(item => format_comment(item, context, comments, offset)).join('') : '<b>no comments found</b>')}
+    ${ comments.length ? comments.map(item => format_comment(item, context, comments, offset)).join('') : '<b>no comments found</b>' }
     </div>`
 }
