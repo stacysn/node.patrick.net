@@ -1160,6 +1160,41 @@ async function allow_comment(post_data, context) {
     return { err: false, content: '' }
 }
 
+async function after_accept_comment(post_data, context) {
+
+    await reset_latest_comment(post_data.comment_post_id, context.db)
+
+    if (context.current_user) { // update postviews so that user does not see his own comment as unread
+        await query(`insert into postviews (postview_user_id, postview_post_id, postview_last_view)
+                     values (?, ?, now()) on duplicate key update postview_last_view=now()`,
+                     [context.current_user.user_id, post_data.comment_post_id], context.db)
+    }
+
+    // update comment count whether logged in or anon user
+    await query(`update users set user_last_comment_ip = ?,
+                 user_comments=(select count(*) from comments where comment_author = ?)
+                 where user_id = ?`, [context.ip, post_data.comment_author, post_data.comment_author], context.db)
+
+    if (!post_data.comment_approved) { // email moderator if comment not approved
+        mail(CONF.admin_email, 'new comment needs review',
+        `${post_data.comment_content}<p><a href='https://${CONF.domain}/comment_moderation'>moderation page</a>`)
+    }
+    else comment_mail(comment, context.db)
+}
+
+async function hit_daily_post_limit(context) {
+
+    if (!context.current_user) return true
+
+    var posts_today = await get_var('select count(*) as c from posts where post_author=? and post_date >= curdate()',
+        [context.current_user.user_id], context.db)
+
+    var whole_weeks_registered = await get_var('select floor(datediff(curdate(), user_registered)/7) from users where user_id=?',
+        [context.current_user.user_id], context.db)
+
+    return (posts_today >= MAX_POSTS || posts_today > whole_weeks_registered) ? true : false
+}
+
 var routes = {
 
     about : async function(context) {
@@ -1199,24 +1234,7 @@ var routes = {
 
         send_json(200, { err: false, content: format_comment(comment, context, context.comments, _GET(context.req.url, 'offset')) }, context)
 
-        await reset_latest_comment(post_data.comment_post_id, context.db)
-
-        if (context.current_user) { // update postviews so that user does not see his own comment as unread
-            await query(`insert into postviews (postview_user_id, postview_post_id, postview_last_view)
-                         values (?, ?, now()) on duplicate key update postview_last_view=now()`,
-                         [context.current_user.user_id, post_data.comment_post_id], context.db)
-        }
-
-        // update comment count whether logged in or anon user
-        await query(`update users set user_last_comment_ip = ?,
-                     user_comments=(select count(*) from comments where comment_author = ?)
-                     where user_id = ?`, [context.ip, post_data.comment_author, post_data.comment_author], context.db)
-
-        if (!post_data.comment_approved) { // email moderator if comment not approved
-            mail(CONF.admin_email, 'new comment needs review',
-            `${post_data.comment_content}<p><a href='https://${CONF.domain}/comment_moderation'>moderation page</a>`)
-        }
-        else comment_mail(comment, context.db)
+        await after_accept_comment(post_data, context)
     },
 
     accept_edited_comment : async function(context) { // update old comment
@@ -1278,13 +1296,7 @@ var routes = {
             if ((context.current_user.user_comments < 3) && is_foreign(context) && CHEERIO.load(post_data.post_content)('a').length)
                 return die(`spam rejected`, context) // new, foreign, and posting link
 
-            var posts_today = await get_var('select count(*) as c from posts where post_author=? and post_date >= curdate()',
-                [context.current_user.user_id], context.db)
-
-            var whole_weeks_registered = await get_var('select floor(datediff(curdate(), user_registered)/7) from users where user_id=?',
-                [context.current_user.user_id], context.db)
-
-            if (posts_today >= MAX_POSTS || posts_today > whole_weeks_registered) return die(`you hit your new post limit for today`, context)
+            if (await hit_daily_post_limit(context)) return die(`you hit your new post limit for today`, context)
 
             try {
                 var results = await query('insert into posts set ?, post_modified=now()', post_data, context.db)
