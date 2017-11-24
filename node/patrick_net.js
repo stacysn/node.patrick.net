@@ -1146,6 +1146,20 @@ function die(message, context) {
     send_html(200, content, context)
 }
 
+async function allow_comment(post_data, context) {
+
+    if (!valid_nonce(context))                  return { err: true, content: popup(invalid_nonce_message()) }
+    if (!post_data.comment_content)             return { err: true, content: '' } // empty comment, empty response
+    if (await too_fast(context.ip, context.db)) return { err: true, content: popup('You are posting comments too quickly') }
+
+    let bans = await user_topic_bans(post_data.comment_author, context.db)
+    let topic = (await get_post(post_data.comment_post_id, context.db)).post_topic
+    let message = is_user_banned(bans, topic, context.current_user)
+    if (message) return { err: true, content: popup(message) }
+
+    return { err: false, content: '' }
+}
+
 var routes = {
 
     about : async function(context) {
@@ -1154,12 +1168,7 @@ var routes = {
 
     accept_comment : async function(context) { // insert new comment
 
-        if (!valid_nonce(context)) return send_json(200, { err: true, content: popup(invalid_nonce_message()) }, context)
-
         let post_data = await collect_post_data_and_trim(context)
-        if (!post_data.comment_content) return send_json(200, { err: false, content: '' }, context) // empty comment, empty response
-
-        if (await too_fast(context.ip, context.db)) return send_json(200, { err: true, content: popup('You are posting comments too quickly') }, context)
 
         if (context.current_user && context.current_user.user_id) {
             post_data.comment_author = context.current_user.user_id
@@ -1171,10 +1180,8 @@ var routes = {
             //return send_json(200, { err: true, content: popup('anonymous comments have been disabled, please reg/login') }, context)
         }
 
-        let bans = await user_topic_bans(post_data.comment_author, context.db)
-        let topic = (await get_post(post_data.comment_post_id, context.db)).post_topic
-        let message = is_user_banned(bans, topic, context.current_user)
-        if (message) return send_json(200, { err: true, content: popup(message) }, context)
+        let result = await allow_comment(post_data, context)
+        if (result.err) return send_json(200, result, context)
 
         post_data.comment_content  = strip_tags(post_data.comment_content.linkify())
         post_data.comment_dislikes = 0
