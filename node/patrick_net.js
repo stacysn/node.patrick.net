@@ -180,8 +180,11 @@ function collect_post_data(context) { // if there is any POST data, accumulate i
 }
 
 async function collect_post_data_and_trim(context) { // to deal with safari on iphone tacking on unwanted whitespace to post form data
+
     let post_data = await collect_post_data(context)
     Object.keys(post_data).forEach(key => { post_data[key] = post_data[key].trim() })
+    delete post_data.submit // because some browsers include submit as a data field
+
     return post_data
 }
 
@@ -1195,6 +1198,15 @@ async function hit_daily_post_limit(context) {
     return (posts_today >= MAX_POSTS || posts_today > whole_weeks_registered) ? true : false
 }
 
+function find_topic(post_content) {
+
+    let matches
+
+    if      (matches = post_content.match(/^#(\w+)/m)) return matches[1] // first tag starting a line becomes topic
+    else if (matches = post_content.match(/>#(\w+)/m)) return matches[1] // else existing, linked topic
+    else                                               return 'misc'
+}
+
 var routes = {
 
     about : async function(context) {
@@ -1272,13 +1284,8 @@ var routes = {
         if (!context.current_user) return die(`anonymous posts are not allowed`, context)
 
         let post_data = await collect_post_data_and_trim(context)
-        delete post_data.submit
 
-        // look for hashtag as first item on a line before linkify(), which will make it a link and thus not starting with # anymore
-        var matches
-        if      (matches = post_data.post_content.match(/^#(\w+)/m)) post_data.post_topic = matches[1] // first tag starting a line becomes topic
-        else if (matches = post_data.post_content.match(/>#(\w+)/m)) post_data.post_topic = matches[1] // else existing, linked topic
-        else                                                         post_data.post_topic = 'misc'
+        post_data.post_topic = find_topic(post_data.post_content)
 
         // get all the topics in an array
         // if post topic is not in that array, reject, asking for one of the #elements in array
