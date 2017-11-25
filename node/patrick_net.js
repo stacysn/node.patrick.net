@@ -1348,6 +1348,37 @@ async function dislike_post(user_id, context) {
     return String(post_row.post_dislikes)
 }
 
+async function check_topic(p, context) { // if we never set prev|next (null) or did set it to 0 AND are here from a new post referer, then update
+    if ((null === p.post_prev_in_topic || null === p.post_next_in_topic) ||
+        ((0   === p.post_prev_in_topic || 0    === p.post_next_in_topic) &&
+            context.req.headers.referer &&
+            context.req.headers.referer.match(/post/))
+       ) [p.post_prev_in_topic, p.post_next_in_topic] = await update_prev_next(p.post_topic, p.post_id, context.db)
+}
+
+async function check_post(p, context) {
+
+    if (!p) {
+        await repair_referer(context.req, context.db);
+        return 'No post with that id'
+    }
+
+    if (!p.post_approved && current_user_id !== 1) {
+        await repair_referer(context.req, context.db);
+        return 'That post is waiting for moderation'
+    }
+}
+
+async function update_postview(p, context) {
+
+    p.postview_want_email = p.postview_want_email || 0 // keep as 1 or 0 from db; set to 0 if null in db
+
+    if('0' === _GET(context.req.url, 'want_email')) p.postview_want_email = 0
+
+    await query(`replace into postviews set postview_user_id=?, postview_post_id=?, postview_last_view=now(), postview_want_email=?`,
+                [context.current_user.user_id, p.post_id, p.postview_want_email], context.db)
+}
+
 var routes = {
 
     about : async function(context) {
@@ -2079,48 +2110,28 @@ var routes = {
         let current_user_id = context.current_user ? context.current_user.user_id : 0
         let post_id         = intval(segments(context.req.url)[2]) // get post's db row number from url, eg 47 from /post/47/slug-goes-here
 
-        var c
+        let c
         if (c = _GET(context.req.url, 'c')) { // permalink to a comment
             let offset = await cid2offset(post_id, c, context.db)
             return redirect(`/post/${post_id}?offset=${offset}#comment-${c}`, context)
         }
 
         let p = await get_row(`select * from posts
-                                    left join postvotes on (postvote_post_id=post_id and postvote_user_id=?)
-                                    left join postviews on (postview_post_id=post_id and postview_user_id=?)
-                                    left join users on user_id=post_author
-                                    where post_id=?`, [current_user_id, current_user_id, post_id], context.db)
+                               left join postvotes on (postvote_post_id=post_id and postvote_user_id=?)
+                               left join postviews on (postview_post_id=post_id and postview_user_id=?)
+                               left join users on user_id=post_author
+                               where post_id=?`, [current_user_id, current_user_id, post_id], context.db)
 
-        if (!p) { await repair_referer(context.req, context.db); return die(`No post with id "${post_id}"`, context) }
+        var err = await check_post(p, context)
+        if (err) return die(err, context)
 
-        if (!p.post_approved && current_user_id !== 1) { await repair_referer(context.req, context.db); return die(`That p is waiting for moderation`, context) }
-
-        let comments      = await post_comment_list(p, context.req.url, context.current_user, context.db) // pick up the comment list for this post
-        p.watchers = await get_var(`select count(*) as c from postviews
-                                                   where postview_post_id=? and postview_want_email=1`, [post_id], context.db)
-
+        let comments = await post_comment_list(p, context.req.url, context.current_user, context.db) // pick up the comment list for this post
+        p.watchers   = await get_var(`select count(*) as c from postviews where postview_post_id=? and postview_want_email=1`, [post_id], context.db)
         p.post_views++ // increment here for display and in db on next line as record
         await query(`update posts set post_views = ? where post_id=?`, [p.post_views, post_id], context.db)
 
-        if (current_user_id) {
-            p.postview_want_email = p.postview_want_email || 0 // keep as 1 or 0 from db; set to 0 if null in db
-            if( '0' === _GET(context.req.url, 'want_email') ) p.postview_want_email = 0
-
-            await query(`replace into postviews set
-                         postview_user_id=?, postview_post_id=?, postview_last_view=now(), postview_want_email=?`,
-                         [ current_user_id, post_id, p.postview_want_email ], context.db)
-        }
-
-        // if we never set prev|next (null) or did set it to 0 AND are here from a new post referer, then update
-        if (p.post_topic) {
-            if ((null === p.post_prev_in_topic || null === p.post_next_in_topic) ||
-                ((0   === p.post_prev_in_topic || 0    === p.post_next_in_topic) &&
-                    context.req.headers.referer &&
-                    context.req.headers.referer.match(/post/))
-               ) {
-                [p.post_prev_in_topic, p.post_next_in_topic] = await update_prev_next(p.post_topic, p.post_id, context.db)
-            }
-        }
+        if (current_user_id) await update_postview(p, context)
+        if (p.post_topic)    await check_topic(p, context)
 
         let content = html(
             render_query_times(context.res.start_time, context.db.queries),
