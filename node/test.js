@@ -32,10 +32,10 @@ it('about page should return 200 and contain "about"', function (done) {
     })
 })
 
-it('non-existent post should return 200 and contain "No post with id"', function (done) {
+it('non-existent post should return 200 and contain "No post with that id"', function (done) {
     request.get(base_url + '/post/0', function (err, res, body) {
         assert.equal(res.statusCode, 200)
-        assert.ok(body.match(/No post with id/), 'invalid post id')
+        assert.ok(body.match(/No post with that id/), 'invalid post id')
         done()
     })
 })
