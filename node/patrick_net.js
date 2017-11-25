@@ -969,26 +969,15 @@ async function post_mail(p, db) { // reasons to send out post emails: @user, use
 
 async function login(email, password, context) {
 
-    var user = await get_row('select * from users where user_email = ? and user_pass = ?', [email, md5(password)], context.db)
+    const user = await get_row('select * from users where user_email = ? and user_pass = ?', [email, md5(password)], context.db)
 
-    if (!user) {
-        var login_failed_email = email
-        var current_user       = null
-        var user_id            = ''
-        var user_pass          = ''
-    }
-    else {
-        var login_failed_email = null
-        var current_user       = user
-        var user_id            = current_user.user_id
-        var user_pass          = current_user.user_pass
-    }
+    const login_failed_email = user ? null                   : email
+    const current_user       = user ? user                   : null
+    const user_id            = user ? current_user.user_id   : ''
+    const user_pass          = user ? current_user.user_pass : ''
 
     if ('post_login' === context.page) var content = icon_or_loginprompt(current_user, login_failed_email)
     if ('key_login'  === context.page) {
-
-        var current_user_id = current_user ? current_user.user_id : 0
-
         var content = html(
             render_query_times(context.res.start_time, context.db.queries),
             head(CONF.stylesheet, CONF.description, context.post ? context.post.post_title : CONF.domain),
@@ -999,13 +988,11 @@ async function login(email, password, context) {
         )
     }
 
-    var usercookie = `${ CONF.usercookie }=${ user_id   }`
-    var pwcookie   = `${ CONF.pwcookie   }=${ user_pass }`
-    var d          = new Date()
-    var decade     = new Date(d.getFullYear()+10, d.getMonth(), d.getDate()).toUTCString()
-
-    // you must use the undocumented "array" feature of writeHead to set multiple cookies, because json
-    var headers = [
+    const usercookie = `${ CONF.usercookie }=${ user_id   }`
+    const pwcookie   = `${ CONF.pwcookie   }=${ user_pass }`
+    const d          = new Date()
+    const decade     = new Date(d.getFullYear()+10, d.getMonth(), d.getDate()).toUTCString()
+    const headers    = [ // you must use the undocumented "array" feature of writeHead to set multiple cookies, because json
         ['Content-Length' , content.length                            ],
         ['Content-Type'   , 'text/html'                               ],
         ['Expires'        , d.toUTCString()                           ],
