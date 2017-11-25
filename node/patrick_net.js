@@ -385,25 +385,19 @@ String.prototype.linkify = function(ref) {
 
 function sanitize_html(s) {
 
-    var allowed = { // with allowed attributes as an array
+    const allowed = { // with allowed attributes as an array
         'a'          : ['href', 'title', 'rel', 'rev', 'name'],
         'b'          : [],
         'blockquote' : [],
         'br'         : [],
-        'code'       : [],
-        'del'        : [],
         'font'       : ['color', 'face'],
-        'hr'         : [],
         'i'          : [],
         'iframe'     : ['src', 'height', 'width'],
         'img'        : ['alt', 'align', 'border', 'height', 'hspace', 'longdesc', 'vspace', 'src', 'width'],
         'li'         : [],
         'ol'         : [],
-        'ol'         : [],
         'p'          : [],
         'strike'     : [],
-        'sub'        : [],
-        'sup'        : [],
         'u'          : [],
         'ul'         : [],
         'video'      : ['width', 'height', 'name', 'src', 'controls'],
@@ -875,13 +869,8 @@ async function post_comment_list(post, url, current_user, db) {
     return results
 }
 
-async function post_mail(p, db) { // reasons to send out post emails: @user, user following post author, user following post topic
+async function post_summons(post, db, already_mailed) { // post_content contains a summons like @user, and user is user_summonable, so email user the post
 
-    var post = await get_row(`select * from posts, users where post_id=? and post_author=user_id`, [p], db) // p is just the post_id
-
-    var already_mailed = []
-
-    // if post_content contains a summons like @user, and user is user_summonable, then email user the post
     var matches
     if (matches = post.post_content.match(/@(\w+)/m)) { // just use the first @user in the post, not multiple
         var summoned_user_username = matches[1]
@@ -899,13 +888,17 @@ async function post_mail(p, db) { // reasons to send out post emails: @user, use
 
             if (u.user_email) mail(u.user_email, subject, notify_message) // user_email could be null in db
 
-            // include in already_mailed so we don't duplicate emails below
+            // include in already_mailed so we don't duplicate post emails for other reasons
             already_mailed[u.user_id] ? already_mailed[u.user_id]++ : already_mailed[u.user_id] = 1
         }
     }
 
-    // now do user follower emails
-    var rows = []
+    return already_mailed
+}
+
+async function post_followers(post, db, already_mailed) { // now do user follower emails
+
+    let rows = []
     if (rows = await query(`select distinct rel_self_id as user_id from relationships where rel_other_id = ? and rel_i_follow > 0`,
                            [post.post_author], db)) {
         rows.forEach(async function(row) {
@@ -929,8 +922,14 @@ async function post_mail(p, db) { // reasons to send out post emails: @user, use
         })
     }
 
+    return already_mailed
+}
+
+async function topic_followers(post, db, already_mailed) {
+
     // now do topic follower emails
     if (post.post_topic) {
+        let rows = []
         if (rows = await query(`select distinct topicwatch_user_id from topicwatches where topicwatch_name = ?`, [post.post_topic], db)) {
             rows.forEach(async function(row) {
 
@@ -953,6 +952,19 @@ async function post_mail(p, db) { // reasons to send out post emails: @user, use
             })
         }
     }
+
+    return already_mailed
+}
+
+async function post_mail(p, db) { // reasons to send out post emails: @user, user following post author, user following post topic
+
+    let post = await get_row(`select * from posts, users where post_id=? and post_author=user_id`, [p], db) // p is just the post_id
+
+    let already_mailed = []
+
+    already_mailed = already_mailed.concat(post_summons(   post, db, already_mailed.slice())) // slice() so we don't modify array in fn, would be impure
+    already_mailed = already_mailed.concat(post_followers( post, db, already_mailed.slice()))
+    already_mailed = already_mailed.concat(topic_followers(post, db, already_mailed.slice()))
 }
 
 async function login(email, password, context) {
@@ -1305,7 +1317,7 @@ var routes = {
 
         await update_prev_next(post_data.post_topic, p, context.db)
 
-        var post_row = await get_post(p, context.db)
+        const post_row = await get_post(p, context.db)
 
         redirect(post2path(post_row), context)
     },
