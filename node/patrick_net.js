@@ -712,7 +712,13 @@ function _GET(url, parm) { // given a string, return the GET parameter by that n
     return URL.parse(url, true).query[parm]
 }
 
-async function get_post(post_id, db) {
+async function get_post(post_id, db, user_id) {
+    if (user_id) return await get_row(`select * from posts
+                                       left join postvotes on (postvote_post_id=post_id and postvote_user_id=?)
+                                       left join postviews on (postview_post_id=post_id and postview_user_id=?)
+                                       left join users on user_id=post_author where post_id=?`,
+                                       [user_id, user_id, post_id], db)
+    
     return await get_row('select * from posts where post_id = ?', [post_id], db)
 }
 
@@ -2116,13 +2122,9 @@ var routes = {
             return redirect(`/post/${post_id}?offset=${offset}#comment-${c}`, context)
         }
 
-        let p = await get_row(`select * from posts
-                               left join postvotes on (postvote_post_id=post_id and postvote_user_id=?)
-                               left join postviews on (postview_post_id=post_id and postview_user_id=?)
-                               left join users on user_id=post_author
-                               where post_id=?`, [current_user_id, current_user_id, post_id], context.db)
+        let p = await get_post(post_id, context.db, current_user_id)
 
-        var err = await check_post(p, context)
+        let err = await check_post(p, context)
         if (err) return die(err, context)
 
         let comments = await post_comment_list(p, context.req.url, context.current_user, context.db) // pick up the comment list for this post
@@ -2136,7 +2138,7 @@ var routes = {
         let content = html(
             render_query_times(context.res.start_time, context.db.queries),
             head(CONF.stylesheet, CONF.description, p ? p.post_title : CONF.domain),
-            header(context),
+            header(context, p.post_topic),
             midpage(
                 topic_nav(p),
                 post(p, context.ip, context.current_user),
@@ -2289,21 +2291,16 @@ var routes = {
 
     topic : async function(context) {
 
-        var topic = segments(context.req.url)[2] // like /topic/housing
-
+        let topic = segments(context.req.url)[2] // like /topic/housing
         if (!topic) return die('no topic given', context)
 
         let user_id = context.current_user ? context.current_user.user_id : 0
-        
         let [curpage, slimit, order, order_by] = which_page(_GET(context.req.url, 'page'), _GET(context.req.url, 'order'))
-
-        let sql = `select sql_calc_found_rows * from posts
-                   left join postviews on postview_post_id=post_id and postview_user_id= ?
-                   left join postvotes on postvote_post_id=post_id and postvote_user_id= ?
-                   left join users on user_id=post_author
-                   where post_topic = ? and post_approved=1 ${order_by} limit ${slimit}`
-
-        let posts = await query(sql, [user_id, user_id, topic], context.db)
+        let posts = await query(`select sql_calc_found_rows * from posts
+                                 left join postviews on postview_post_id=post_id and postview_user_id= ?
+                                 left join postvotes on postvote_post_id=post_id and postvote_user_id= ?
+                                 left join users on user_id=post_author
+                                 where post_topic = ? and post_approved=1 ${order_by} limit ${slimit}`, [user_id, user_id, topic], context.db)
         
         var row = await get_row('select * from users, topics where topic=? and topic_moderator=user_id', [topic], context.db)
 
@@ -2319,7 +2316,7 @@ var routes = {
         let content = html(
             render_query_times(context.res.start_time, context.db.queries),
             head(CONF.stylesheet, CONF.description, context.post ? context.post.post_title : CONF.domain),
-            header(context),
+            header(context, topic),
             midpage(
                 h1('#' + topic),
                 follow_topic_button(topic, context.current_user, context.ip),
@@ -2768,7 +2765,7 @@ function follow_topic_button(t, current_user, ip) { // t is the topic to follow,
     return `<span style='display: none;' id='follow_topic_button' > ${follow_topic_link} ${unfollow_topic_link} </span> ${follow}`
 }
 
-function header(context) {
+function header(context, topic) {
 
     const current_user       = context.current_user
     const header_data        = context.header_data
@@ -2780,11 +2777,6 @@ function header(context) {
 
     // display hashtag in title if we are on a post in that topic, or in the index for that topic
     if (topic) hashtag = `<a href='/topic/${topic}'><h1 class='sitename' >#${topic}</h1></a>`
-
-    if (page === 'topic') {
-        var topic = segments(url)[2] // like /topic/housing
-        hashtag = `<a href='/topic/${topic}'><h1 class='sitename' >#${topic}</h1></a>`
-    }
 
     return `<div class='comment' id='header' >
         <div style='float:right' >${ icon_or_loginprompt(current_user, login_failed_email) }</div>
