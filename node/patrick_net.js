@@ -957,15 +957,7 @@ async function post_mail(p, db) { // reasons to send out post emails: @user, use
 
 async function login(email, password, context) {
 
-    const db                 = context.db
-    const header_data        = context.header_data
-    const ip                 = context.ip
-    const page               = context.page
-    const post               = context.post
-    const res                = context.res
-    const url                = context.req.url
-
-    var user = await get_row('select * from users where user_email = ? and user_pass = ?', [email, md5(password)], db)
+    var user = await get_row('select * from users where user_email = ? and user_pass = ?', [email, md5(password)], context.db)
 
     if (!user) {
         var login_failed_email = email
@@ -980,14 +972,14 @@ async function login(email, password, context) {
         var user_pass          = current_user.user_pass
     }
 
-    if ('post_login' === page) var content = icon_or_loginprompt(current_user, login_failed_email)
-    if ('key_login'  === page) {
+    if ('post_login' === context.page) var content = icon_or_loginprompt(current_user, login_failed_email)
+    if ('key_login'  === context.page) {
 
         var current_user_id = current_user ? current_user.user_id : 0
 
         var content = html(
-            render_query_times(res.start_time, db.queries),
-            head(CONF.stylesheet, CONF.description, post ? post.post_title : CONF.domain),
+            render_query_times(context.res.start_time, context.db.queries),
+            head(CONF.stylesheet, CONF.description, context.post ? context.post.post_title : CONF.domain),
             header(context),
             midpage(
                 h1(`Your password is ${ password } and you are now logged in`)
