@@ -1291,8 +1291,8 @@ var routes = {
 
         // get all valid topics in an array; if post topic is not in that array, reject, asking for one of the #elements in array
 
-        if (intval(post_data.post_id)) { // editing old post, do not update post_modified time because it confuses users
-            var p = intval(post_data.post_id)
+        var p = intval(post_data.post_id)
+        if (p) { // editing old post, do not update post_modified time because it confuses users
             await query('update posts set ? where post_id=?', [post_data, p], context.db)
         }
         else { // new post
@@ -1305,11 +1305,10 @@ var routes = {
 
             try {
                 var results = await query('insert into posts set ?, post_modified=now()', post_data, context.db)
+                p = results.insertId
+                if (!p) return die(`failed to insert ${post_data} into posts`, context)
             }
             catch (e) { return die(e, context) }
-
-            var p = results.insertId
-            if (!p) return die(`failed to insert ${post_data} into posts`, context)
 
             post_mail(p, context.db) // reasons to send out post emails: @user, user following post author, user following post topic
         }
