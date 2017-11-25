@@ -1059,12 +1059,7 @@ async function find_or_create_anon(db, ip) { // find the user_id derived from th
     return user_id
 }
 
-async function comment_mail(c, db) { // reasons to send out comment emails: @user summons, user watching post
-
-    let p              = await get_post(c.comment_post_id, db)
-    let commenter      = c.user_name
-    let already_mailed = []
-    let offset         = await cid2offset(p.post_id, c.comment_id, db)
+async function comment_summons_mail(c, p, offset, already_mailed, db) {
 
     // if comment_content contains a summons like @user, and user is user_summonable, then email user the comment
     var matches
@@ -1074,10 +1069,10 @@ async function comment_mail(c, db) { // reasons to send out comment emails: @use
         if (u = await get_row(`select * from users where user_name=? and user_id != ? and user_summonable=1`,
                                    [summoned_user_username, c.comment_author], db)) {
 
-            let subject  = `New ${CONF.domain} comment by ${commenter} directed at ${summoned_user_username}`
+            let subject  = `New ${CONF.domain} comment by ${c.user_name} directed at ${summoned_user_username}`
 
             let notify_message  = `<html><body><head><base href="${BASEURL}" ></head>
-            New comment by ${commenter} in <a href='${BASEURL}${post2path(p)}'>${p.post_title}</a>:<p>
+            New comment by ${c.user_name} in <a href='${BASEURL}${post2path(p)}'>${p.post_title}</a>:<p>
             <p>${c.comment_content}<p>
             <p><a href='${BASEURL}${post2path(p)}?offset=${offset}#comment-${c.comment_id}'>Reply</a><p>
             <font size='-1'>Stop allowing <a href='${BASEURL}/profile'>@user summons</a></font></body></html>`
@@ -1089,11 +1084,16 @@ async function comment_mail(c, db) { // reasons to send out comment emails: @use
         }
     }
 
+    return already_mailed
+}
+
+async function following_post_mail(c, p, offset, already_mailed, db) {
+
     // commenter logged in right now probably doesn't want to get his own comment in email
     // select all other subscriber user ids and send them the comment by mail
     let sql = `select postview_user_id, postview_post_id from postviews
                     where postview_post_id=? and postview_want_email=1 and postview_user_id != ?
-                    group by postview_user_id` // Group by so that user_id is in there only once.
+                    group by postview_user_id` // group by so that user_id is in there only once.
 
     let rows = []
     if (rows = await query(sql, [c.comment_post_id, c.comment_author], db)) {
@@ -1107,7 +1107,7 @@ async function comment_mail(c, db) { // reasons to send out comment emails: @use
             let subject = `New ${CONF.domain} comment in '${p.post_title}'`
 
             let notify_message  = `<html><body><head><base href="${BASEURL}" ></head>
-            New comment by ${commenter} in <a href='${BASEURL}${post2path(p)}'>${p.post_title}</a>:<p>
+            New comment by ${c.user_name} in <a href='${BASEURL}${post2path(p)}'>${p.post_title}</a>:<p>
             <p>${c.comment_content}<p>\r\n\r\n
             <p><a href='${BASEURL}${post2path(p)}?offset=${offset}#comment-${c.comment_id}'>Reply</a><p>
             <font size='-1'>Stop watching <a href='${BASEURL}${post2path(p)}?want_email=0'>${p.post_title}</a></font><br>
@@ -1117,6 +1117,18 @@ async function comment_mail(c, db) { // reasons to send out comment emails: @use
             already_mailed[u.user_id] ? already_mailed[u.user_id]++ : already_mailed[u.user_id] = 1
         })
     }
+
+    return already_mailed
+}
+
+async function comment_mail(c, db) { // reasons to send out comment emails: @user summons, user watching post
+
+    const p      = await get_post(c.comment_post_id, db)
+    const offset = await cid2offset(p.post_id, c.comment_id, db)
+
+    let already_mailed = []
+    already_mailed = already_mailed.concat(comment_summons_mail(c, p, offset, already_mailed.slice(), db))
+    already_mailed = already_mailed.concat(following_post_mail( c, p, offset, already_mailed.slice(), db))
 }
 
 async function cid2offset(post_id, comment_id, db) { // given a comment_id, find the offset
