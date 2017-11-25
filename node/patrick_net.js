@@ -957,29 +957,27 @@ async function post_mail(p, db) { // reasons to send out post emails: @user, use
 
 async function login(email, password, context) {
 
-    var current_user       = context.current_user
-    var db                 = context.db
-    var header_data        = context.header_data
-    var ip                 = context.ip
-    var login_failed_email = context.login_failed_email
-    var page               = context.page
-    var post               = context.post
-    var res                = context.res
-    var url                = context.req.url
+    const db                 = context.db
+    const header_data        = context.header_data
+    const ip                 = context.ip
+    const page               = context.page
+    const post               = context.post
+    const res                = context.res
+    const url                = context.req.url
 
     var user = await get_row('select * from users where user_email = ? and user_pass = ?', [email, md5(password)], db)
 
     if (!user) {
-        login_failed_email = email
-        current_user       = null
-        var user_id              = ''
-        var user_pass            = ''
+        var login_failed_email = email
+        var current_user       = null
+        var user_id            = ''
+        var user_pass          = ''
     }
     else {
-        login_failed_email = null
-        current_user       = user
-        var user_id              = current_user.user_id
-        var user_pass            = current_user.user_pass
+        var login_failed_email = null
+        var current_user       = user
+        var user_id            = current_user.user_id
+        var user_pass          = current_user.user_pass
     }
 
     if ('post_login' === page) var content = icon_or_loginprompt(current_user, login_failed_email)
@@ -990,7 +988,7 @@ async function login(email, password, context) {
         var content = html(
             render_query_times(res.start_time, db.queries),
             head(CONF.stylesheet, CONF.description, post ? post.post_title : CONF.domain),
-            header(header_data, post ? post.post_topic : null, page, current_user, login_failed_email, url),
+            header(context),
             midpage(
                 h1(`Your password is ${ password } and you are now logged in`)
             )
@@ -1140,7 +1138,7 @@ function die(message, context) {
     let content = html(
         render_query_times(context.res.start_time, context.db.queries),
         head(CONF.stylesheet, CONF.description, context.post ? context.post.post_title : CONF.domain),
-        header(context.header_data, context.post ? context.post.post_topic : null, context.page, context.current_user, context.login_failed_email, context.req.url),
+        header(context),
         midpage(
             h1(message)
         )
@@ -1363,7 +1361,7 @@ var routes = {
         var content = html(
             render_query_times(context.res.start_time, context.db.queries),
             head(CONF.stylesheet, CONF.description, context.post ? context.post.post_title : CONF.domain),
-            header(context.header_data, context.post ? context.post.post_topic : null, context.page, context.current_user, context.login_failed_email, context.req.url),
+            header(context),
             midpage(
                 h1(`All email of new post comments turned off`)
             )
@@ -1420,7 +1418,7 @@ var routes = {
         let content = html(
             render_query_times(context.res.start_time, context.db.queries),
             head(CONF.stylesheet, CONF.description, context.post ? context.post.post_title : CONF.domain),
-            header(context.header_data, context.post ? context.post.post_topic : null, context.page, context.current_user, context.login_failed_email, context.req.url),
+            header(context),
             midpage(
                 m,
                 comment_list(comments, context)
@@ -1445,7 +1443,7 @@ var routes = {
         let content = html(
             render_query_times(context.res.start_time, context.db.queries),
             head(CONF.stylesheet, CONF.description, context.post ? context.post.post_title : CONF.domain),
-            header(context.header_data, context.post ? context.post.post_topic : null, context.page, context.current_user, context.login_failed_email, context.req.url),
+            header(context),
             midpage(
                 h1('Uncivil Comment Jail'),
                 'These comments were marked as uncivil. Patrick will review them and liberate comments which do not deserve to be here. You can edit your comment here to make it more civil and get it out of jail. Comments not freed within 30 days will be deleted.',
@@ -1469,7 +1467,7 @@ var routes = {
         let content = html(
             render_query_times(context.res.start_time, context.db.queries),
             head(CONF.stylesheet, CONF.description, context.post ? context.post.post_title : CONF.domain),
-            header(context.header_data, context.post ? context.post.post_topic : null, context.page, context.current_user, context.login_failed_email, context.req.url),
+            header(context),
             midpage(
                 h1('comment moderation'),
                 comment_list(comments, context)
@@ -1508,7 +1506,7 @@ var routes = {
         let content = html(
             render_query_times(context.res.start_time, context.db.queries),
             head(CONF.stylesheet, CONF.description, context.post ? context.post.post_title : CONF.domain),
-            header(context.header_data, context.post ? context.post.post_topic : null, context.page, context.current_user, context.login_failed_email, context.req.url),
+            header(context),
             midpage(
                 h1(message),
                 comment_pagination(comments, context.req.url),
@@ -1646,7 +1644,7 @@ var routes = {
             let content = html(
                 render_query_times(context.res.start_time, context.db.queries),
                 head(CONF.stylesheet, CONF.description, context.post ? context.post.post_title : CONF.domain),
-                header(context.header_data, context.post ? context.post.post_topic : null, context.page, context.current_user, context.login_failed_email, context.req.url),
+                header(context),
                 midpage(
                     comment_edit_box(comment, context)
                 )
@@ -1669,7 +1667,7 @@ var routes = {
             let content = html(
                 render_query_times(context.res.start_time, context.db.queries),
                 head(CONF.stylesheet, CONF.description, post ? post.post_title : CONF.domain),
-                header(context.header_data, post ? post.post_topic : null, context.page, context.current_user, context.login_failed_email, context.req.url),
+                header(context),
                 midpage(
                     post_form(_GET(context.req.url, 'p'), post)
                 )
@@ -1684,7 +1682,7 @@ var routes = {
         let content = html(
             render_query_times(context.res.start_time, context.db.queries),
             head(CONF.stylesheet, CONF.description, context.post ? context.post.post_title : CONF.domain),
-            header(context.header_data, context.post ? context.post.post_topic : null, context.page, context.current_user, context.login_failed_email, context.req.url),
+            header(context),
             midpage(
                 profile_form('updated', context)
             )
@@ -1772,7 +1770,7 @@ var routes = {
         let content = html(
             render_query_times(context.res.start_time, context.db.queries),
             head(CONF.stylesheet, CONF.description, CONF.domain),
-            header(context.header_data, null, context.page, context.current_user, context.login_failed_email, context.req.url),
+            header(context),
             midpage(
                 tabs(order, '', path),
                 post_list(posts, context),
@@ -1826,7 +1824,7 @@ var routes = {
             let content = html(
                 render_query_times(context.res.start_time, context.db.queries),
                 head(CONF.stylesheet, CONF.description, CONF.domain),
-                header(context.header_data, null, context.page, context.current_user, context.login_failed_email, context.req.url),
+                header(context),
                 midpage(
                     h1(`Darn, that key has already been used. Please try 'forgot password' if you need to log in.`)
                 )
@@ -1977,7 +1975,7 @@ var routes = {
             var content = html(
                 render_query_times(context.res.start_time, context.db.queries),
                 head(CONF.stylesheet, CONF.description, CONF.domain),
-                header(context.header_data, null, context.page, context.current_user, context.login_failed_email, context.req.url),
+                header(context),
                 midpage(
                     `You hit your posting limit for today. Please post more tomorrow!`
                 )
@@ -1987,7 +1985,7 @@ var routes = {
             var content = html(
                 render_query_times(context.res.start_time, context.db.queries),
                 head(CONF.stylesheet, CONF.description, CONF.domain),
-                header(context.header_data, null, context.page, context.current_user, context.login_failed_email, context.req.url),
+                header(context),
                 midpage(
                     post_form(_GET(context.req.url, 'p'))
                 )
@@ -2049,7 +2047,7 @@ var routes = {
         let content = html(
             render_query_times(context.res.start_time, context.db.queries),
             head(CONF.stylesheet, CONF.description, context.post ? context.post.post_title : CONF.domain),
-            header(context.header_data, context.post ? context.post.post_topic : null, context.page, context.current_user, context.login_failed_email, context.req.url),
+            header(context),
             midpage(
                 h1(`Posts from ${years_ago} year${s} ago`),
                 post_list(posts, context)
@@ -2110,7 +2108,7 @@ var routes = {
         let content = html(
             render_query_times(context.res.start_time, context.db.queries),
             head(CONF.stylesheet, CONF.description, p ? p.post_title : CONF.domain),
-            header(context.header_data, p ? p.post_topic : null, context.page, context.current_user, context.login_failed_email, context.req.url),
+            header(context),
             midpage(
                 topic_nav(p),
                 post(p, context.ip, context.current_user),
@@ -2138,7 +2136,7 @@ var routes = {
         let content = html(
             render_query_times(context.res.start_time, context.db.queries),
             head(CONF.stylesheet, CONF.description, context.post ? context.post.post_title : CONF.domain),
-            header(context.header_data, context.post ? context.post.post_topic : null, context.page, context.current_user, context.login_failed_email, context.req.url),
+            header(context),
             midpage(
                 post_list(posts, context)
             )
@@ -2164,7 +2162,7 @@ var routes = {
         let content = html(
             render_query_times(context.res.start_time, context.db.queries),
             head(CONF.stylesheet, CONF.description, context.post ? context.post.post_title : CONF.domain),
-            header(context.header_data, context.post ? context.post.post_topic : null, context.page, context.current_user, context.login_failed_email, context.req.url),
+            header(context),
             midpage(
                 h1(message)
             )
@@ -2200,7 +2198,7 @@ var routes = {
         let content = html(
             render_query_times(context.res.start_time, context.db.queries),
             head(CONF.stylesheet, CONF.description, context.post ? context.post.post_title : CONF.domain),
-            header(context.header_data, context.post ? context.post.post_topic : null, context.page, context.current_user, context.login_failed_email, context.req.url),
+            header(context),
             midpage(`<h2>${message}</h2>`)
         )
 
@@ -2233,7 +2231,7 @@ var routes = {
         let content = html(
             render_query_times(context.res.start_time, context.db.queries),
             head(CONF.stylesheet, CONF.description, context.post ? context.post.post_title : CONF.domain),
-            header(context.header_data, context.post ? context.post.post_topic : null, context.page, context.current_user, context.login_failed_email, context.req.url),
+            header(context),
             midpage(
                 h1(`search results for "${s}"`),
                 post_pagination(found_rows, curpage, `&s=${us}&order=${order}`, context.req.url),
@@ -2293,7 +2291,7 @@ var routes = {
         let content = html(
             render_query_times(context.res.start_time, context.db.queries),
             head(CONF.stylesheet, CONF.description, context.post ? context.post.post_title : CONF.domain),
-            header(context.header_data, context.post ? context.post.post_topic : null, context.page, context.current_user, context.login_failed_email, context.req.url),
+            header(context),
             midpage(
                 h1('#' + topic),
                 follow_topic_button(topic, context.current_user, context.ip),
@@ -2316,7 +2314,7 @@ var routes = {
         let content = html(
             render_query_times(context.res.start_time, context.db.queries),
             head(CONF.stylesheet, CONF.description, context.post ? context.post.post_title : CONF.domain),
-            header(context.header_data, context.post ? context.post.post_topic : null, context.page, context.current_user, context.login_failed_email, context.req.url),
+            header(context),
             midpage(
                 h1('Topics'),
                 topic_list(topics)
@@ -2465,7 +2463,7 @@ var routes = {
         let content = html(
             render_query_times(context.res.start_time, context.db.queries),
             head(CONF.stylesheet, CONF.description, context.post ? context.post.post_title : CONF.domain),
-            header(context.header_data, context.post ? context.post.post_topic : null, context.page, context.current_user, context.login_failed_email, context.req.url),
+            header(context),
             midpage(
                 render_user_info(u, context.current_user, context.ip),
                 tabs(order, '', path),
@@ -2560,7 +2558,7 @@ var routes = {
         let content = html(
             render_query_times(context.res.start_time, context.db.queries),
             head(CONF.stylesheet, CONF.description, context.post ? context.post.post_title : CONF.domain),
-            header(context.header_data, context.post ? context.post.post_topic : null, context.page, context.current_user, context.login_failed_email, context.req.url),
+            header(context),
             midpage(
                 h1(message),
                 `<p><a href='${next_page}'>next page &raquo;</a><p>`,
@@ -2742,7 +2740,13 @@ function follow_topic_button(t, current_user, ip) { // t is the topic to follow,
     return `<span style='display: none;' id='follow_topic_button' > ${follow_topic_link} ${unfollow_topic_link} </span> ${follow}`
 }
 
-function header(header_data, topic, page, current_user, login_failed_email, url) {
+function header(context) {
+
+    const current_user       = context.current_user
+    const header_data        = context.header_data
+    const login_failed_email = context.login_failed_email
+    const page               = context.page
+    const url                = context.req.url
 
     var hashtag = ''
 
