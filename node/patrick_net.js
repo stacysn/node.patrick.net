@@ -1163,24 +1163,24 @@ async function allow_comment(post_data, context) {
     return { err: false, content: '' }
 }
 
-async function after_accept_comment(post_data, context) {
+async function after_accept_comment(comment, context) {
 
-    await reset_latest_comment(post_data.comment_post_id, context.db)
+    await reset_latest_comment(comment.comment_post_id, context.db)
 
     if (context.current_user) { // update postviews so that user does not see his own comment as unread
         await query(`insert into postviews (postview_user_id, postview_post_id, postview_last_view)
                      values (?, ?, now()) on duplicate key update postview_last_view=now()`,
-                     [context.current_user.user_id, post_data.comment_post_id], context.db)
+                     [context.current_user.user_id, comment.comment_post_id], context.db)
     }
 
     // update comment count whether logged in or anon user
     await query(`update users set user_last_comment_ip = ?,
                  user_comments=(select count(*) from comments where comment_author = ?)
-                 where user_id = ?`, [context.ip, post_data.comment_author, post_data.comment_author], context.db)
+                 where user_id = ?`, [context.ip, comment.comment_author, comment.comment_author], context.db)
 
-    if (!post_data.comment_approved) { // email moderator if comment not approved
+    if (!comment.comment_approved) { // email moderator if comment not approved
         mail(CONF.admin_email, 'new comment needs review',
-        `${post_data.comment_content}<p><a href='https://${CONF.domain}/comment_moderation'>moderation page</a>`)
+        `${comment.comment_content}<p><a href='https://${CONF.domain}/comment_moderation'>moderation page</a>`)
     }
     else comment_mail(comment, context.db)
 }
@@ -1246,7 +1246,7 @@ var routes = {
 
         send_json(200, { err: false, content: format_comment(comment, context, context.comments, _GET(context.req.url, 'offset')) }, context)
 
-        await after_accept_comment(post_data, context)
+        await after_accept_comment(comment, context)
     },
 
     accept_edited_comment : async function(context) { // update old comment
@@ -1285,13 +1285,11 @@ var routes = {
 
         let post_data = await collect_post_data_and_trim(context)
 
-        post_data.post_topic = find_topic(post_data.post_content)
-
-        // get all the topics in an array
-        // if post topic is not in that array, reject, asking for one of the #elements in array
-
+        post_data.post_topic    = find_topic(post_data.post_content)
         post_data.post_content  = strip_tags(post_data.post_content.linkify()) // remove all but a small set of allowed html tags
         post_data.post_approved = 1 // may need to be more restrictive if spammers start getting through
+
+        // get all valid topics in an array; if post topic is not in that array, reject, asking for one of the #elements in array
 
         if (intval(post_data.post_id)) { // editing old post, do not update post_modified time because it confuses users
             var p = intval(post_data.post_id)
