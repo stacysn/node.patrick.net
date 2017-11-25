@@ -1208,7 +1208,101 @@ function find_topic(post_content) {
     else                                               return 'misc'
 }
 
-async function comment_dislike(user_id, context) {
+async function like_comment(user_id, context) {
+    let comment_id  = intval(_GET(context.req.url, 'comment_id'))
+    let comment_row = await get_row(`select * from comments where comment_id=?`, [comment_id], context.db)
+
+    if (!comment_row) return ''
+
+    let vote = await get_row(`select commentvote_up, count(*) as c from commentvotes where commentvote_user_id=? and commentvote_comment_id=?`,
+                              [user_id, comment_id], context.db)
+
+    if (vote && vote.c) return `&#8593;&nbsp; you like this (${comment_row.comment_likes})`
+    else {
+        await query(`update comments set comment_likes=comment_likes+1 where comment_id=?`, [comment_id], context.db)
+
+        await query(`insert into commentvotes (commentvote_user_id, commentvote_comment_id, commentvote_up) values (?, ?, 1)
+                     on duplicate key update commentvote_up=1`, [user_id, comment_id], context.db)
+
+        await query(`update users set user_likes=user_likes+1 where user_id=?`, [comment_row.comment_author], context.db)
+
+        if (1 === user_id) await query(`update users set user_pbias=user_pbias+1 where user_id=?`, [comment_row.comment_author], context.db)
+
+        return `&#8593;&nbsp;you like this (${comment_row.comment_likes + 1})`
+    }
+}
+
+async function send_comment_like_email(user_name, context) {
+    let comment_id = intval(_GET(context.req.url, 'comment_id'))
+    let comment    = await get_row(`select * from comments where comment_id=?`, [comment_id], context.db)
+
+    // Now mail the comment author that his comment was liked, iff he has user_summonable set
+    // todo: AND if current user has no record of voting on this comment! (to prevent clicking like over and over to annoy author with email)
+    let offset = await cid2offset(comment.comment_post_id, comment.comment_id, context.db)
+    let comment_url = `https://${CONF.domain}/post/${comment.comment_post_id}?offset=${offset}#comment-${comment.comment_id}`
+
+    let u = await get_row(`select * from users where user_id=?`, [comment.comment_author], context.db)
+
+    if (intval(u && u.user_summonable)) {
+
+        let subject  = `${user_name} liked your comment`
+
+        let message = `<html><body><head><base href='https://${CONF.domain}/' ></head>
+        <a href='https://${CONF.domain}/user/${user_name}' >${user_name}</a> liked the comment you made here:<p>\r\n\r\n
+        <a href='${comment_url}' >${comment_url}</a><p>${comment.comment_content}<p>\r\n\r\n
+        <font size='-1'>Stop getting <a href='https://${CONF.domain}/edit_profile#user_summonable'>notified of likes</a>
+        </font></body></html>
+        ` // nice to have a newline at the end when getting pages on terminal
+
+        mail(u.user_email, subject, message)
+    }
+}
+
+async function like_post(user_id, context) {
+    let post_id = intval(_GET(context.req.url, 'post_id'))
+
+    let vote = await get_row(`select postvote_up, count(*) as c from postvotes where postvote_user_id=? and postvote_post_id=?`,
+                             [user_id, post_id], context.db)
+
+    if (vote && vote.c) { // if they have voted before on this, just return
+        let post = await get_post(post_id, context.db)
+        return String(post.post_likes)
+    }
+
+    await query(`update posts set post_likes=post_likes+1 where post_id=?`, [post_id], context.db)
+
+    await query(`insert into postvotes (postvote_user_id, postvote_post_id, postvote_up) values (?, ?, 1)
+                 on duplicate key update postvote_up=0`, [user_id, post_id], context.db)
+
+    let post = await get_post(post_id, context.db)
+
+    await query(`update users set user_likes=user_likes+1 where user_id=?`, [post.post_author], context.db)
+
+    return String(post.post_likes)
+}
+
+async function send_post_like_email(user_name, context) {
+    let post_id = intval(_GET(context.req.url, 'post_id'))
+    let post = await get_post(post_id, context.db)
+
+    let post_url = 'https://' + CONF.domain +  post2path(post)
+    let u = await get_row(`select * from users where user_id=?`, [post.post_author], context.db)
+    if (intval(u && u.user_summonable)) {
+
+        let subject  = `${user_name} liked your post`
+
+        let message = `<html><body><head><base href='https://${CONF.domain}/' ></head>
+        <a href='https://${CONF.domain}/user/${user_name}' >${user_name}</a>
+            liked the post you made here:<p>\r\n\r\n
+        <a href='${post_url}' >${post_url}</a><p>${post.post_content}<p>\r\n\r\n
+        <font size='-1'>Stop getting <a href='https://${CONF.domain}/edit_profile#user_summonable'>notified of likes</a>
+        </font></body></html>`
+
+        mail(u.user_email, subject, message)
+    }
+}
+
+async function dislike_comment(user_id, context) {
 
     let comment_id  = intval(_GET(context.req.url, 'comment_id'))
     let comment_row = await get_row(`select * from comments where comment_id=?`, [comment_id], context.db)
@@ -1229,6 +1323,29 @@ async function comment_dislike(user_id, context) {
 
     return `&#8595;&nbsp;you dislike this (${comment_row.comment_dislikes + 1})`
     // no emailing done of dislikes
+}
+
+async function dislike_post(user_id, context) {
+    let post_id = intval(_GET(context.req.url, 'post_id'))
+
+    let vote = await get_row(`select postvote_down, count(*) as c from postvotes where postvote_user_id=? and postvote_post_id=?`,
+                              [user_id, post_id], context.db)
+
+    if (vote.c) { // if they have voted before on this, just return
+        let post_row = await get_post(post_id, context.db)
+        return String(post_row.post_dislikes)
+    }
+
+    await query(`update posts set post_dislikes=post_dislikes+1 where post_id=?`, [post_id], context.db)
+
+    await query(`insert into postvotes (postvote_user_id, postvote_post_id, postvote_down) values (?, ?, 1) on duplicate key update postvote_down=0`,
+                [user_id, post_id], context.db)
+
+    let post_row = await get_post(post_id, context.db)
+
+    await query(`update users set user_dislikes=user_dislikes+1 where user_id=?`, [post_row.post_author], context.db)
+
+    return String(post_row.post_dislikes)
 }
 
 var routes = {
@@ -1599,39 +1716,15 @@ var routes = {
 
     dislike : async function(context) { // given a comment or post, downvote it
 
-        var user_id = context.current_user ? context.current_user.user_id : await find_or_create_anon(context.db, context.ip)
+        const user_id = context.current_user ? context.current_user.user_id : await find_or_create_anon(context.db, context.ip)
 
         if (intval(_GET(context.req.url, 'comment_id'))) {
-
-            let content = await comment_dislike(user_id, context)
+            const content = await dislike_comment(user_id, context)
             return send_html(200, content, context)
-
         }
         else if (intval(_GET(context.req.url, 'post_id'))) {
-            let post_id = intval(_GET(context.req.url, 'post_id'))
-
-            let vote = await get_row(`select postvote_down, count(*) as c from postvotes where postvote_user_id=? and postvote_post_id=?`,
-                                      [user_id, post_id], context.db)
-
-            if (vote.c) { // if they have voted before on this, just return
-
-                let post_row = await get_post(post_id, context.db)
-
-                return send_html(200, String(post_row.post_dislikes), context)
-            }
-
-            await query(`update posts set post_dislikes=post_dislikes+1 where post_id=?`, [post_id], context.db)
-
-            await query(`insert into postvotes (postvote_user_id, postvote_post_id, postvote_down) values (?, ?, 1)
-                         on duplicate key update postvote_down=0`, [user_id, post_id], context.db)
-
-            let post_row = await get_post(post_id, context.db)
-
-            await query(`update users set user_dislikes=user_dislikes+1 where user_id=?`, [post_row.post_author], context.db)
-
-            return send_html(200, String(post_row.post_dislikes), context)
-
-            // no email done of post dislikes
+            const content = await dislike_post(user_id, context)
+            return send_html(200, content, context)
         }
         else return send_html(200, '', context) // send empty string if no comment_id or post_id
     },
@@ -1859,95 +1952,14 @@ var routes = {
         var user_name = context.current_user ? context.current_user.user_name : ip2anon(context.ip)
 
         if (intval(_GET(context.req.url, 'comment_id'))) {
-            let comment_id = intval(_GET(context.req.url, 'comment_id'))
-
-            let comment_row = await get_row(`select * from comments where comment_id=?`, [comment_id], context.db)
-
-            if (!comment_row) return send_html(200, ``, context)
-
-            let vote = await get_row(`select commentvote_up, count(*) as c from commentvotes where commentvote_user_id=? and commentvote_comment_id=?`,
-                                      [user_id, comment_id], context.db)
-
-            if (vote && vote.c) { // already voted on this
-                return send_html(200, `&#8593;&nbsp; you like this (${comment_row.comment_likes})`, context) // return so we don't send mails
-            }
-            else {
-                await query(`update comments set comment_likes=comment_likes+1 where comment_id=?`, [comment_id], context.db)
-
-                await query(`insert into commentvotes (commentvote_user_id, commentvote_comment_id, commentvote_up) values (?, ?, 1)
-                             on duplicate key update commentvote_up=1`, [user_id, comment_id], context.db)
-
-                await query(`update users set user_likes=user_likes+1 where user_id=?`, [comment_row.comment_author], context.db)
-
-                send_html(200, `&#8593;&nbsp;you like this (${comment_row.comment_likes + 1})`, context) // don't return, send mails
-            }
-
-            // Now mail the comment author that his comment was liked, iff he has user_summonable set
-            // todo: AND if current user has no record of voting on this comment! (to prevent clicking like over and over to annoy author with email)
-            let offset = await cid2offset(comment_row.comment_post_id, comment_row.comment_id, context.db)
-            let comment_url = `https://${CONF.domain}/post/${comment_row.comment_post_id}?offset=${offset}#comment-${comment_row.comment_id}`
-
-            let u = await get_row(`select * from users where user_id=?`, [comment_row.comment_author], context.db)
-
-            if (intval(u && u.user_summonable)) {
-
-                let subject  = `${user_name} liked your comment`
-
-                let message = `<html><body><head><base href='https://${CONF.domain}/' ></head>
-                <a href='https://${CONF.domain}/user/${user_name}' >${user_name}</a>
-                    liked the comment you made here:<p>\r\n\r\n
-                <a href='${comment_url}' >${comment_url}</a><p>${comment_row.comment_content}<p>\r\n\r\n
-                <font size='-1'>Stop getting <a href='https://${CONF.domain}/edit_profile#user_summonable'>notified of likes</a>
-                </font></body></html>
-                ` // nice to have a newline at the end when getting pages on terminal
-
-                mail(u.user_email, subject, message)
-            }
-
-            // Now if Patrick was the liker, then the user gets a bias bump up.
-            if (1 === user_id) {
-                await query(`update users set user_pbias=user_pbias+1 where user_id=?`, [comment_row.comment_author], context.db)
-            }
+            let content = await like_comment(user_id, user_name, context)
+            send_html(200, content, context)
+            return await send_comment_like_email(user_name, context)
         }
         else if (intval(_GET(context.req.url, 'post_id'))) {
-            let post_id = intval(_GET(context.req.url, 'post_id'))
-
-            let vote = await get_row(`select postvote_up, count(*) as c from postvotes where postvote_user_id=? and postvote_post_id=?`,
-                                  [user_id, post_id], context.db)
-
-            if (vote && vote.c) { // if they have voted before on this, just return
-                let post_row = await get_post(post_id, context.db)
-                return send_html(200, String(post_row.post_likes), context)
-            }
-
-            await query(`update posts set post_likes=post_likes+1 where post_id=?`, [post_id], context.db)
-
-            await query(`insert into postvotes (postvote_user_id, postvote_post_id, postvote_up) values (?, ?, 1)
-                         on duplicate key update postvote_up=0`, [user_id, post_id], context.db)
-
-            let post_row = await get_post(post_id, context.db)
-
-            await query(`update users set user_likes=user_likes+1 where user_id=?`, [post_row.post_author], context.db)
-
-            send_html(200, String(post_row.post_likes), context) // don't return until we send email
-
-            let post_url = 'https://' + CONF.domain +  post2path(post_row)
-
-            let u = await get_row(`select * from users where user_id=?`, [post_row.post_author], context.db)
-
-            if (intval(u && u.user_summonable)) {
-
-                let subject  = `${user_name} liked your post`
-
-                let message = `<html><body><head><base href='https://${CONF.domain}/' ></head>
-                <a href='https://${CONF.domain}/user/${user_name}' >${user_name}</a>
-                    liked the post you made here:<p>\r\n\r\n
-                <a href='${post_url}' >${post_url}</a><p>${post_row.post_content}<p>\r\n\r\n
-                <font size='-1'>Stop getting <a href='https://${CONF.domain}/edit_profile#user_summonable'>notified of likes</a>
-                </font></body></html>`
-
-                mail(u.user_email, subject, message)
-            }
+            let content = await like_post(user_id, context)
+            send_html(200, content, context)
+            return await send_post_like_email(user_name, context)
         }
         else return send_html(200, '', context) // send empty string if no comment_id or post_id
     },
