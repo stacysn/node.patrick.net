@@ -1208,6 +1208,29 @@ function find_topic(post_content) {
     else                                               return 'misc'
 }
 
+async function comment_dislike(user_id, context) {
+
+    let comment_id  = intval(_GET(context.req.url, 'comment_id'))
+    let comment_row = await get_row(`select * from comments where comment_id=?`, [comment_id], context.db)
+    let vote        = await get_row(`select commentvote_up, count(*) as c from commentvotes where commentvote_user_id=? and commentvote_comment_id=?`,
+                                    [user_id, comment_id], context.db)
+
+    if (vote.c) return `&#8595;&nbsp; you dislike this (${comment_row.comment_dislikes})` // already voted on this comment
+
+    await query(`update comments set comment_dislikes=comment_dislikes+1 where comment_id=?`, [comment_id], context.db)
+
+    await query(`insert into commentvotes (commentvote_user_id, commentvote_comment_id, commentvote_down) values (?, ?, 1)
+                 on duplicate key update commentvote_up=1`, [user_id, comment_id], context.db)
+
+    await query(`update users set user_dislikes=user_dislikes+1 where user_id=?`, [comment_row.comment_author], context.db)
+
+    // Now if Patrick was the disliker, then the user gets a bias bump down.
+    if (1 === user_id) await query(`update users set user_pbias=user_pbias-1 where user_id=?`, [comment_row.comment_author], context.db)
+
+    return `&#8595;&nbsp;you dislike this (${comment_row.comment_dislikes + 1})`
+    // no emailing done of dislikes
+}
+
 var routes = {
 
     about : async function(context) {
@@ -1579,31 +1602,10 @@ var routes = {
         var user_id = context.current_user ? context.current_user.user_id : await find_or_create_anon(context.db, context.ip)
 
         if (intval(_GET(context.req.url, 'comment_id'))) {
-            let comment_id = intval(_GET(context.req.url, 'comment_id'))
-            let comment_row = await get_row(`select * from comments where comment_id=?`, [comment_id], context.db)
 
-            let vote = await get_row(`select commentvote_up, count(*) as c from commentvotes where commentvote_user_id=? and commentvote_comment_id=?`,
-                                      [user_id, comment_id], context.db)
+            let content = await comment_dislike(user_id, context)
+            return send_html(200, content, context)
 
-            if (vote.c) { // already voted on this comment
-                return send_html(200, `&#8595;&nbsp; you dislike this (${comment_row.comment_dislikes})`, context)
-            }
-
-            await query(`update comments set comment_dislikes=comment_dislikes+1 where comment_id=?`, [comment_id], context.db)
-
-            await query(`insert into commentvotes (commentvote_user_id, commentvote_comment_id, commentvote_down) values (?, ?, 1)
-                         on duplicate key update commentvote_up=1`, [user_id, comment_id], context.db)
-
-            await query(`update users set user_dislikes=user_dislikes+1 where user_id=?`, [comment_row.comment_author], context.db)
-
-            send_html(200, `&#8595;&nbsp;you dislike this (${comment_row.comment_dislikes + 1})`, context)
-
-            // no emailing done of dislikes
-
-            // Now if Patrick was the disliker, then the user gets a bias bump down.
-            if (1 === user_id) {
-                await query(`update users set user_pbias=user_pbias-1 where user_id=?`, [comment_row.comment_author], context.db)
-            }
         }
         else if (intval(_GET(context.req.url, 'post_id'))) {
             let post_id = intval(_GET(context.req.url, 'post_id'))
