@@ -3353,10 +3353,9 @@ function post(post, ip, current_user) { // format a single post for display
         }
     }
 
-    // watch toggle
-    var watcheye = `<a href='#' id='watch' onclick="$.get('/watch?post_id=${post.post_id}&${nonce_parms}', function(data) {
-    document.getElementById('watch').innerHTML = data; });
-    return false" title='comments by email'>${render_watch_indicator(post.postview_want_email)}</a>`
+    let watcheye = `<a href='#' id='watch' onclick="$.get('/watch?post_id=${post.post_id}&${nonce_parms}', function(data) {
+        document.getElementById('watch').innerHTML = data; });
+        return false" title='comments by email'>${render_watch_indicator(post.postview_want_email)}</a>`
 
     let edit_link = (current_user && ((current_user.user_id === post.post_author) || (current_user.user_level >= 4)) ) ?
         `<a href='/edit_post?p=${post.post_id}&${nonce_parms}'>edit</a> ` : ''
@@ -3521,10 +3520,10 @@ function comment_pagination(comments, url) { // get pagination links for a singl
         var previous_offset = (total - 80 > 0) ? total - 80 : 0 // second to last page
         var q               = query ? (query + '&') : ''
 
-        var first_link      = `${pathname}?${q}offset=0#comments`
-        var previous_link   = `${pathname}?${q}offset=${previous_offset}#comments`
+        var first_link = `${pathname}?${q}offset=0#comments`
+        var prev_link  = `${pathname}?${q}offset=${previous_offset}#comments`
+        var last_link  = `${pathname}${q ? ('?' + q) : ''}#last` // don't include the question mark unless q
         // there is no next_link because we are necessarily on the last page of comments
-        var last_link       = `${pathname}${q ? ('?' + q) : ''}#last` // don't include the question mark unless q
     }
     else { // there is a query string, and it includes offset
         var offset          = intval(_GET(url, 'offset'))
@@ -3532,8 +3531,8 @@ function comment_pagination(comments, url) { // get pagination links for a singl
         var next_offset     = (offset + 40 > total - 40) ? total - 40 : offset + 40 // last page will always be 40 comments
 
         if (offset !== 0) { // don't need these links if we are on the first page
-            var first_link    = `${pathname}?${query.replace(/offset=\d+/, 'offset=0')}#comments`
-            var previous_link = `${pathname}?${query.replace(/offset=\d+/, 'offset=' + previous_offset)}#comments`
+            var first_link = `${pathname}?${query.replace(/offset=\d+/, 'offset=0')}#comments`
+            var prev_link  = `${pathname}?${query.replace(/offset=\d+/, 'offset=' + previous_offset)}#comments`
         }
 
         if (offset < total - 40) { // don't need next link on last page
@@ -3543,27 +3542,18 @@ function comment_pagination(comments, url) { // get pagination links for a singl
         var last_link = `${pathname}?${query.replace(/offset=\d+/, 'offset=' + (total - 40))}#last`
     }
 
-    if (typeof first_link !== 'undefined') {
-        ret = ret + `<a href='${first_link}' title='Jump to first comment' >&laquo; First</a> &nbsp; &nbsp;`
-    }
-
-    if (typeof previous_link !== 'undefined') {
-         ret = ret + `<a href='${previous_link}' title='Previous page of comments' >&laquo; Previous</a> &nbsp; &nbsp; `
-    }
+    if (typeof first_link !== 'undefined') ret = ret + `<a href='${first_link}' title='Jump to first comment' >&laquo; First</a> &nbsp; &nbsp;`
+    if (typeof prev_link  !== 'undefined') ret = ret + `<a href='${prev_link}'  title='Previous page of comments' >&laquo; Previous</a> &nbsp; &nbsp; `
 
     let max_on_this_page = (total > offset + 40) ? offset + 40 : total
     ret = ret + `Comments ${offset + 1} - ${max_on_this_page} of ${total.number_format()} &nbsp; &nbsp; `
 
-    if (typeof next_link !== 'undefined') {
-         ret = ret + `<a href='${next_link}' title='Next page of comments' >Next &raquo;</a> &nbsp; &nbsp; `
-    }
+    if (typeof next_link  !== 'undefined') ret = ret + `<a href='${next_link}'  title='Next page of comments' >Next &raquo;</a> &nbsp; &nbsp; `
 
     return ret + `<a href='${last_link}' title='Jump to last comment' >Last &raquo;</a></br>`
 }
 
 function post_form(p, post) { // used both for composing new posts and for editing existing posts; distinction is the presence of p, the post_id
-
-    // todo: add conditional display of user-name chooser for non-logged in users
 
     if (p) {
         var fn = 'edit'
