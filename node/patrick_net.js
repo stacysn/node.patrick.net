@@ -563,7 +563,12 @@ function getimagesize(file) {
     })
 }
 
-function resize_image(file, max_dim = 600) { // max_dim is maximum dimension in either direction
+async function resize_image(file, max_dim = 600) { // max_dim is maximum dimension in either direction
+    await mogrify(file, max_dim)
+    return await getimagesize(file) // return the new image dimensions
+}
+
+function mogrify(file, max_dim = 600) { // max_dim is maximum dimension in either direction
     return new Promise(function(resolve, reject) {
         if (FS.existsSync(file)) {
             let { spawn } = require('child_process')
@@ -1468,6 +1473,13 @@ function get_image_path() {
     if (!FS.existsSync(abs_path)) FS.mkdirSync(abs_path)
 
     return [url_path, abs_path]
+}
+
+async function update_icon(path, dims, context) {
+    let id = context.current_user.user_id
+    await query(`update users set user_icon        = ? where user_id = ?`, [path,    id], context.db)
+    await query(`update users set user_icon_width  = ? where user_id = ?`, [dims[0], id], context.db)
+    await query(`update users set user_icon_height = ? where user_id = ?`, [dims[1], id], context.db)
 }
 
 var routes = {
@@ -2484,12 +2496,8 @@ var routes = {
         if (!context.current_user) return die('you must be logged in to upload images', context)
 
         var form = new FORMIDABLE.IncomingForm()
-
         form.maxFieldsSize = 7 * 1024 * 1024 // max upload is 4MB, but this seems to fail; nginx config will block larger images anyway
         form.maxFields = 1                   // only one image at a time
-
-        // todo: implement upload progress meter with this
-        //form.on('progress', function(bytesReceived, bytesExpected) { console.log(`${bytesReceived}, ${bytesExpected}`) })
 
         form.parse(context.req, async function (err, fields, files) {
             if (err) throw err
@@ -2497,8 +2505,7 @@ var routes = {
             let [url_path, abs_path] = get_image_path()
             let clean_name           = clean_upload_path(abs_path, files.image.name, context.current_user)
 
-            // note that files.image.path includes filename at end
-            FS.rename(files.image.path, `${abs_path}/${clean_name}`, async function (err) {
+            FS.rename(files.image.path, `${abs_path}/${clean_name}`, async function (err) { // note that files.image.path includes filename at end
                 if (err) throw err
 
                 let addendum = ''
@@ -2506,22 +2513,12 @@ var routes = {
                 if (!dims) return die('failed to find image dimensions', context)
 
                 if (context.req.headers.referer.match(/edit_profile/)) { // uploading user icon
-
-                    await resize_image(`${abs_path}/${clean_name}`, 80)    // limit max width to 80 px
-                    dims = await getimagesize(`${abs_path}/${clean_name}`) // get the new reduced image dimensions
-
-                    let id = context.current_user.user_id
-                    await query(`update users set user_icon        = ? where user_id = ?`, [`${url_path}/${clean_name}`, id], context.db)
-                    await query(`update users set user_icon_width  = ? where user_id = ?`, [dims[0],                     id], context.db)
-                    await query(`update users set user_icon_height = ? where user_id = ?`, [dims[1],                     id], context.db)
-
+                    dims = await resize_image(`${abs_path}/${clean_name}`, 80)    // limit max width to 80 px
+                    await update_icon(`${url_path}/${clean_name}`, dims, context)
                     return redirect('/edit_profile', context)
                 }
                 else { // uploading image link to post or comment text area
-                    if (dims[0] > 600) {
-                        await resize_image(`${abs_path}/${clean_name}`, 600)   // limit max width to 600 px
-                        dims = await getimagesize(`${abs_path}/${clean_name}`) // get the new reduced image dimensions
-                    }
+                    if (dims[0] > 600) dims = await resize_image(`${abs_path}/${clean_name}`, 600)   // limit max width to 600 px
                     addendum = `"<img src='${url_path}/${clean_name}' width='${dims[0]}' height='${dims[1]}' >"`
 
                     let content = `
