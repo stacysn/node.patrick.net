@@ -1385,6 +1385,80 @@ async function update_postview(p, context) {
                 [context.current_user.user_id, p.post_id, p.postview_want_email], context.db)
 }
 
+async function get_unrequited(context, d, ob, offset) {
+    // 1. Find all those IDs that asked to be friends with user_id.
+    await query('create temporary table unrequited select * from relationships where rel_other_id=? and rel_my_friend > 0',
+          [context.current_user.user_id], context.db)
+
+    // 2. Subtract all those for which there is the acceptance line.
+    await query(`delete from unrequited where rel_self_id in (select rel_other_id from relationships where rel_self_id=? and rel_my_friend > 0)`,
+                [context.current_user.user_id], context.db)
+    
+    const message = `Unrequited Friendship Requests For ${context.current_user.user_name}`
+    const users   =  await query(`select sql_calc_found_rows * from unrequited, users
+                         where unrequited.rel_self_id = users.user_id and user_id = ? limit 40 offset ${offset}`,
+                        [context.current_user.user_id], context.db)
+
+    return [message, users]
+
+}
+
+async function get_followersof(followersof, context, d, ob, offset) {
+    const followersof = intval(_GET(context.req.url, 'followersof'))
+    const message = 'Followers of ' + (await get_userrow(followersof, context.db)).user_name
+    const users = await query(`select sql_calc_found_rows * from users
+        where user_id in (select rel_self_id from relationships where rel_other_id=? and rel_i_follow > 0)
+        order by ${ob} ${d} limit 40 offset ${offset}`, [followersof, ob, d], context.db)
+
+    // keep followers-count cache in users table correct
+    await query('update users set user_followers=? where user_id=?', [users.length, followersof], context.db)
+
+    return [message, users]
+}
+
+async function get_following(following, context, d, ob, offset) {
+    const following = intval(_GET(context.req.url, 'following'))
+    const message = 'Users ' + (await get_userrow(following, context.db)).user_name + ' is Following'
+    const users = await query(`select sql_calc_found_rows * from users where user_id in
+                        (select rel_other_id from relationships where rel_self_id=? and rel_i_follow > 0) order by ${ob} ${d} limit 40 offset ${offset}`,
+                        [following], context.db)
+
+
+    return [message, users]
+}
+
+async function get_friendsof(friendsof, context, d, ob, offset) {
+    const friendsof = intval(_GET(context.req.url, 'friendsof'))
+    const message = 'Friends of ' + (await get_userrow(friendsof, context.db)).user_name
+    const users = await query(`select sql_calc_found_rows * from users where user_id in
+                              (select r1.rel_other_id from relationships as r1, relationships as r2 where
+                                  r1.rel_self_id=? and
+                                  r1.rel_self_id=r2.rel_other_id and
+                                  r2.rel_self_id=r1.rel_other_id and
+                                  r1.rel_my_friend > 0 and r2.rel_my_friend > 0)
+                              order by ${ob} ${d} limit 40 offset ${offset}`, [friendsof, ob, d], context.db)
+
+    await query(`update users set user_friends=? where user_id=?`, [users.length, friendsof], context.db) // Keep friends-count cache correct.
+
+    return [message, users]
+}
+
+async function get_user_name(user_name, context, d, ob, offset) {
+
+    const user_name = _GET(context.req.url, 'user_name').replace(/[^a-zA-Z0-9._ -]/).substring(0, 40)
+    const user_name = user_name.replace('/_/', '\_') // bc _ is single-char wildcard in mysql matching.
+    const message = `Users With Names Like '${user_name}'`
+    const users = await query(`select sql_calc_found_rows * from users where user_name like '%${user_name}%'
+                               order by ${ob} ${d} limit 40 offset ${offset}`, [ob, d], context.db)
+    return [message, users]
+}
+
+async function get_users(context, d, ob, offset) {
+    const message = 'users'
+    const users =  await query(`select sql_calc_found_rows * from users order by ${ob} ${d} limit 40 offset ${offset}`, [], context.db)
+    return [message, users]
+}
+
 var routes = {
 
     about : async function(context) {
@@ -2509,73 +2583,12 @@ var routes = {
         let message = ''
         let users
 
-        if ( _GET(context.req.url, 'unrequited') ) {
-            message = `Unrequited Friendship Requests For ${context.current_user.user_name}`
-
-            // 1. Find all those IDs that asked to be friends with user_id.
-            await query('create temporary table unrequited select * from relationships where rel_other_id=? and rel_my_friend > 0',
-                  [context.current_user.user_id], context.db)
-
-            // 2. Subtract all those for which there is the acceptance line.
-            await query(`delete from unrequited where rel_self_id in
-                  (select rel_other_id from relationships where rel_self_id=? and rel_my_friend > 0)`,
-                  [context.current_user.user_id], context.db)
-            
-            users = await query(`select sql_calc_found_rows * from unrequited, users
-                                       where unrequited.rel_self_id = users.user_id and user_id = ? limit 40 offset ${offset}`,
-                                      [context.current_user.user_id], context.db)
-        }
-        else if ( _GET(context.req.url, 'followersof') ) {
-            let followersof = intval(_GET(context.req.url, 'followersof'))
-
-            message = 'Followers of ' + (await get_userrow(followersof, context.db)).user_name
-
-            users = await query(`select sql_calc_found_rows * from users
-                where user_id in (select rel_self_id from relationships where rel_other_id=? and rel_i_follow > 0)
-                order by ${ob} ${d} limit 40 offset ${offset}`, [followersof, ob, d], context.db)
-
-            // keep followers-count cache in users table correct
-            await query('update users set user_followers=? where user_id=?', [users.length, followersof], context.db)
-        }
-        else if ( _GET(context.req.url, 'following') ) {
-            let following = intval(_GET(context.req.url, 'following'))
-
-            message = 'Users ' + (await get_userrow(following, context.db)).user_name + ' is Following'
-
-            users = await query(`select sql_calc_found_rows * from users where user_id in
-                                      (select rel_other_id from relationships where rel_self_id=? and rel_i_follow > 0)
-                                       order by ${ob} ${d} limit 40 offset ${offset}`, [following], context.db)
-        }
-        else if ( _GET(context.req.url, 'friendsof') ) {
-            let friendsof = intval(_GET(context.req.url, 'friendsof'))
-
-            message = 'Friends of ' + (await get_userrow(friendsof, context.db)).user_name
-
-            users = await query(`select sql_calc_found_rows * from users where user_id in
-                                      (select r1.rel_other_id from relationships as r1, relationships as r2 where
-                                          r1.rel_self_id=? and
-                                          r1.rel_self_id=r2.rel_other_id and
-                                          r2.rel_self_id=r1.rel_other_id and
-                                          r1.rel_my_friend > 0 and r2.rel_my_friend > 0)
-                                      order by ${ob} ${d} limit 40 offset ${offset}`, [friendsof, ob, d], context.db)
-
-            await query(`update users set user_friends=? where user_id=?`,
-                        [users.length, friendsof], context.db) // Keep friends-count cache correct.
-        }
-        else if ( _GET(context.req.url, 'user_name') ) {
-
-            let user_name = _GET(context.req.url, 'user_name').replace(/[^a-zA-Z0-9._ -]/).substring(0, 40)
-            user_name = user_name.replace('/_/', '\_') // bc _ is single-char wildcard in mysql matching.
-
-            message = `Users With Names Like '${user_name}'`
-
-            users = await query(`select sql_calc_found_rows * from users where user_name like '%${user_name}%'
-                                       order by ${ob} ${d} limit 40 offset ${offset}`, [ob, d], context.db)
-        }
-        else {
-            message = 'users'
-            users   = await query(`select sql_calc_found_rows * from users order by ${ob} ${d} limit 40 offset ${offset}`, [], context.db)
-        }
+        if      (_GET(context.req.url, 'unrequited'))  [message, users] = await get_unrequited(context, d, ob, offset)
+        else if (_GET(context.req.url, 'followersof')) [message, users] = await get_followersof(followersof, context, d, ob, offset)
+        else if (_GET(context.req.url, 'following'))   [message, users] = await get_following(following, context, d, ob, offset)
+        else if (_GET(context.req.url, 'friendsof'))   [message, users] = await get_friendsof(friendsof, context, d, ob, offset)
+        else if (_GET(context.req.url, 'user_name'))   [message, users] = await get_user_name(user_name, context, d, ob, offset)
+        else                                           [message, users] = await get_users(context, d, ob, offset)
 
         let next_page = context.req.url.match(/offset=/) ? context.req.url.replace(/offset=\d+/, `offset=${offset + 40}`) :
             context.req.url.match(/\?/) ? context.req.url + '&offset=40' : context.req.url + '?offset=40'
@@ -2620,7 +2633,7 @@ var routes = {
 } // end of routes
 
 // from here to end are only html components
-// * all pure synchronous functions: no reading outside parms, no modification of parms, no side effects, can be replace with ret value
+// * all pure synchronous functions: no reading outside parms, no modification of parms, no side effects, can be replaced with ret value
 // * mostly just take (data, context) objects
 // * all return html
 // * all html without unique html tag has id which includes name of the function which generated it
