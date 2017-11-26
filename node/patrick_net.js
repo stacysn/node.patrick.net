@@ -3539,22 +3539,13 @@ function comment_box(post, current_user, ip) { // add new comment, just updates 
 }
 
 function comment_pagination(comments, url) { // get pagination links for a single page of comments
-
-    if (!comments)                 return
-    if (comments.found_rows <= 40) return // no pagination links needed if one page or less
-    if (!url)                      return
+    if (!comments || !url || (comments.found_rows <= 40)) return // no pagination links needed if one page or less
 
     let total    = comments.found_rows
-    let ret      = `<p id='comments'>`
-    let pathname = URL.parse(url).pathname // "pathNAME" is url path without the ? parms, unlike "path"
+    let pathname = URL.parse(url).pathname // "pathname" is url path without the ? parms, unlike "path"
     let query    = URL.parse(url).query
 
-    // offset is mysql offset, ie greatest row number to exclude from the result set
-    // offset missing from url -> showing last  40 comments in set (same as total - 40)
-    // offset 0                -> showing first 40 comments in set
-    // offset n                -> showing first 40 comments after n
-
-    if (!query || !query.match(/offset=\d+/)) { // we are on the last page of comments, ie offset = total - 40
+    if (!query || !query.match(/offset=\d+/)) { // offset missing means we are on the last page of comments, ie offset = total - 40
         var offset          = total - 40
         var previous_offset = (total - 80 > 0) ? total - 80 : 0 // second to last page
         var q               = query ? (query + '&') : ''
@@ -3564,7 +3555,7 @@ function comment_pagination(comments, url) { // get pagination links for a singl
         var last_link  = `${pathname}${q ? ('?' + q) : ''}#last` // don't include the question mark unless q
         // there is no next_link because we are necessarily on the last page of comments
     }
-    else { // there is a query string, and it includes offset
+    else { // there is a query string, and it includes offset; 0 means show first 40 comments
         var offset          = intval(_GET(url, 'offset'))
         var previous_offset = (offset - 40 > 0) ? offset - 40 : 0
         var next_offset     = (offset + 40 > total - 40) ? total - 40 : offset + 40 // last page will always be 40 comments
@@ -3574,13 +3565,11 @@ function comment_pagination(comments, url) { // get pagination links for a singl
             var prev_link  = `${pathname}?${query.replace(/offset=\d+/, 'offset=' + previous_offset)}#comments`
         }
 
-        if (offset < total - 40) { // don't need next link on last page
-            var next_link = `${pathname}?${query.replace(/offset=\d+/, 'offset=' + next_offset)}#comments`
-        }
-
+        if (offset < total - 40) var next_link = `${pathname}?${query.replace(/offset=\d+/, 'offset=' + next_offset)}#comments` // no next link on last page
         var last_link = `${pathname}?${query.replace(/offset=\d+/, 'offset=' + (total - 40))}#last`
     }
 
+    let ret = `<p id='comments'>`
     if (typeof first_link !== 'undefined') ret = ret + `<a href='${first_link}' title='Jump to first comment' >&laquo; First</a> &nbsp; &nbsp;`
     if (typeof prev_link  !== 'undefined') ret = ret + `<a href='${prev_link}'  title='Previous page of comments' >&laquo; Previous</a> &nbsp; &nbsp; `
 
@@ -3594,18 +3583,10 @@ function comment_pagination(comments, url) { // get pagination links for a singl
 
 function post_form(p, post) { // used both for composing new posts and for editing existing posts; distinction is the presence of p, the post_id
 
-    if (p) {
-        var fn = 'edit'
-        var title = post.post_title.replace(/'/g, '&apos;') // replace to display correctly in single-quoted html value below
-        var content = newlineify(post.post_content.replace(/'/g, '&apos;'))
-        var post_id = `<input type='hidden' name='post_id' value='${post.post_id}' />`
-    }
-    else {
-        var fn = 'new post'
-        var title = ''
-        var content = ''
-        var post_id = ''
-    }
+    const fn      = p ? 'edit' : 'new post'
+    const title   = p ? post.post_title.replace(/'/g, '&apos;') : '' // replace to display correctly in single-quoted html value below
+    const content = p ? newlineify(post.post_content.replace(/'/g, '&apos;')) : ''
+    const post_id = p ? `<input type='hidden' name='post_id' value='${post.post_id}' />` : ''
 
     return `
     <h1>${fn}</h1>
@@ -3613,17 +3594,7 @@ function post_form(p, post) { // used both for composing new posts and for editi
         <div class='form-group'><input name='post_title' type='text' class='form-control' placeholder='title' id='title' value='${title}' ></div>
         <textarea class='form-control' name='post_content' rows='12' id='ta' name='ta'
             placeholder='please include one of these topic hashtags at the beginning of a line to classify your post:
-#cheesecake
-#crime
-#economics
-#environment
-#housing
-#humor
-#investing
-#misc
-#politics
-#religion
-#scitech ' >${content}</textarea><p>
+#cheesecake #crime #economics #environment #housing #humor #investing #misc #politics #religion #scitech ' >${content}</textarea><p>
         ${post_id}
         <button type='submit' id='submit' class='btn btn-success btn-sm' >submit</button>
     </form>
