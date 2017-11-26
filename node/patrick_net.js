@@ -1761,18 +1761,18 @@ var routes = {
         let message = ''
 
         if (_GET(context.req.url, 'a')) {      // a is author name
-            let a         = decodeURIComponent(_GET(context.req.url, 'a').replace(/[^\w %]/, ''))
-            results       = await get_comment_list_by_author(a, offset, 40, context.db)
+            let a   = decodeURIComponent(_GET(context.req.url, 'a').replace(/[^\w %]/, ''))
+            results = await get_comment_list_by_author(a, offset, 40, context.db)
             message = `<h2>${a}'s comments</h2>`
         }
         else if (_GET(context.req.url, 'n')) { // n is number of comments per author, so we can see all comments by one-comment authors, for example
-            let n         = intval(_GET(context.req.url, 'n'))
-            results       = await get_comment_list_by_number(n, offset, 40, context.db)
+            let n   = intval(_GET(context.req.url, 'n'))
+            results = await get_comment_list_by_number(n, offset, 40, context.db)
             message = `<h2>comments by users with ${n} comments</h2>`
         }
         else if (_GET(context.req.url, 's')) { // comment search
-            let s         = _GET(context.req.url, 's').replace(/[^\w %]/, '')
-            results       = await get_comment_list_by_search(s, offset, 40, context.db)
+            let s   = _GET(context.req.url, 's').replace(/[^\w %]/, '')
+            results = await get_comment_list_by_search(s, offset, 40, context.db)
             message = `<h2>comments that contain "${s}"</h2>`
         }
         else return send_html(200, `invalid request`, context)
@@ -1977,7 +1977,7 @@ var routes = {
              you on ${CONF.domain} and will get emails of your new posts`)
     },
 
-    home : async function (context) {
+    home : async function(context) {
 
         var p
 
