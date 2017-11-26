@@ -3275,7 +3275,6 @@ function profile_form(updated, context) {
     let u = context.current_user
     if (!u) return die('please log in to edit your profile', context)
 
-    console.log(updated)
     let message = updated ? `<h3><font color='green'>your profile has been updated</font></h3>` : ''
     let ret = `<h1>edit profile</h1>${message}
     <table>
@@ -3290,19 +3289,13 @@ function profile_form(updated, context) {
                 <input type='submit' value='Upload &raquo;' class='form' />
             </form>
         </div>
-    </td>
-    </tr>
-    </table>
-    <p>
+    </td></tr></table><p>
     <form name='profile' action='update_profile?${create_nonce_parms(context.ip)}' method='post'>
     <input type='text' name='user_name'  placeholder='user_name' size='25' value='${ u.user_name }'  maxlength='30'  /> user name<p>
     <input type='text' name='user_email' placeholder='email'     size='25' value='${ u.user_email }' maxlength='100' /> email<p>
-    <br>
     <input type='checkbox' name='user_summonable' value='1' ${ u.user_summonable ? 'checked' : '' } >
-        Get emails of comments which have '@${ u.user_name }' and get emails of 'likes' of your comments
-    <br>
-    <input type='checkbox' name='user_hide_post_list_photos' value='1' ${ u.user_hide_post_list_photos ? 'checked' : '' } >
-        Hide images on post lists
+        Get emails of comments which have '@${ u.user_name }' and get emails of 'likes' of your comments <br>
+    <input type='checkbox' name='user_hide_post_list_photos' value='1' ${ u.user_hide_post_list_photos ? 'checked' : '' } >Hide images on post lists
     <h2>about you</h2>
     <textarea class='form-control' rows='3' name='user_aboutyou' >${u.user_aboutyou || ''}</textarea><br>
     <input type='submit' class='btn btn-success btn-sm' value='Save' />
@@ -3320,26 +3313,21 @@ function profile_form(updated, context) {
 }
 
 function render_user_info(u, current_user, ip) {
-    let img = render_user_icon(u)
+    const img = render_user_icon(u)
 
-    if (current_user && u.user_id === current_user.user_id) {
-        var edit_or_logout = `<div style='float:right'>
-        <b><a href='/edit_profile'>edit profile</a> &nbsp; 
-           <a href='#' onclick="$.get('/logout', function(data) { $('#status').html(data) });return false">logout</a></b><p>
-        </div><div style='clear: both;'></div>`
-    }
-    else var edit_or_logout = ''
+    const edit_or_logout = (current_user && u.user_id === current_user.user_id) ?
+        `<div style='float:right'><b><a href='/edit_profile'>edit profile</a> &nbsp; 
+           <a href='#' onclick="$.get('/logout', function(data) { $('#status').html(data) });return false">logout</a></b>
+        </div><div style='clear: both;'></div>` : ''
 
-    let offset = (u.user_comments - 40 > 0) ? u.user_comments - 40 : 0
-
-    var unignore_link = `<span id='unignore_link' >ignoring ${u.user_name}<sup>
+    const unignore_link = `<span id='unignore_link' >ignoring ${u.user_name}<sup>
                          <a href='#' onclick="$.get('/ignore?other_id=${u.user_id}&undo=1&${create_nonce_parms(ip)}',
-                         function() { document.getElementById('ignore').innerHTML = document.getElementById('ignore_link').innerHTML }); return false" >x</a></sup></span>`
+        function() { document.getElementById('ignore').innerHTML = document.getElementById('ignore_link').innerHTML }); return false" >x</a></sup></span>`
 
-    var ignore_link = `<span id='ignore_link' >
+    const ignore_link = `<span id='ignore_link' >
                        <a href='#' title='hide all posts and comments by ${u.user_name}'
                        onclick="$.get('/ignore?other_id=${u.user_id}&${create_nonce_parms(ip)}',
-                       function() { document.getElementById('ignore').innerHTML = document.getElementById('unignore_link').innerHTML }); return false" >ignore</a></span>`
+        function() { document.getElementById('ignore').innerHTML = document.getElementById('unignore_link').innerHTML }); return false" >ignore</a></span>`
 
     if (current_user
      && current_user.relationships
@@ -3347,9 +3335,7 @@ function render_user_info(u, current_user, ip) {
      && current_user.relationships[u.user_id].rel_i_ban) {
         var ignore = `<span id='ignore' >${unignore_link}</span>`
     }
-    else {
-        var ignore = `<span id='ignore' >${ignore_link}</span>`
-    }
+    else var ignore = `<span id='ignore' >${ignore_link}</span>`
 
     var ban_links = ''
     if (current_user && current_user.is_moderator_of.length) {
@@ -3357,18 +3343,15 @@ function render_user_info(u, current_user, ip) {
     }
 
     return `${edit_or_logout}
-            <center>
-            <a href='/user/${u.user_name}' >${ img }</a><h2>${u.user_name}</h2>
-            ${u.user_aboutyou || ''}
-            <p>joined ${ render_date(u.user_registered) } &nbsp;
-            ${u.user_country ? u.user_country : ''}
-            ${u.user_posts.number_format()} posts &nbsp;
-            <a href='/comments?a=${encodeURI(u.user_name)}&offset=${offset}'>${ u.user_comments.number_format() } comments</a> &nbsp;
-            ${follow_user_button(u, current_user, ip)} &nbsp;
-            <span style='display: none;' > ${ignore_link} ${unignore_link} </span>
-            ${ignore}
-            <p>
-            ${ban_links}
+            <center><a href='/user/${u.user_name}' >${ img }</a><h2>${u.user_name}</h2>
+                ${u.user_aboutyou || ''}
+                <p>joined ${ render_date(u.user_registered) } &nbsp;
+                ${u.user_country ? u.user_country : ''}
+                ${u.user_posts.number_format()} posts &nbsp;
+                <a href='/comments?a=${encodeURI(u.user_name)}'>${ u.user_comments.number_format() } comments</a> &nbsp;
+                ${follow_user_button(u, current_user, ip)} &nbsp;
+                <span style='display: none;' > ${ignore_link} ${unignore_link} </span>${ignore}
+                <p>${ban_links}
             </center>`
 }
 
