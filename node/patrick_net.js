@@ -2920,7 +2920,6 @@ function render_query_times(start_time, queries) {
 function client_side_js() {
     return `<script>
     function addquote(post_id, offset, comment_id, author) {
-
         var textarea = document.forms['commentform'].elements['ta'];
         var theSelection = '';
 
@@ -2935,9 +2934,7 @@ function client_side_js() {
         }
         else theSelection = document.getElementById('comment-' + comment_id + '-text').innerHTML;
         // either we are on mobile (no selection possible) or the user did not select any text; whole comment, or post when comment_id === 0
-
         if (theSelection.length > 1024) var theSelection = theSelection.substring(0, 1000) + '...'; // might mangle tags
-
         textarea.value = textarea.value + comment_link + '<br><blockquote>' + theSelection + '</blockquote>';
         textarea.focus();
         return;
@@ -2951,18 +2948,14 @@ function client_side_js() {
     });
 
     function getHTMLOfSelection () {
-      if (window.getSelection) {
-        var selection = window.getSelection();
-        if (selection.rangeCount > 0) {
-          var range = selection.getRangeAt(0);
-          var clonedSelection = range.cloneContents();
-          var div = document.createElement('div');
-          div.appendChild(clonedSelection);
-          return div.innerHTML;
-        }
-        else return '';
-      }
-      else return '';
+      if (!window.getSelection) return '';
+      var selection = window.getSelection();
+      if (selection.rangeCount <= 0) return ''
+      var range = selection.getRangeAt(0);
+      var clonedSelection = range.cloneContents();
+      var div = document.createElement('div');
+      div.appendChild(clonedSelection);
+      return div.innerHTML;
     }
     </script>`
 }
