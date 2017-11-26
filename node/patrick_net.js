@@ -2919,17 +2919,13 @@ function render_query_times(start_time, queries) {
 
 function client_side_js() {
     return `<script>
-
     function addquote(post_id, offset, comment_id, author) {
 
-        var comment_link;
         var textarea = document.forms['commentform'].elements['ta'];
         var theSelection = '';
 
-        if (comment_id > 0)
-            comment_link = '<a href="/post/' + post_id + '&offset=' + offset + '#comment-' + comment_id + '">' + author + ' says</a>';
-        else
-            comment_link = '<a href="/post/' + post_id                                                  + '">' + author + ' says</a>';
+        if (comment_id > 0) var comment_link = '<a href="/post/' + post_id + '&offset=' + offset + '#comment-' + comment_id + '">' + author + ' says</a>';
+        else                var comment_link = '<a href="/post/' + post_id                                                  + '">' + author + ' says</a>';
 
         if (theSelection = getHTMLOfSelection()) { // user manually selected something
             if (s = sessionStorage.getItem('tripleclickselect')) { // override tripleclick selection to avoid getting extra html elements
@@ -2937,10 +2933,8 @@ function client_side_js() {
                 sessionStorage.removeItem('tripleclickselect'); // so we don't keep using it by mistake
             }
         }
-        else { // either we are on mobile (no selection possible) or the user did not select any text
-            // whole comment, or post when comment_id === 0
-            theSelection = document.getElementById('comment-' + comment_id + '-text').innerHTML;
-        }
+        else theSelection = document.getElementById('comment-' + comment_id + '-text').innerHTML;
+        // either we are on mobile (no selection possible) or the user did not select any text; whole comment, or post when comment_id === 0
 
         if (theSelection.length > 1024) var theSelection = theSelection.substring(0, 1000) + '...'; // might mangle tags
 
@@ -2952,33 +2946,25 @@ function client_side_js() {
     window.addEventListener('click', function (evt) {
         if (evt.detail === 3) {
             sessionStorage.setItem('tripleclickselect', window.getSelection());
-
-            // if they don't use it by clicking "quote" within 10 seconds, delete it so it dn confuse them later
-            setTimeout(function() { sessionStorage.removeItem('tripleclickselect'); }, 10000);
+            setTimeout(function() { sessionStorage.removeItem('tripleclickselect'); }, 10000); // delete after 10s so it dn confuse them later
         }
     });
 
     function getHTMLOfSelection () {
-      var range;
       if (window.getSelection) {
         var selection = window.getSelection();
         if (selection.rangeCount > 0) {
-          range = selection.getRangeAt(0);
+          var range = selection.getRangeAt(0);
           var clonedSelection = range.cloneContents();
           var div = document.createElement('div');
           div.appendChild(clonedSelection);
           return div.innerHTML;
         }
-        else {
-          return '';
-        }
+        else return '';
       }
-      else {
-        return '';
-      }
+      else return '';
     }
-    </script>
-    `
+    </script>`
 }
 
 function render_watch_indicator(want_email) {
