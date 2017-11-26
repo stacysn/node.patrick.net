@@ -2810,32 +2810,37 @@ function comment_search_box() {
     </form>`
 }
 
-function format_comment(c, context, comments, offset) {
+function comment_links(c, context, offset) { // return links to be placed above the comment
 
-    var current_user = context.current_user
-    var ip           = context.ip
-    var req          = context.req
+    const current_user = context.current_user
+    const ip           = context.ip
+    const req          = context.req
 
     if (!req.url) return
 
-    var utz = current_user ? current_user.user_timezone : 'America/Los_Angeles'
+    const liketext    = c.commentvote_up   ? 'you like this'    : '&#8593;&nbsp;like';
+    const disliketext = c.commentvote_down ? 'you dislike this' : '&#8595;&nbsp;dislike';
 
-    var comment_dislikes = intval(c.comment_dislikes)
-    var comment_likes    = intval(c.comment_likes)
-    var date_link        = get_permalink(c, utz)
-    var del              = get_del_link(c, current_user, ip)
-    var edit             = get_edit_link(c, current_user, ip)
-    var nuke             = get_nuke_link(c, current_user, ip, req)
-    var icon             = render_user_icon(c, 0.4, `'align='left' hspace='5' vspace='2'`) // scale image down
-    var u                = c.user_name ? `<a href='/user/${c.user_name}'>${c.user_name}</a>` : 'anonymous'
-    var mute             = `<a href='#' onclick="if (confirm('Really ignore ${c.user_name}?')) { $.get('/ignore?other_id=${ c.user_id }&${create_nonce_parms(ip)}', function() { $('#comment-${ c.comment_id }').remove() }); return false}; return false" title='ignore ${c.user_name}' >ignore (${c.user_bannedby})</a>`
-    var clink            = contextual_link(c, current_user, req.url, ip)
+    let links = []
 
-    var liketext    = c.commentvote_up   ? 'you like this'    : '&#8593;&nbsp;like';
-    var disliketext = c.commentvote_down ? 'you dislike this' : '&#8595;&nbsp;dislike';
+    links.push(`<a href='#' onclick="if (confirm('Really ignore ${c.user_name}?')) { $.get('/ignore?other_id=${ c.user_id }&${create_nonce_parms(ip)}', function() { $('#comment-${ c.comment_id }').remove() }); return false}; return false" title='ignore ${c.user_name}' >ignore (${c.user_bannedby})</a>`)
+    links.push(get_permalink(c, current_user ? current_user.user_timezone : 'America/Los_Angeles'))
+    links.push(`<a href='#' id='like_${c.comment_id}' onclick="like('like_${c.comment_id}');return false">${liketext} (${c.comment_likes})</a>`)
+    links.push(`<a href='#' id='dislike_${c.comment_id}' onclick="dislike('dislike_${c.comment_id}');return false">${disliketext} (${c.comment_dislikes})</a>`)
+    links.push(contextual_link(c, current_user, req.url, ip))
+    links.push(`<a href="#commentform"
+                    onclick="addquote('${c.comment_post_id}', '${offset}', '${c.comment_id}', '${c.user_name}'); return false;"
+                    title="select some text then click this to quote" >quote</a>`)
+    links.push(get_edit_link(c, current_user, ip))
+    links.push(get_del_link(c, current_user, ip))
+    links.push(get_nuke_link(c, current_user, ip, req))
 
-    var like    = `<a href='#' id='like_${c.comment_id}' onclick="like('like_${c.comment_id}');return false">${liketext} (${c.comment_likes})</a>`
-    var dislike = `<a href='#' id='dislike_${c.comment_id}' onclick="dislike('dislike_${c.comment_id}');return false">${disliketext} (${c.comment_dislikes})</a>`
+    return links
+}
+
+function format_comment(c, context, comments, offset) {
+
+    const current_user = context.current_user
 
     if (current_user) {
         if (current_user.relationships[c.user_id] &&
@@ -2844,10 +2849,6 @@ function format_comment(c, context, comments, offset) {
     }
 
     c.user_name = c.user_name || 'anonymous' // so we don't display 'null' in case the comment is anonymous
-
-    var quote = `<a href="#commentform"
-                    onclick="addquote('${c.comment_post_id}', '${offset}', '${c.comment_id}', '${c.user_name}'); return false;"
-                    title="select some text then click this to quote" >quote</a>`
 
     // for the last comment in the whole result set (not just last on this page) add an id="last"
     // comments may not be defined, for example when we just added one comment
@@ -2859,20 +2860,16 @@ function format_comment(c, context, comments, offset) {
     c.comment_content = (c.comment_adhom_when && !URL.parse(req.url).pathname.match(/jail/)) ?
         `<a href='/comment_jail#comment-${c.comment_id}'>this comment has been jailed for incivility</a>` : c.comment_content
 
+    const links = comment_links(c, context, offset)
+
     return `${last}<div class="comment" id="comment-${c.comment_id}" ${hide} >
     <font size=-1 >
         ${c.row_number || ''}
-        ${icon}
-        ${u} &nbsp;
-        ${mute} &nbsp;
-        ${date_link} &nbsp;
-        ${like} &nbsp;
-        ${dislike} &nbsp;
-        ${clink} &nbsp;
-        ${quote} &nbsp;
-        ${edit} &nbsp;
-        ${del} &nbsp;
-        ${nuke} &nbsp;
+        &nbsp;
+        ${render_user_icon(c, 0.4, `'align='left' hspace='5' vspace='2'`)}
+        ${c.user_name ? `<a href='/user/${c.user_name}'>${c.user_name}</a>` : 'anonymous'}
+        &nbsp;
+        ${links.join(' &nbsp; ')}
     </font><p><div id='comment-${c.comment_id}-text'>${ c.comment_content }</div></div>`
 }
 
