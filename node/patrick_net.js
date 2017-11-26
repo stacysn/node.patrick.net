@@ -2998,10 +2998,7 @@ function user_list(users, d) {
     d = d ? d.replace(/[^adesc]/, '').substring(0,4)  : 'desc' // asc or desc
     let i = (d === 'desc') ? 'asc' : 'desc'                    // invert asc or desc
 
-    let header = `
-    <div id='user_list' >
-    ${user_search_box()}
-    <p>
+    let header = `<div id='user_list' >${user_search_box()} <p>
     <table width='100%' cellpadding='10' style="overflow-x:auto;" ><tr>
     <th ></th>
     <th                    ><a href='/users?ob=user_name&d=${ i }'       title='order by user name' >Username</a></th>
@@ -3032,7 +3029,6 @@ function user_list(users, d) {
                 <td align=right >${u.user_banning.number_format()}</td>
                </tr>`
         })
-
         var result = formatted.join('')
     }
     else var result = 'no such user'
