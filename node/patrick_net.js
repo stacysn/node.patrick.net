@@ -1916,7 +1916,7 @@ var routes = {
             head(CONF.stylesheet, CONF.description, context.post ? context.post.post_title : CONF.domain),
             header(context),
             midpage(
-                profile_form('updated', context)
+                profile_form(_GET(context.req.url, 'updated'), context)
             )
         )
 
@@ -3272,15 +3272,12 @@ function get_del_link(c, current_user, ip) {
 
 function profile_form(updated, context) {
 
-    if (!context.current_user) return die('please log in to edit your profile', context)
-
     let u = context.current_user
+    if (!u) return die('please log in to edit your profile', context)
 
-    let ret = '<h1>edit profile</h1>'
-
-    if (updated) ret += `<h3><font color='green'>your profile has been updated</font></h3>`
-
-    ret += `
+    console.log(updated)
+    let message = updated ? `<h3><font color='green'>your profile has been updated</font></h3>` : ''
+    let ret = `<h1>edit profile</h1>${message}
     <table>
     <tr>
     <td>${render_user_icon(u)} &nbsp; </td>
@@ -3308,7 +3305,6 @@ function profile_form(updated, context) {
         Hide images on post lists
     <h2>about you</h2>
     <textarea class='form-control' rows='3' name='user_aboutyou' >${u.user_aboutyou || ''}</textarea><br>
-
     <input type='submit' class='btn btn-success btn-sm' value='Save' />
     </form><p><h3>ignored users</h3>(click to unignore that user)<br>`
 
