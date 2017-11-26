@@ -1219,7 +1219,7 @@ function find_topic(post_content) {
     else                                               return 'misc'
 }
 
-async function like_comment(user_id, context) {
+async function like_comment(user_id, user_name, context) {
     let comment_id  = intval(_GET(context.req.url, 'comment_id'))
     let comment_row = await get_row(`select * from comments where comment_id=?`, [comment_id], context.db)
 
