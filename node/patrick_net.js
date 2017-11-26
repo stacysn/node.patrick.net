@@ -1403,7 +1403,7 @@ async function get_unrequited(context, d, ob, offset) {
 
 }
 
-async function get_followersof(followersof, context, d, ob, offset) {
+async function get_followersof(context, d, ob, offset) {
     const followersof = intval(_GET(context.req.url, 'followersof'))
     const message = 'Followers of ' + (await get_userrow(followersof, context.db)).user_name
     const users = await query(`select sql_calc_found_rows * from users
@@ -1416,7 +1416,7 @@ async function get_followersof(followersof, context, d, ob, offset) {
     return [message, users]
 }
 
-async function get_following(following, context, d, ob, offset) {
+async function get_following(context, d, ob, offset) {
     const following = intval(_GET(context.req.url, 'following'))
     const message = 'Users ' + (await get_userrow(following, context.db)).user_name + ' is Following'
     const users = await query(`select sql_calc_found_rows * from users where user_id in
@@ -1427,7 +1427,7 @@ async function get_following(following, context, d, ob, offset) {
     return [message, users]
 }
 
-async function get_friendsof(friendsof, context, d, ob, offset) {
+async function get_friendsof(context, d, ob, offset) {
     const friendsof = intval(_GET(context.req.url, 'friendsof'))
     const message = 'Friends of ' + (await get_userrow(friendsof, context.db)).user_name
     const users = await query(`select sql_calc_found_rows * from users where user_id in
@@ -1443,10 +1443,10 @@ async function get_friendsof(friendsof, context, d, ob, offset) {
     return [message, users]
 }
 
-async function get_user_name(user_name, context, d, ob, offset) {
+async function get_user_name(context, d, ob, offset) {
 
-    const user_name = _GET(context.req.url, 'user_name').replace(/[^a-zA-Z0-9._ -]/).substring(0, 40)
-    const user_name = user_name.replace('/_/', '\_') // bc _ is single-char wildcard in mysql matching.
+    let user_name = _GET(context.req.url, 'user_name').replace(/[^a-zA-Z0-9._ -]/).substring(0, 40)
+    user_name = user_name.replace('/_/', '\_') // bc _ is single-char wildcard in mysql matching.
     const message = `Users With Names Like '${user_name}'`
     const users = await query(`select sql_calc_found_rows * from users where user_name like '%${user_name}%'
                                order by ${ob} ${d} limit 40 offset ${offset}`, [ob, d], context.db)
@@ -2584,10 +2584,10 @@ var routes = {
         let users
 
         if      (_GET(context.req.url, 'unrequited'))  [message, users] = await get_unrequited(context, d, ob, offset)
-        else if (_GET(context.req.url, 'followersof')) [message, users] = await get_followersof(followersof, context, d, ob, offset)
-        else if (_GET(context.req.url, 'following'))   [message, users] = await get_following(following, context, d, ob, offset)
-        else if (_GET(context.req.url, 'friendsof'))   [message, users] = await get_friendsof(friendsof, context, d, ob, offset)
-        else if (_GET(context.req.url, 'user_name'))   [message, users] = await get_user_name(user_name, context, d, ob, offset)
+        else if (_GET(context.req.url, 'followersof')) [message, users] = await get_followersof(context, d, ob, offset)
+        else if (_GET(context.req.url, 'following'))   [message, users] = await get_following(context, d, ob, offset)
+        else if (_GET(context.req.url, 'friendsof'))   [message, users] = await get_friendsof(context, d, ob, offset)
+        else if (_GET(context.req.url, 'user_name'))   [message, users] = await get_user_name(context, d, ob, offset)
         else                                           [message, users] = await get_users(context, d, ob, offset)
 
         let next_page = context.req.url.match(/offset=/) ? context.req.url.replace(/offset=\d+/, `offset=${offset + 40}`) :
