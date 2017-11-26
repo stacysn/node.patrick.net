@@ -2857,7 +2857,7 @@ function format_comment(c, context, comments, offset) {
     else
         var last = ''
 
-    c.comment_content = (c.comment_adhom_when && !URL.parse(req.url).pathname.match(/jail/)) ?
+    c.comment_content = (c.comment_adhom_when && !URL.parse(context.req.url).pathname.match(/jail/)) ?
         `<a href='/comment_jail#comment-${c.comment_id}'>this comment has been jailed for incivility</a>` : c.comment_content
 
     const links = comment_links(c, context, offset)
