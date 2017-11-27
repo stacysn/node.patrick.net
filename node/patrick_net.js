@@ -1163,9 +1163,10 @@ function die(message, context) {
 
 async function allow_comment(post_data, context) {
 
-    if (!valid_nonce(context))                  return { err: true, content: popup(invalid_nonce_message()) }
-    if (!post_data.comment_content)             return { err: true, content: '' } // empty comment, empty response
-    if (await too_fast(context.ip, context.db)) return { err: true, content: popup('You are posting comments too quickly') }
+    if (!valid_nonce(context))                       return { err: true, content: popup(invalid_nonce_message()) }
+    if (!post_data.comment_content)                  return { err: true, content: '' } // empty comment, empty response
+    if (await too_fast(context.ip, context.db))      return { err: true, content: popup('You are posting comments too quickly') }
+    if (await already_said_that(post_data, context)) return { err: true, content: popup('you already said that') }
 
     let bans = await user_topic_bans(post_data.comment_author, context.db)
     let topic = (await get_post(post_data.comment_post_id, context.db)).post_topic
@@ -1173,6 +1174,13 @@ async function allow_comment(post_data, context) {
     if (message) return { err: true, content: popup(message) }
 
     return { err: false, content: '' }
+}
+
+async function already_said_that(post_data, context) { // select the most recent comment by that user in that thread; if same as comment_content, return true
+    const most_recent = await get_var(`select comment_content from comments where comment_post_id=? and comment_author=?
+                                       order by comment_date desc limit 1`, [post_data.comment_post_id, post_data.comment_author], context.db)
+    
+    return (most_recent == post_data.comment_content) ? true : false
 }
 
 async function after_accept_comment(comment, context) {
@@ -1505,8 +1513,8 @@ var routes = {
         let result = await allow_comment(post_data, context)
         if (result.err) return send_json(200, result, context)
 
-        post_data.comment_content  = strip_tags(post_data.comment_content.linkify())
-        post_data.comment_date     = new Date().toISOString().slice(0, 19).replace('T', ' ') // mysql datetime format
+        post_data.comment_content = strip_tags(post_data.comment_content.linkify())
+        post_data.comment_date    = new Date().toISOString().slice(0, 19).replace('T', ' ') // mysql datetime format
 
         try {
             var insert_result = await query('insert into comments set ?', post_data, context.db)
