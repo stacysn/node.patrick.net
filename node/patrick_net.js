@@ -1400,7 +1400,7 @@ async function check_post(p, context) {
         return 'No post with that id'
     }
 
-    if (!p.post_approved && current_user_id !== 1) {
+    if (!p.post_approved) {
         await repair_referer(context.req, context.db)
         return 'That post is waiting for moderation'
     }
