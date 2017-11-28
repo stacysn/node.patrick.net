@@ -17,7 +17,6 @@ const MOMENT      = require('moment-timezone') // via npm for time parsing
 const MYSQL       = require('mysql')           // via npm to interface to mysql
 const NODEMAILER  = require('nodemailer')      // via npm to send emails
 const OS          = require('os')
-const PROCESS     = require('process')
 const QUERYSTRING = require('querystring')
 const URL         = require('url')
 
@@ -337,7 +336,7 @@ function mail(email, subject, message) {
     }
 
     get_transporter().sendMail(mailOptions, (error, info) => {
-        if (error) console.error('error in mail: ' + error)
+        if (error) console.error('error in mail: ' + error + info)
     })
 }
 
@@ -345,7 +344,7 @@ Number.prototype.number_format = function() {
     return this.toLocaleString('en')
 }
 
-String.prototype.linkify = function(ref) {
+String.prototype.linkify = function() {
 
     let blockquotePattern = /""(.+?)""/gim
     let boldPattern       = / \*(.+?)\*/gim
@@ -544,6 +543,7 @@ function getimagesize(file) {
 
             identify.stderr.on('data', data => { // remove the file because something is wrong with it
                 FS.unlinkSync(file)
+                console.error(data)
                 console.trace()
                 reject('identify failed on image')
             })
@@ -618,7 +618,7 @@ function create_nonce_parms(ip) {
 }
 
 function is_user_banned(bans, topic, current_user) {
-    let ban = bans.filter(item => (item.topic === topic))[0]; // there should be only one per topic
+    let ban = bans.filter(item => (item.topic === topic))[0] // there should be only one per topic
     let utz = current_user ? current_user.user_timezone : 'America/Los_Angeles'
     return ban ? `banned from ${ban.topic} until ${render_date(ban.until, utz)}` : ''
 }
@@ -648,7 +648,7 @@ function invalid_nonce_message() {
 
 function get_external_links(content) {
     let c = CHEERIO.load(content)
-    let extlinks = [];
+    let extlinks = []
 
     c('a').each(function(i, elem) {
 
@@ -660,7 +660,7 @@ function get_external_links(content) {
         if (new RegExp(CONF.domain).test(host)) return // ignore links back to own domain
 
         extlinks.push(c(this).attr('href'))
-    });
+    })
 
     return extlinks
 }
@@ -1396,12 +1396,12 @@ async function check_topic(p, context) { // if we never set prev|next (null) or 
 async function check_post(p, context) {
 
     if (!p) {
-        await repair_referer(context.req, context.db);
+        await repair_referer(context.req, context.db)
         return 'No post with that id'
     }
 
     if (!p.post_approved && current_user_id !== 1) {
-        await repair_referer(context.req, context.db);
+        await repair_referer(context.req, context.db)
         return 'That post is waiting for moderation'
     }
 }
@@ -2817,8 +2817,6 @@ function header(context, topic) {
     const current_user       = context.current_user
     const header_data        = context.header_data
     const login_failed_email = context.login_failed_email
-    const page               = context.page
-    const url                = context.req.url
 
     var hashtag = ''
 
@@ -2851,8 +2849,8 @@ function comment_links(c, context, offset) { // return links to be placed above 
 
     if (!req.url) return
 
-    const liketext    = c.commentvote_up   ? 'you like this'    : '&#8593;&nbsp;like';
-    const disliketext = c.commentvote_down ? 'you dislike this' : '&#8595;&nbsp;dislike';
+    const liketext    = c.commentvote_up   ? 'you like this'    : '&#8593;&nbsp;like'
+    const disliketext = c.commentvote_down ? 'you dislike this' : '&#8595;&nbsp;dislike'
 
     let links = []
 
