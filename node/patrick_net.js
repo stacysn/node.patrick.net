@@ -1227,6 +1227,13 @@ function find_topic(post_content) {
     else                                               return 'misc'
 }
 
+async function comment_id2topic(comment_id, context) {
+   const cid = intval(comment_id)
+   if (!cid) return ''
+
+   return await get_var('select post_topic from posts left join comments on post_id=comment_post_id where comment_id = ?', [cid], context.db)
+}
+
 async function like_comment(user_id, user_name, context) {
     let comment_id  = intval(_GET(context.req.url, 'comment_id'))
     let comment_row = await get_row(`select * from comments where comment_id=?`, [comment_id], context.db)
@@ -1319,6 +1326,17 @@ async function send_post_like_email(user_name, context) {
 
         mail(u.user_email, subject, message)
     }
+}
+
+async function comments_to_moderate(context) {
+
+    if (!context.current_user) return []
+
+    // if user is not superuser, then limit to comments in topics user is moderating
+    const topic_constraint = (context.current_user.user_id != 1) ?  `and post_topic in ('${context.current_user.is_moderator_of.join("','")}')` : ''
+
+    return await query(`select * from comments left join users on user_id=comment_author left join posts on post_id=comment_post_id where
+                        (comment_approved = 0 or comment_approved is null) ${topic_constraint}`, [], context.db)
 }
 
 async function dislike_comment(user_id, context) {
@@ -1606,10 +1624,14 @@ var routes = {
     approve_comment : async function(context) {
 
         const comment_id = intval(_GET(context.req.url, 'comment_id'))
-        if (!comment_id)                           return send_html(200, '', context)
-        if (!context.current_user)                 return send_html(200, '', context)
-        if (context.current_user.user_level !== 4) return send_html(200, '', context)
-        if (!valid_nonce(context))                 return send_html(200, '', context)
+        if (!comment_id)                                   return send_html(200, '', context)
+        if (!context.current_user)                         return send_html(200, '', context)
+        if (!valid_nonce(context))                         return send_html(200, '', context)
+
+        const topic = await comment_id2topic(comment_id, context)
+
+        if (!context.current_user.is_moderator_of.includes(topic) &&
+            !context.current_user.user_id === 1)           return send_html(200, '', context)
 
         await query('update comments set comment_approved=1, comment_date=now() where comment_id=?', [comment_id], context.db)
 
@@ -1741,10 +1763,12 @@ var routes = {
 
     comment_moderation : async function(context) {
 
-        if (!context.current_user) return die('you must be logged in to moderate comments', context)
+        const current_user = context.current_user
 
-        let comments = await query(`select * from comments left join users on user_id=comment_author
-                                      where comment_approved = 0 or comment_approved is null`, [], context.db)
+        if (!current_user) return die('you must be logged in to moderate comments', context)
+        if (!current_user || !current_user.is_moderator_of || !current_user.is_moderator_of.length) return die('you are not moderator of any topic', context)
+
+        let comments = await comments_to_moderate(context)
 
         let offset = 0
         comments = comments.map(comment => { comment.row_number = ++offset; return comment })
@@ -2011,6 +2035,7 @@ var routes = {
             render_query_times(context.res.start_time, context.db.queries),
             head(CONF.stylesheet, CONF.description, CONF.domain),
             header(context),
+            (await comments_to_moderate(context)).length ? `Welcome moderator, you have <a href='/comment_moderation'>comments to moderate</a>` : '',
             midpage(
                 tabs(order, '', path),
                 post_list(posts, context),
@@ -3167,8 +3192,7 @@ function arrowbox(post) { // output html for vote up/down arrows; takes a post l
 function topic_moderation(topic, current_user) {
 
     if (!current_user || !current_user.is_moderator_of) return ''
-
-    if (!current_user.is_moderator_of.includes(topic)) return ''
+    if (!current_user.is_moderator_of.includes(topic))  return ''
 
     return `<hr id='moderation' >
         <h2>Welcome ${current_user.user_name}, moderator of ${topic}!</h2>
@@ -3180,8 +3204,7 @@ function topic_moderation(topic, current_user) {
         user whitelist<br>
         set background image<br>
         set color<br>
-        set donation link<br>
-    `
+        set donation link<br>`
 }
 
 function topic_list(topics) {
@@ -3434,9 +3457,8 @@ function get_nuke_link(c, current_user, ip, req) {
     if (!current_user) return ''
     if (!req.url)      return ''
 
-    return (URL.parse(req.url).pathname.match(/comment_moderation/) && (current_user.user_level === 4)) ?
-        `<a href='/nuke?nuke_id=${c.comment_author}&${create_nonce_parms(ip)}' onClick='return confirm("Really?")' >nuke</a>`
-        : ''
+    return (URL.parse(req.url).pathname.match(/comment_moderation/) && (current_user.user_id === 1)) ?
+        `<a href='/nuke?nuke_id=${c.comment_author}&${create_nonce_parms(ip)}' onClick='return confirm("Really?")' >nuke</a>` : ''
 }
 
 function id_box(current_user) {
