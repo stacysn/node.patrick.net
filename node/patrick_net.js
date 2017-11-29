@@ -483,6 +483,10 @@ async function get_var(sql, sql_parms, db) {
     else return null
 }
 
+async function sql_calc_found_rows(db) {
+    return await get_var('select found_rows() as f', [], db)
+}
+
 function query(sql, sql_parms, db, debug) {
 
     return new Promise(function(resolve, reject) {
@@ -493,7 +497,7 @@ function query(sql, sql_parms, db, debug) {
             return reject('attempt to use db without connection')
         }
 
-        var get_results = function (error, results, fields, timing) { // callback to give to db.query()
+        var get_results = async function (error, results, fields, timing) { // callback to give to db.query()
 
             if (debug) console.log(query.sql)
 
@@ -507,6 +511,8 @@ function query(sql, sql_parms, db, debug) {
                 sql : query.sql,
                 ms  : timing
             })
+
+            if (query.sql.match(/sql_calc_found_rows/)) results.found_rows = await sql_calc_found_rows(db)
 
             return resolve(results)
         }
@@ -747,10 +753,6 @@ async function update_prev_next(post_topic, post_id, db) { // slow, so do this o
     return [prev, next]
 }
 
-async function sql_calc_found_rows(db) {
-    return await get_var('select found_rows() as f', [], db)
-}
-
 async function too_fast(ip, db) { // rate limit comment insertion by user's ip address
     const ago = await get_var(`select (unix_timestamp(now()) - unix_timestamp(user_last_comment_time)) as ago from users
                                where user_last_comment_time is not null and user_last_comment_ip = ?
@@ -851,7 +853,6 @@ async function get_moderator(topic, db) {
 async function post_comment_list(post, url, current_user, db) {
 
     let offset = (post.post_comments - 40 > 0) ? post.post_comments - 40 : 0 // If offset is not set, select the 40 most recent comments.
-
     if (_GET(url, 'offset')) offset = intval(_GET(url, 'offset')) // But if offset is set, use that instead.
 
     // if this gets too slow as user_uncivil_comments increases, try a left join, or just start deleting old uncivil comments
@@ -859,25 +860,24 @@ async function post_comment_list(post, url, current_user, db) {
     let sql = `select sql_calc_found_rows * from comments
                left join users on comment_author=user_id
                left join commentvotes on (comment_id = commentvote_comment_id and commentvote_user_id = ?)
-               where comment_post_id = ? and comment_approved = 1
-               order by comment_date limit 40 offset ?`
+               where comment_post_id = ? and comment_approved = 1 order by comment_date limit 40 offset ?`
 
-    let results = await query(sql, [user_id, post.post_id, offset], db)
-    let found_rows = await sql_calc_found_rows(db)
+    let comments = await query(sql, [user_id, post.post_id, offset], db)
+    let found_rows = comments.found_rows
 
     let topic_moderator = await get_moderator(post.post_topic, db)
 
     // add in the comment row number to the result here for easier pagination info; would be better to do in mysql, but how?
     // also add in topic_moderator so we can display del link
-    results = results.map(comment => {
+    comments = comments.map(comment => {
         comment.row_number = ++offset
         comment.topic_moderator = topic_moderator
         return comment
     })
 
-    results.found_rows = found_rows // have to put this after map() above to retain it
+    comments.found_rows = found_rows // have to put this after map() above to retain it
 
-    return results
+    return comments
 }
 
 async function post_summons(post, db, already_mailed) { // post_content contains a summons like @user, and user is user_summonable, so email user the post
@@ -1025,35 +1025,18 @@ async function get_userrow(user_id, db) {
 }
 
 async function get_comment_list_by_author(a, start, num, db) {
-
-    let comments = await query(`select sql_calc_found_rows * from comments left join users on comment_author=user_id
-                                where user_name = ? order by comment_date limit ?, ?`, [a, start, num], db)
-
-    let total = await sql_calc_found_rows(db)
-
-    return {comments : comments, total : total}
+    return await query(`select sql_calc_found_rows * from comments left join users on comment_author=user_id
+                        where user_name = ? order by comment_date limit ?, ?`, [a, start, num], db)
 }
 
 async function get_comment_list_by_number(n, start, num, db) {
-
-    let comments = await query(`select sql_calc_found_rows * from comments, users force index (user_comments_index)
-                            where comments.comment_author = users.user_id and user_comments = ? order by comment_date desc limit ?, ?`,
-                                [n, start, num], db)
-
-    let total = await sql_calc_found_rows(db)
-
-    return {comments, total}
+    return await query(`select sql_calc_found_rows * from comments, users force index (user_comments_index)
+                        where comments.comment_author = users.user_id and user_comments = ? order by comment_date desc limit ?, ?`, [n, start, num], db)
 }
 
 async function get_comment_list_by_search(s, start, num, db) {
-
-    let comments = await query(`select sql_calc_found_rows * from comments left join users on comment_author=user_id
-                                where match(comment_content) against (?)
-                                order by comment_date desc limit ?, ?`, [s, start, num], db)
-
-    let total = await sql_calc_found_rows(db)
-
-    return {comments, total}
+    return await query(`select sql_calc_found_rows * from comments left join users on comment_author=user_id
+                        where match(comment_content) against (?) order by comment_date desc limit ?, ?`, [s, start, num], db)
 }
 
 async function find_or_create_anon(db, ip) { // find the user_id derived from this anonymous ip address; if dne, create
@@ -1431,7 +1414,6 @@ async function get_unrequited(context, d, ob, offset) {
                         [context.current_user.user_id], context.db)
 
     return [message, users]
-
 }
 
 async function get_followersof(context, d, ob, offset) {
@@ -1453,7 +1435,6 @@ async function get_following(context, d, ob, offset) {
     const users = await query(`select sql_calc_found_rows * from users where user_id in
                         (select rel_other_id from relationships where rel_self_id=? and rel_i_follow > 0) order by ${ob} ${d} limit 40 offset ${offset}`,
                         [following], context.db)
-
 
     return [message, users]
 }
@@ -1789,28 +1770,25 @@ var routes = {
     comments : async function(context) { // show a list of comments by user, or by comment-frequence, or from a search
 
         let offset  = intval(_GET(context.req.url, 'offset'))
-        let results = null
+        let comments
         let message = ''
 
         if (_GET(context.req.url, 'a')) {      // a is author name
             let a   = decodeURIComponent(_GET(context.req.url, 'a').replace(/[^\w %]/, ''))
-            results = await get_comment_list_by_author(a, offset, 40, context.db)
+            comments = await get_comment_list_by_author(a, offset, 40, context.db)
             message = `<h2>${a}'s comments</h2>`
         }
         else if (_GET(context.req.url, 'n')) { // n is number of comments per author, so we can see all comments by one-comment authors, for example
             let n   = intval(_GET(context.req.url, 'n'))
-            results = await get_comment_list_by_number(n, offset, 40, context.db)
+            comments = await get_comment_list_by_number(n, offset, 40, context.db)
             message = `<h2>comments by users with ${n} comments</h2>`
         }
         else if (_GET(context.req.url, 's')) { // comment search
             let s   = _GET(context.req.url, 's').replace(/[^\w %]/, '')
-            results = await get_comment_list_by_search(s, offset, 40, context.db)
+            comments = await get_comment_list_by_search(s, offset, 40, context.db)
             message = `<h2>comments that contain "${s}"</h2>`
         }
         else return send_html(200, `invalid request`, context)
-
-        let comments = results.comments
-        comments.found_rows = results.total
 
         let content = html(
             render_query_times(context.res.start_time, context.db.queries),
@@ -2023,8 +2001,7 @@ var routes = {
         let sql = `select sql_calc_found_rows * from posts
                    left join postviews on postview_post_id=post_id and postview_user_id= ?
                    left join postvotes on postvote_post_id=post_id and postvote_user_id= ?
-                   left join users     on user_id=post_author
-                   where post_modified > date_sub(now(), interval 7 day) and post_approved=1
+                   left join users     on user_id=post_author where post_modified > date_sub(now(), interval 7 day) and post_approved=1
                    ${order_by} limit ${slimit}`
 
         let posts = await query(sql, [current_user_id, current_user_id], context.db)
@@ -2039,7 +2016,7 @@ var routes = {
             midpage(
                 tabs(order, '', path),
                 post_list(posts, context),
-                post_pagination(await sql_calc_found_rows(context.db), curpage, `&order=${order}`, context.req.url)
+                post_pagination(posts.found_rows, curpage, `&order=${order}`, context.req.url)
             )
         )
 
@@ -2221,9 +2198,9 @@ var routes = {
                    left join postvotes on postvote_post_id=post_id and postvote_user_id= ?
                    left join users on user_id=post_author
                    where post_approved=1 and
-                    post_date <          date_sub(now(), interval ${years_ago} year) and
-                    post_date > date_sub(date_sub(now(), interval ${years_ago} year), interval 1 year)
-                    order by post_date desc limit 40`
+                   post_date <          date_sub(now(), interval ${years_ago} year) and
+                   post_date > date_sub(date_sub(now(), interval ${years_ago} year), interval 1 year)
+                   order by post_date desc limit 40`
 
         let posts = await query(sql, [user_id, user_id], context.db)
         let s = (years_ago === 1) ? '' : 's'
@@ -2379,12 +2356,10 @@ var routes = {
         // These match() requests require the existence of fulltext index:
         //      create fulltext index post_title_content_index on posts (post_title, post_content)
 
-        let sql = `select sql_calc_found_rows * from posts
-                   left join users on user_id=post_author
+        let sql = `select sql_calc_found_rows * from posts left join users on user_id=post_author
                    where match(post_title, post_content) against ('${s}') ${order_by} limit ${slimit}`
 
         let posts = await query(sql, [], context.db)
-        let found_rows = await sql_calc_found_rows(context.db)
 
         let path = URL.parse(context.req.url).pathname // "pathNAME" is url path without ? parms, unlike "path"
 
@@ -2394,10 +2369,11 @@ var routes = {
             header(context),
             midpage(
                 h1(`search results for "${s}"`),
-                post_pagination(found_rows, curpage, `&s=${us}&order=${order}`, context.req.url),
+                '<p>',
+                post_pagination(posts.found_rows, curpage, `&s=${us}&order=${order}`, context.req.url),
                 tabs(order, `&s=${us}`, path),
                 post_list(posts, context),
-                post_pagination(found_rows, curpage, `&s=${us}&order=${order}`, context.req.url)
+                post_pagination(posts.found_rows, curpage, `&s=${us}&order=${order}`, context.req.url)
             )
         )
 
@@ -2453,7 +2429,7 @@ var routes = {
                 moderator_announcement,
                 tabs(order, `&topic=${topic}`, path),
                 post_list(posts, context),
-                post_pagination(await sql_calc_found_rows(context.db), curpage, `&topic=${topic}&order=${order}`, context.req.url),
+                post_pagination(posts.found_rows, curpage, `&topic=${topic}&order=${order}`, context.req.url),
                 topic_moderation(topic, context.current_user)
             )
         )
@@ -2587,8 +2563,6 @@ var routes = {
 
         let posts = await query(sql, [current_user_id, current_user_id, u.user_id], context.db)
 
-        let found_post_rows = await sql_calc_found_rows(context.db)
-
         u.bans = await user_topic_bans(u.user_id, context.db)
 
         let path = URL.parse(context.req.url).pathname // "pathNAME" is url path without ? parms, unlike "path"
@@ -2601,7 +2575,7 @@ var routes = {
                 render_user_info(u, context.current_user, context.ip),
                 tabs(order, '', path),
                 post_list(posts, context),
-                post_pagination(found_post_rows, curpage, `&order=${order}`, context.req.url),
+                post_pagination(posts.found_rows, curpage, `&order=${order}`, context.req.url),
                 admin_user(u, context.current_user, context.ip)
             )
         )
