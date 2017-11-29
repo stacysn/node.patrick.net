@@ -850,10 +850,16 @@ async function get_moderator(topic, db) {
     return await get_var('select topic_moderator from topics where topic=?', [topic], db)
 }
 
+function get_offset(total, url) {
+    let offset = (total - 40 > 0) ? total - 40 : 0                // if offset is not set, select the 40 most recent comments
+    if (_GET(url, 'offset')) offset = intval(_GET(url, 'offset')) // but if offset is set, use that instead
+
+    return offset
+}
+
 async function post_comment_list(post, url, current_user, db) {
 
-    let offset = (post.post_comments - 40 > 0) ? post.post_comments - 40 : 0 // If offset is not set, select the 40 most recent comments.
-    if (_GET(url, 'offset')) offset = intval(_GET(url, 'offset')) // But if offset is set, use that instead.
+    let offset = get_offset(post.post_comments, url)
 
     // if this gets too slow as user_uncivil_comments increases, try a left join, or just start deleting old uncivil comments
     let user_id = current_user ? current_user.user_id : 0
@@ -1024,19 +1030,26 @@ async function get_userrow(user_id, db) {
     return await get_row('select * from users where user_id = ?', [user_id], db)
 }
 
-async function get_comment_list_by_author(a, start, num, db) {
-    return await query(`select sql_calc_found_rows * from comments left join users on comment_author=user_id
-                        where user_name = ? order by comment_date limit ?, ?`, [a, start, num], db)
+async function get_user_by_name(user_name, db) {
+    return await get_row('select * from users where user_name = ?', [user_name], db)
 }
 
-async function get_comment_list_by_number(n, start, num, db) {
+async function get_comment_list_by_author(a, num, db, url) {
+    let u = await get_user_by_name(a, db)
+    let offset = get_offset(u.user_comments, url)
+    return await query(`select sql_calc_found_rows * from comments left join users on comment_author=user_id
+                        where user_name = ? order by comment_date limit ? offset ?`, [a, num, offset], db)
+}
+
+async function get_comment_list_by_number(n, offset, num, db) {
     return await query(`select sql_calc_found_rows * from comments, users force index (user_comments_index)
-                        where comments.comment_author = users.user_id and user_comments = ? order by comment_date desc limit ?, ?`, [n, start, num], db)
+                        where comments.comment_author = users.user_id and user_comments = ? order by comment_date desc limit ? offset ?`,
+                        [n, num, offset], db)
 }
 
-async function get_comment_list_by_search(s, start, num, db) {
+async function get_comment_list_by_search(s, offset, num, db) {
     return await query(`select sql_calc_found_rows * from comments left join users on comment_author=user_id
-                        where match(comment_content) against (?) order by comment_date desc limit ?, ?`, [s, start, num], db)
+                        where match(comment_content) against (?) order by comment_date desc limit ? offset ?`, [s, num, offset], db)
 }
 
 async function find_or_create_anon(db, ip) { // find the user_id derived from this anonymous ip address; if dne, create
@@ -1775,7 +1788,7 @@ var routes = {
 
         if (_GET(context.req.url, 'a')) {      // a is author name
             let a   = decodeURIComponent(_GET(context.req.url, 'a').replace(/[^\w %]/, ''))
-            comments = await get_comment_list_by_author(a, offset, 40, context.db)
+            comments = await get_comment_list_by_author(a, 40, context.db, context.url)
             message = `<h2>${a}'s comments</h2>`
         }
         else if (_GET(context.req.url, 'n')) { // n is number of comments per author, so we can see all comments by one-comment authors, for example
