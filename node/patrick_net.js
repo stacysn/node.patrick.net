@@ -3521,7 +3521,7 @@ function comment_pagination(comments, url) { // get pagination links for a singl
 
         var first_link = `${pathname}?${q}offset=0#comments`
         var prev_link  = `${pathname}?${q}offset=${previous_offset}#comments`
-        var last_link  = `${pathname}${q ? ('?' + q) : ''}#last` // don't include the question mark unless q
+        var last_link  = `${pathname}${query ? ('?' + query) : ''}#last` // don't include the question mark unless q
         // there is no next_link because we are necessarily on the last page of comments
     }
     else { // there is a query string, and it includes offset; 0 means show first 40 comments
