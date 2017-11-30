@@ -1937,6 +1937,8 @@ var routes = {
 
     edit_profile : async function(context) {
 
+        if (!context.current_user) return die('please log in to edit your profile', context)
+
         let content = html(
             render_query_times(context.res.start_time, context.db.queries),
             head(CONF.stylesheet, CONF.description, context.post ? context.post.post_title : CONF.domain),
