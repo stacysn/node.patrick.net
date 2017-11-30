@@ -857,21 +857,22 @@ function get_offset(total, url) {
     return offset
 }
 
-async function post_comment_list(post, url, current_user, db) {
+async function post_comment_list(post, context) {
 
-    let offset = get_offset(post.post_comments, url)
+    let offset = get_offset(post.post_comments, context.req.url)
 
-    // if this gets too slow as user_uncivil_comments increases, try a left join, or just start deleting old uncivil comments
-    let user_id = current_user ? current_user.user_id : 0
+    // anon users see their own comments whether out of moderation or not
+    let user_id = context.current_user ? context.current_user.user_id : 0
     let sql = `select sql_calc_found_rows * from comments
                left join users on comment_author=user_id
                left join commentvotes on (comment_id = commentvote_comment_id and commentvote_user_id = ?)
-               where comment_post_id = ? and comment_approved = 1 order by comment_date limit 40 offset ?`
+               where comment_post_id = ? and (comment_approved = 1 or user_name='${ip2anon(context.ip)}')
+               order by comment_date limit 40 offset ?`
 
-    let comments = await query(sql, [user_id, post.post_id, offset], db)
+    let comments = await query(sql, [user_id, post.post_id, offset], context.db)
     let found_rows = comments.found_rows
 
-    let topic_moderator = await get_moderator(post.post_topic, db)
+    let topic_moderator = await get_moderator(post.post_topic, context.db)
 
     // add in the comment row number to the result here for easier pagination info; would be better to do in mysql, but how?
     // also add in topic_moderator so we can display del link
@@ -2247,7 +2248,7 @@ var routes = {
         let err = await check_post(p, context)
         if (err) return die(err, context)
 
-        let comments = await post_comment_list(p, context.req.url, context.current_user, context.db) // pick up the comment list for this post
+        let comments = await post_comment_list(p, context) // pick up the comment list for this post
         p.watchers   = await get_var(`select count(*) as c from postviews where postview_post_id=? and postview_want_email=1`, [post_id], context.db)
         p.post_views++ // increment here for display and in db on next line as record
         await query(`update posts set post_views = ? where post_id=?`, [p.post_views, post_id], context.db)
