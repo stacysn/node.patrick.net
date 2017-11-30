@@ -1036,11 +1036,10 @@ async function get_user_by_name(user_name, db) {
     return await get_row('select * from users where user_name = ?', [user_name], db)
 }
 
-async function get_comment_list_by_author(a, num, db, url) {
-    let u = await get_user_by_name(a, db)
-    let offset = get_offset(u.user_comments, url)
+async function get_comment_list_by_author(user, num, db, url) {
+    let offset = get_offset(user.user_comments, url)
     return await query(`select sql_calc_found_rows * from comments left join users on comment_author=user_id
-                        where user_name = ? order by comment_date limit ? offset ?`, [a, num, offset], db)
+                        where user_name = ? order by comment_date limit ? offset ?`, [user.user_name, num, offset], db)
 }
 
 async function get_comment_list_by_number(n, offset, num, db) {
@@ -1790,7 +1789,9 @@ var routes = {
 
         if (_GET(context.req.url, 'a')) {      // a is author name
             let a   = decodeURIComponent(_GET(context.req.url, 'a').replace(/[^\w %]/, ''))
-            comments = await get_comment_list_by_author(a, 40, context.db, context.url)
+            let user = await get_user_by_name(a, context.db)
+            if (!user) return die(`no such user: ${ a }`, context)
+            comments = await get_comment_list_by_author(user, 40, context.db, context.url)
             message = `<h2>${a}'s comments</h2>`
         }
         else if (_GET(context.req.url, 'n')) { // n is number of comments per author, so we can see all comments by one-comment authors, for example
@@ -3510,7 +3511,7 @@ function comment_box(post, current_user, ip) { // add new comment, just updates 
 }
 
 function comment_pagination(comments, url) { // get pagination links for a single page of comments
-    if (!comments || !url || (comments.found_rows <= 40)) return // no pagination links needed if one page or less
+    if (!comments || !url || (intval(comments.found_rows) <= 40)) return // no pagination links needed if one page or less
 
     let total    = comments.found_rows
     let pathname = URL.parse(url).pathname // "pathname" is url path without the ? parms, unlike "path"
