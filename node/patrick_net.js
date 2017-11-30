@@ -146,6 +146,7 @@ async function blocked(db, ip) { // was the ip nuked in the past?
 async function header_data(context) { // data that the page header needs to render
     return {
         comments : await get_var(`select count(*) as c from comments`,           null, context.db), // int
+        lurkers  : await get_var(`select count(*) from lurkers`,                 null, context.db), // int
         onlines  : await query(`select * from onlines order by online_username`, null, context.db), // obj
         tot      : await get_var(`select count(*) as c from users`,              null, context.db), // int
     }
@@ -189,8 +190,6 @@ async function collect_post_data_and_trim(context) { // to deal with safari on i
 
 async function get_user(context) { // update context with whether they are logged in or not
 
-    if (!context.req.headers.cookie) return
-
     try {
         var pairs = []
 
@@ -218,7 +217,9 @@ async function get_user(context) { // update context with whether they are logge
         return current_user
     }
     catch(e) { // no valid cookie
-        console.error(e)
+        await query(`delete from lurkers where lurker_last_view < date_sub(now(), interval 5 minute)`, null, context.db)
+        await query(`insert into lurkers (lurker_username, lurker_last_view) values (?, now())
+                     on duplicate key update lurker_last_view=now()`, [ip2anon(context.ip)], context.db)
         return null
     }
 }
@@ -3226,11 +3227,11 @@ function tabs(order, extra='', path) {
 
 function brag(header_data) {
 
-    var online_list = header_data.onlines.map(u => `<a href='/user/${u.online_username}'>${u.online_username}</a>`).join(', ')
+    const online_list = header_data.onlines.map(u => `<a href='/user/${u.online_username}'>${u.online_username}</a>`).join(', ')
 
     return `${ header_data.comments.number_format() } comments by
-            <a href='/users'>${ header_data.tot.number_format() } users</a>,
-            ${ header_data.onlines.length } online now: ${ online_list }`
+            <a href='/users'>${ header_data.tot.number_format() } users</a>;
+            ${ online_list } and ${ header_data.lurkers } lurker${ header_data.lurkers === 1 ? '' : 's'} online now`
 }
 
 function registerform() {
