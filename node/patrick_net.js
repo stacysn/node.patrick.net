@@ -3162,8 +3162,7 @@ function admin_user(u, current_user, ip) { // links to administer a user
     if (current_user && current_user.user_id !== 1) return ``
 
     return `<hr>
-        <a href='mailto:${u.user_email}'>email ${u.user_email}</a> &nbsp;
-        <a href='https://whatismyipaddress.com/ip/${u.user_last_comment_ip}'>${u.user_last_comment_ip}</a> &nbsp;
+        <a href='https://whatismyipaddress.com/ip/${u.user_last_comment_ip}'>geolocate</a> &nbsp;
         <a href='/user/${u.user_name}?become=1&${create_nonce_parms(ip)}' >become ${u.user_name}</a> &nbsp;
         <a href='/nuke?nuke_id=${u.user_id}&${create_nonce_parms(ip)}' onClick='return confirm("Really?")' >nuke</a> &nbsp;
         <hr>`
