@@ -2486,6 +2486,8 @@ var routes = {
                         [context.current_user.user_id, comment_id], context.db)
         }
 
+        mail(CONF.admin_email, 'new comment in jail', `<a href='https://${CONF.domain}/comment_jail'>jail page</a>`)
+
         send_html(200, '', context) // blank response in all cases
     },
 
