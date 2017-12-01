@@ -217,6 +217,10 @@ async function get_user(context) { // update context with whether they are logge
         return current_user
     }
     catch(e) { // no valid cookie
+        if (context.req.headers['user-agent'] &&
+            context.req.headers['user-agent'].match(/bot/m)) return null
+
+        // if user-agent does not have 'bot' in it, then count it as a lurker
         await query(`delete from lurkers where lurker_last_view < date_sub(now(), interval 5 minute)`, null, context.db)
         await query(`insert into lurkers (lurker_username, lurker_last_view) values (?, now())
                      on duplicate key update lurker_last_view=now()`, [ip2anon(context.ip)], context.db)
