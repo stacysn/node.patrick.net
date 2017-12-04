@@ -29,6 +29,10 @@ process.on('unhandledRejection', (reason, p) => { // very valuable for debugging
     console.error(reason.stack)
 })
 
+process.on('uncaughtException', function (error) {
+    console.error(error)
+})
+
 if (CLUSTER.isMaster && !('dev' === process.env.environment)) { // to keep debugging simpler, do not fork in dev
     for (var i = 0; i < OS.cpus().length; i++) CLUSTER.fork()
 
@@ -431,6 +435,7 @@ function sanitize_html(s) {
 }
 
 function block_unknown_iframes(s) { // special case: iframes are allowed, but only with vimeo and youtube src
+
     let $ = CHEERIO.load(s)
 
     if (!$('iframe').length)    return s // do nothing if there is no iframe in s
@@ -448,6 +453,7 @@ function block_unknown_iframes(s) { // special case: iframes are allowed, but on
 }
 
 function brandit(url) { // add ref=[domain name] to a url
+
     if (!url) return
 
     if (!new RegExp(CONF.domain).test(url)) { // brand it iff url does not already have CONF.domain in it somewhere
@@ -491,6 +497,7 @@ async function sql_calc_found_rows(db) {
 }
 
 function query(sql, sql_parms, db, debug) {
+
     return new Promise(function(resolve, reject) {
         var query
 
@@ -531,6 +538,7 @@ Array.prototype.sortByProp = function(p){
 }
 
 function segments(path) { // return url path split up as array of cleaned \w strings
+
     if (!path) return
 
     return URL.parse(path).path.replace(/\?.*/,'').split('/').map(segment => segment.replace(/[^\w%]/g,''))
@@ -617,6 +625,7 @@ function render_date(gmt_date, utz='America/Los_Angeles', format='YYYY MMM D, h:
     return MOMENT(Date.parse(gmt_date)).tz(utz).format(format)
 }
 
+
 function create_nonce_parms(ip) {
     let ts = Date.now() // current unix time in ms
     let nonce = get_nonce(ts, ip)
@@ -672,6 +681,7 @@ function get_external_links(content) {
 }
 
 function clean_upload_path(path, filename, current_user) {
+
     if (!current_user) return ''
 
     // allow only alphanum, dot, dash in image name to mitigate scripting tricks
@@ -738,6 +748,7 @@ async function user_topic_bans(user_id, db) {
 }
 
 async function update_prev_next(post_topic, post_id, db) { // slow, so do this only when post is changed or the prev or next is null
+
     if (!post_topic || !post_id) return
 
     let prev = intval(await get_var(`select max(post_id) as prev from posts
@@ -760,6 +771,7 @@ async function too_fast(ip, db) { // rate limit comment insertion by user's ip a
 }
 
 async function send_login_link(ip, db, post_data) {
+
     if (!valid_email(post_data.user_email)) return `Please go back and enter a valid email`
 
     let key      = get_nonce(Date.now(), ip)
@@ -779,6 +791,7 @@ async function send_login_link(ip, db, post_data) {
 }
 
 async function reset_latest_comment(post_id, db) { // reset post table data about latest comment, esp post_modified time
+
     if (!post_id) return
 
     let comment_row = await get_row(`select * from comments where comment_post_id=? and comment_approved > 0
@@ -815,6 +828,7 @@ async function reset_latest_comment(post_id, db) { // reset post table data abou
 }
 
 async function repair_referer(req, db) { // look at referer to a bad post; if it exist, call update_prev_next() on that
+
     if (!req.headers.referer) return
 
     var matches
@@ -828,9 +842,10 @@ async function repair_referer(req, db) { // look at referer to a bad post; if it
 }
 
 function redirect(redirect_to, context, code=303) { // put the code at the end; then if it isn't there we get a default
-    const message = `Redirecting to ${ redirect_to }`
 
-    const headers =  {
+    var message = `Redirecting to ${ redirect_to }`
+
+    var headers =  {
       'Location'       : redirect_to,
       'Content-Length' : message.length,
       'Expires'        : new Date().toUTCString()
@@ -852,6 +867,7 @@ function get_offset(total, url) {
 }
 
 async function post_comment_list(post, context) {
+
     let offset = get_offset(post.post_comments, context.req.url)
 
     // anon users see their own comments whether out of moderation or not
