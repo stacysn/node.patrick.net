@@ -1743,9 +1743,18 @@ var routes = {
         // comments not freed in 30 days will be deleted
         await query(`delete from comments where comment_adhom_when < date_sub(now(), interval 30 day)`, [], context.db)
 
-        let comments = await query(`select sql_calc_found_rows * from comments
-                                    left join users on user_id=comment_author
-                                    where comment_adhom_when is not null order by comment_date desc`, [], context.db)
+        await query(`create temporary table tmp
+                     select sql_calc_found_rows * from comments
+                     left join users on user_id=comment_author
+                     where comment_adhom_when is not null order by comment_date desc`, [], context.db)
+
+        await query(`alter table tmp add column reporter_name varchar(80)`, [], context.db)
+
+        await query(`update tmp, users set tmp.reporter_name=users.user_name where tmp.comment_adhom_reporter=users.user_id`, [], context.db)
+
+        let comments = await query(`select sql_calc_found_rows * from tmp`, [], context.db)
+
+        await query(`drop table if exists tmp`, [], context.db)
 
         let offset = 0
         comments = comments.map(comment => { comment.row_number = ++offset; return comment })
@@ -2912,10 +2921,12 @@ function contextual_link(c, current_user, url, ip) { // a link in the comment he
     if (!url)          return ''
 
     if (URL.parse(url).pathname.match(/jail/) && (current_user.user_level === 4)) {
-        return `<a href='#'
-                   onclick="$.get('/liberate?comment_id=${c.comment_id}&${create_nonce_parms(ip)}',
-                            function() { $('#comment-${ c.comment_id }').remove() }); return false"
-                >liberate</a>`
+        let retval = c.reporter_name ? `jailed by <a href='/user/${c.reporter_name}'>${c.reporter_name}</a>` : ''
+
+        if (current_user.user_level === 4) retval += ` &nbsp; <a href='#' onclick="$.get('/liberate?comment_id=${c.comment_id}&${create_nonce_parms(ip)}',
+                            function() { $('#comment-${ c.comment_id }').remove() }); return false" >liberate</a>`
+
+        return retval
     }
     
     if (URL.parse(url).pathname.match(/comment_moderation/) && (current_user.user_level === 4)) {
