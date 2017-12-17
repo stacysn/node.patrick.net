@@ -2738,6 +2738,11 @@ function footer() {
     return `
     <div id='footer' >
         <center>
+            <form action='https://www.paypal.com/cgi-bin/webscr' method='post'>
+                <input type='hidden' name='cmd' value='_s-xclick'>
+                <input type='submit' name='submit' value='Donate to support this site'>
+                <input type='hidden' name='encrypted' value='-----BEGIN PKCS7-----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-----END PKCS7-----'>
+            </form>
             <a href='/users'>users</a> &nbsp;
             <a href='/about'>about</a> &nbsp;
             <a href='/post/1302130/2017-01-28-patnet-improvement-suggestions'>suggestions</a> &nbsp;
@@ -2749,15 +2754,8 @@ function footer() {
             <a href='/comment_jail'>comment jail</a> &nbsp;
             <a href='/old?years_ago=1'>old posts by year</a> &nbsp;
             <br>
-            <a href='/post/1282720/2015-07-11-ten-reasons-it-s-a-terrible-time-to-buy-an-expensive-house'>10 reasons it's a terrible time to buy</a> &nbsp;
-            <br>
-            <a href='/post/1282721/2015-07-11-eight-groups-who-lie-about-the-housing-market'>8 groups who lie about the housing market</a> &nbsp;
-            <br>
-            <a href='/post/1282722/2015-07-11-37-bogus-arguments-about-housing'>37 bogus arguments about housing</a> &nbsp;
-            <br>
-            <a href='/post/1206569/free-bumper-stickers'>get a free bumper sticker:<br><img src='/images/bumpersticker.png' width=300 ></a>
-            <br>
             <form method='get' action='/search' ><input name='s' type='text' placeholder='search...' size='20' ></form>
+            <p>
         </center>
         ${nav()}
         ${like_dislike()}
