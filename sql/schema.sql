@@ -1,9 +1,10 @@
--- create with: mysqldump -d -ukillelea -p$mysql_password killelea
--- MySQL dump 10.13  Distrib 5.5.40-36.1, for debian-linux-gnu (i686)
+-- created with: mysqldump -ukillelea -p$mysql_password --no-data killelea > schema.sql
+
+-- MySQL dump 10.13  Distrib 5.7.13, for osx10.11 (x86_64)
 --
 -- Host: localhost    Database: killelea
 -- ------------------------------------------------------
--- Server version	5.5.40-36.1
+-- Server version	5.7.13
 
 /*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;
 /*!40101 SET @OLD_CHARACTER_SET_RESULTS=@@CHARACTER_SET_RESULTS */;
@@ -41,10 +42,10 @@ DROP TABLE IF EXISTS `comments`;
 CREATE TABLE `comments` (
   `comment_id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
   `comment_post_id` bigint(20) unsigned NOT NULL,
-  `comment_date` datetime NOT NULL DEFAULT '0000-00-00 00:00:00',
-  `comment_content` text NOT NULL,
-  `comment_likes` int(11) NOT NULL,
-  `comment_dislikes` int(11) NOT NULL,
+  `comment_date` datetime DEFAULT '1970-01-01 00:00:00',
+  `comment_content` mediumtext NOT NULL,
+  `comment_likes` bigint(20) unsigned DEFAULT '0',
+  `comment_dislikes` bigint(20) unsigned DEFAULT '0',
   `comment_approved` tinyint(4) DEFAULT NULL,
   `comment_author` bigint(20) DEFAULT NULL,
   `comment_adhom_reporter` bigint(20) unsigned DEFAULT NULL,
@@ -54,8 +55,9 @@ CREATE TABLE `comments` (
   KEY `comment_post_ID` (`comment_post_id`),
   KEY `user_ID_index` (`comment_author`),
   KEY `comment_karma_index` (`comment_likes`),
+  KEY `uncivil_index` (`comment_adhom_when`),
   FULLTEXT KEY `comment_content_index` (`comment_content`)
-) ENGINE=MyISAM AUTO_INCREMENT=1411405 DEFAULT CHARSET=latin1;
+) ENGINE=MyISAM AUTO_INCREMENT=1467164 DEFAULT CHARSET=utf8mb4;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -111,6 +113,20 @@ CREATE TABLE `ips` (
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
+-- Table structure for table `lurkers`
+--
+
+DROP TABLE IF EXISTS `lurkers`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
+CREATE TABLE `lurkers` (
+  `lurker_username` varchar(40) NOT NULL,
+  `lurker_last_view` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`lurker_username`)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
 -- Table structure for table `nukes`
 --
 
@@ -153,9 +169,9 @@ CREATE TABLE `posts` (
   `post_id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
   `post_author` bigint(20) NOT NULL DEFAULT '0',
   `post_date` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  `post_content` text NOT NULL,
-  `post_title` varchar(255) DEFAULT NULL,
-  `post_modified` datetime NOT NULL DEFAULT '0000-00-00 00:00:00',
+  `post_content` mediumtext NOT NULL,
+  `post_title` varchar(250) NOT NULL DEFAULT 'needs title',
+  `post_modified` datetime DEFAULT '1970-01-01 00:00:00',
   `post_comments` bigint(20) unsigned NOT NULL DEFAULT '0',
   `post_views` int(11) NOT NULL DEFAULT '0',
   `post_likes` bigint(20) unsigned NOT NULL DEFAULT '0',
@@ -164,20 +180,19 @@ CREATE TABLE `posts` (
   `post_latest_commenter_id` bigint(20) unsigned DEFAULT NULL,
   `post_latest_comment_excerpt` varchar(1240) DEFAULT NULL,
   `post_approved` tinyint(3) unsigned DEFAULT NULL,
-  `post_referers` bigint(20) unsigned NOT NULL DEFAULT '0',
   `post_nsfw` bigint(20) unsigned NOT NULL DEFAULT '0',
-  `post_topic` varchar(32) NOT NULL DEFAULT '',
-  `post_private` bigint(20) unsigned NOT NULL DEFAULT '0',
+  `post_topic` varchar(32) NOT NULL DEFAULT 'misc',
+  `post_prev_in_topic` bigint(20) unsigned DEFAULT NULL,
+  `post_next_in_topic` bigint(20) unsigned DEFAULT NULL,
   PRIMARY KEY (`post_id`),
-  UNIQUE KEY `post_title` (`post_title`),
   KEY `post_author_index` (`post_author`),
   KEY `thread_approved_index` (`post_approved`),
   KEY `post_date_index` (`post_date`),
   KEY `post_modified_index` (`post_modified`),
   KEY `post_topic_index` (`post_topic`),
-  KEY `post_private_index` (`post_private`),
+  KEY `post_title_index` (`post_title`),
   FULLTEXT KEY `post_title_content_index` (`post_title`,`post_content`)
-) ENGINE=MyISAM AUTO_INCREMENT=1306377 DEFAULT CHARSET=latin1;
+) ENGINE=MyISAM AUTO_INCREMENT=1312504 DEFAULT CHARSET=utf8mb4;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -231,7 +246,7 @@ CREATE TABLE `referers` (
   UNIQUE KEY `uniqueness` (`referer_post_id`,`referer_url`),
   KEY `inbound_links_author_ID` (`referer_author_id`),
   KEY `inbound_links_post_ID` (`referer_post_id`)
-) ENGINE=InnoDB AUTO_INCREMENT=161328 DEFAULT CHARSET=latin1;
+) ENGINE=InnoDB AUTO_INCREMENT=219502 DEFAULT CHARSET=latin1;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -273,7 +288,26 @@ CREATE TABLE `shares` (
   PRIMARY KEY (`share_id`),
   KEY `share_sender_index` (`share_sender`),
   KEY `share_ip_index` (`share_ip`)
-) ENGINE=MyISAM AUTO_INCREMENT=3197 DEFAULT CHARSET=latin1;
+) ENGINE=MyISAM AUTO_INCREMENT=3221 DEFAULT CHARSET=latin1;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `topics`
+--
+
+DROP TABLE IF EXISTS `topics`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
+CREATE TABLE `topics` (
+  `topic` varchar(32) NOT NULL,
+  `topic_moderator` bigint(20) unsigned DEFAULT NULL,
+  `topic_about_post_id` bigint(20) unsigned DEFAULT NULL,
+  `topic_css_url` varchar(256) DEFAULT NULL,
+  `topic_ip_blacklist` varchar(1024) DEFAULT NULL,
+  `topic_user_blacklist` varchar(1024) DEFAULT NULL,
+  `topic_user_whitelist` varchar(1024) DEFAULT NULL,
+  PRIMARY KEY (`topic`)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -287,6 +321,7 @@ CREATE TABLE `topicwatches` (
   `topicwatch_name` varchar(32) NOT NULL,
   `topicwatch_user_id` bigint(20) unsigned NOT NULL,
   `topicwatch_start` datetime DEFAULT NULL,
+  `topicwatch_banned_until` datetime DEFAULT NULL,
   UNIQUE KEY `uniqueness` (`topicwatch_name`,`topicwatch_user_id`),
   KEY `topic_follows_topic_index` (`topicwatch_name`),
   KEY `topic_follows_user_ID_index` (`topicwatch_user_id`)
@@ -344,7 +379,7 @@ CREATE TABLE `users` (
   KEY `user_comments_index` (`user_comments`),
   KEY `last_comment_ip_index` (`user_last_comment_ip`),
   KEY `realname_index` (`user_realname`)
-) ENGINE=MyISAM AUTO_INCREMENT=126933 DEFAULT CHARSET=latin1;
+) ENGINE=MyISAM AUTO_INCREMENT=129384 DEFAULT CHARSET=latin1;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -374,4 +409,4 @@ CREATE TABLE `whitelists` (
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2017-05-25 18:35:19
+-- Dump completed on 2017-12-17 16:05:11
