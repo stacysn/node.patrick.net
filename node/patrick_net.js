@@ -2295,6 +2295,9 @@ var routes = {
     },
 
     post_login : async function(context) {
+
+        if (context.req.method !== 'POST') return die('post_login must be called with POST', context)
+
         let post_data = await collect_post_data_and_trim(context)
         login(post_data.email, post_data.password, context)
     },
