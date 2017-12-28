@@ -69,7 +69,7 @@ async function render(req, res) {
     catch(e) {
         var message = e.message || e.toString()
         console.error(`${Date()} ${context.ip} ${context.req.url} failed with: ${message} ${e.stack || ''}`)
-        return send_html(intval(e.code) || 500, `node server says: ${message}`, context)
+        return send_html(intval(e.code) || 500, message, context)
     }
 }
 
@@ -1518,6 +1518,7 @@ var routes = {
 
     accept_comment : async function(context) { // insert new comment
 
+        if (context.req.method !== 'POST') return die(`${context.req.url} must be called with POST`, context)
         let post_data = await collect_post_data_and_trim(context)
 
         if (context.current_user && context.current_user.user_id) {
@@ -1556,6 +1557,7 @@ var routes = {
 
         if (!valid_nonce(context)) return die(invalid_nonce_message(), context)
 
+        if (context.req.method !== 'POST') return die(`${context.req.url} must be called with POST`, context)
         let post_data = await collect_post_data_and_trim(context)
 
         if (!post_data.comment_content) return die('please go back and enter some content', context)
@@ -1586,6 +1588,7 @@ var routes = {
 
         if (!context.current_user) return die(`anonymous posts are not allowed`, context)
 
+        if (context.req.method !== 'POST') return die(`${context.req.url} must be called with POST`, context)
         let post_data = await collect_post_data_and_trim(context)
 
         post_data.post_topic    = find_topic(post_data.post_content)
@@ -2294,6 +2297,8 @@ var routes = {
     },
 
     post_login : async function(context) {
+
+        if (context.req.method !== 'POST') return die(`${context.req.url} must be called with POST`, context)
         let post_data = await collect_post_data_and_trim(context)
         login(post_data.email, post_data.password, context)
     },
@@ -2326,6 +2331,7 @@ var routes = {
 
     recoveryemail : async function(context) {
 
+        if (context.req.method !== 'POST') return die(`${context.req.url} must be called with POST`, context)
         let post_data = await collect_post_data_and_trim(context)
 
         let message = await send_login_link(context.ip, context.db, post_data)
@@ -2344,6 +2350,7 @@ var routes = {
 
     registration : async function(context) {
 
+        if (context.req.method !== 'POST') return die(`${context.req.url} must be called with POST`, context)
         let post_data = await collect_post_data_and_trim(context)
         let message = ''
 
@@ -2508,6 +2515,7 @@ var routes = {
         if (!valid_nonce(context)) return die(invalid_nonce_message(), context)
         if (!context.current_user) return die('must be logged in to update profile', context)
 
+        if (context.req.method !== 'POST') return die(`${context.req.url} must be called with POST`, context)
         let post_data = await collect_post_data_and_trim(context)
 
         if (/\W/.test(post_data.user_name))     return die('Please go back and enter username consisting only of letters', context)
