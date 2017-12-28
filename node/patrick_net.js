@@ -557,9 +557,8 @@ function getimagesize(file) {
             })
 
             identify.stderr.on('data', data => { // remove the file because something is wrong with it
-                FS.unlinkSync(file)
+                if (FS.existsSync(file)) FS.unlinkSync(file)
                 console.error(data)
-                console.trace()
                 reject('identify failed on image')
             })
 
@@ -2295,9 +2294,6 @@ var routes = {
     },
 
     post_login : async function(context) {
-
-        if (context.req.method !== 'POST') return die('post_login must be called with POST', context)
-
         let post_data = await collect_post_data_and_trim(context)
         login(post_data.email, post_data.password, context)
     },
@@ -2347,8 +2343,6 @@ var routes = {
     },
 
     registration : async function(context) {
-
-        if (context.req.method !== 'POST') return die('registration must be called with POST', context)
 
         let post_data = await collect_post_data_and_trim(context)
         let message = ''
