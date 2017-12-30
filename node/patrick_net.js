@@ -738,7 +738,7 @@ async function get_post(post_id, db, user_id) {
                                        left join users on user_id=post_author where post_id=?`,
                                        [user_id, user_id, post_id], db)
     
-    return await get_row('select * from posts where post_id = ?', [post_id], db)
+    return await get_row(`select * from posts left join users on user_id=post_author where post_id = ?`, [post_id], db)
 }
 
 async function user_topic_bans(user_id, db) {
