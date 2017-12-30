@@ -1479,7 +1479,7 @@ async function get_friendsof(context, d, ob, offset) {
 async function get_user_name(context, d, ob, offset) {
 
     let user_name = _GET(context.req.url, 'user_name').replace(/[^a-zA-Z0-9._ -]/).substring(0, 40)
-    user_name = user_name.replace('/_/', '\_') // bc _ is single-char wildcard in mysql matching.
+    user_name = user_name.trim().replace('/_/', '\_') // bc _ is single-char wildcard in mysql matching.
     const message = `Users With Names Like '${user_name}'`
     const users = await query(`select sql_calc_found_rows * from users where user_name like '%${user_name}%'
                                order by ${ob} ${d} limit 40 offset ${offset}`, [ob, d], context.db)
