@@ -1492,15 +1492,22 @@ async function get_users(context, d, ob, offset) {
     return [message, users]
 }
 
-function get_image_path() {
-    let d        = new Date()
-    let mm       = ('0' + (d.getMonth() + 1)).slice(-2)
-    let url_path = `/${CONF.upload_dir}/${d.getFullYear()}/${mm}`
-    let abs_path = `${CONF.doc_root}${url_path}`
+async function get_image_path(mkdirp = require('mkdirp')) {
 
-    if (!FS.existsSync(abs_path)) FS.mkdirSync(abs_path)
+    return new Promise(function(resolve, reject) {
+        let d        = new Date()
+        let mm       = ('0' + (d.getMonth() + 1)).slice(-2)
+        let url_path = `/${CONF.upload_dir}/${d.getFullYear()}/${mm}`
+        let abs_path = `${CONF.doc_root}${url_path}`
 
-    return [url_path, abs_path]
+        mkdirp(abs_path, function (err) {
+            if (err) {
+                console.error(err)
+                reject(err)
+            }
+            else resolve([url_path, abs_path])
+        })
+    })
 }
 
 async function update_icon(path, dims, context) {
@@ -2547,7 +2554,7 @@ var routes = {
         form.parse(context.req, async function (err, fields, files) {
             if (err) throw err
 
-            let [url_path, abs_path] = get_image_path()
+            let [url_path, abs_path] = await get_image_path()
             let clean_name           = clean_upload_path(abs_path, files.image.name, context.current_user)
 
             FS.rename(files.image.path, `${abs_path}/${clean_name}`, async function (err) { // note that files.image.path includes filename at end
