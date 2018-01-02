@@ -1814,7 +1814,7 @@ var routes = {
             let a   = decodeURIComponent(_GET(context.req.url, 'a').replace(/[^\w %]/, ''))
             let user = await get_user_by_name(a, context.db)
             if (!user) return die(`no such user: ${ a }`, context)
-            comments = await get_comment_list_by_author(user, 40, context.db, context.url)
+            comments = await get_comment_list_by_author(user, 40, context.db, context.req.url)
             message = `<h2>${a}'s comments</h2>`
         }
         else if (_GET(context.req.url, 'n')) { // n is number of comments per author, so we can see all comments by one-comment authors, for example
