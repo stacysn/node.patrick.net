@@ -24,6 +24,10 @@ const URL         = require('url')
 const BASEURL     = ('dev' === process.env.environment) ? CONF.baseurl_dev : CONF.baseurl // CONF.baseurl_dev is for testing
 const POOL        = MYSQL.createPool(CONF.db)
 
+const routes = {}
+routes.GET   = {}
+routes.POST  = {}
+
 process.on('unhandledRejection', (reason, p) => { // very valuable for debugging unhandled promise rejections
     console.error('Unhandled Rejection at promise:', p, 'reason:', reason)
     console.error(reason.stack)
@@ -51,7 +55,7 @@ async function render(req, res) {
 
     const context = { ip, page, req, res }
 
-    if (typeof routes[page] !== 'function')
+    if (!routes[req.method] || typeof routes[req.method][page] !== 'function')
         return send(404, {'Content-Type' : 'text/html;charset=utf-8'}, `${page} was not found`, { res: res, db: null, ip : ip})
 
     context.db = await get_connection_from_pool(ip).catch(e => send(429, {'Content-Type' : 'text/html;charset=utf-8'}, e, context))
@@ -64,7 +68,7 @@ async function render(req, res) {
     context.header_data  = await header_data(context)
 
     try {
-        await routes[page](context)
+        await routes[req.method][page](context) // eg routes.GET.home
     }
     catch(e) {
         var message = e.message || e.toString()
@@ -1517,1171 +1521,1167 @@ async function update_icon(path, dims, context) {
     await query(`update users set user_icon_height = ? where user_id = ?`, [dims[1], id], context.db)
 }
 
-var routes = {
+routes.GET.about = async function(context) {
+    redirect(`/post/${CONF.about_post_id}`, context)
+}
 
-    about : async function(context) {
-        redirect(`/post/${CONF.about_post_id}`, context)
-    },
+routes.POST.accept_comment = async function(context) { // insert new comment
 
-    accept_comment : async function(context) { // insert new comment
+    let post_data = await collect_post_data_and_trim(context)
 
-        let post_data = await collect_post_data_and_trim(context)
+    if (context.current_user && context.current_user.user_id) {
+        post_data.comment_author = context.current_user.user_id
+        post_data.comment_approved = 1
+    }
+    else {
+        post_data.comment_author = await find_or_create_anon(context.db, context.ip)
+        post_data.comment_approved = 0 // anon comments go into moderation
+        //return send_json(200, { err: true, content: popup('anonymous comments have been disabled, please reg/login') }, context)
+    }
 
-        if (context.current_user && context.current_user.user_id) {
-            post_data.comment_author = context.current_user.user_id
-            post_data.comment_approved = 1
-        }
-        else {
-            post_data.comment_author = await find_or_create_anon(context.db, context.ip)
-            post_data.comment_approved = 0 // anon comments go into moderation
-            //return send_json(200, { err: true, content: popup('anonymous comments have been disabled, please reg/login') }, context)
-        }
+    let result = await allow_comment(post_data, context)
+    if (result.err) return send_json(200, result, context)
 
-        let result = await allow_comment(post_data, context)
-        if (result.err) return send_json(200, result, context)
+    post_data.comment_content = strip_tags(post_data.comment_content.linkify())
+    post_data.comment_date    = new Date().toISOString().slice(0, 19).replace('T', ' ') // mysql datetime format
 
-        post_data.comment_content = strip_tags(post_data.comment_content.linkify())
-        post_data.comment_date    = new Date().toISOString().slice(0, 19).replace('T', ' ') // mysql datetime format
+    try {
+        var insert_result = await query('insert into comments set ?', post_data, context.db)
+        var comment_id = insert_result.insertId
+    }
+    catch(e) {
+        console.error(`${e} at accept_comment`)
+        return send_json(200, { err: true, content: popup('database failed to accept some part of the content, maybe an emoticon') }, context)
+    }
+
+    let comment = await get_row('select * from comments left join users on comment_author=user_id where comment_id = ?', [comment_id], context.db)
+
+    send_json(200, { err: false, content: format_comment(comment, context, context.comments, _GET(context.req.url, 'offset')) }, context)
+
+    await after_accept_comment(comment, context)
+}
+
+routes.POST.accept_edited_comment = async function(context) { // update old comment
+
+    if (!valid_nonce(context)) return die(invalid_nonce_message(), context)
+
+    let post_data = await collect_post_data_and_trim(context)
+
+    if (!post_data.comment_content) return die('please go back and enter some content', context)
+
+    // rate limit by user's ip address
+    if (await too_fast(context.ip, context.db)) return send_json(200, { err: true, content: popup('You are posting comments too quickly') }, context)
+
+    post_data.comment_content  = strip_tags(post_data.comment_content.linkify())
+    post_data.comment_dislikes = 0
+    post_data.comment_likes    = 0
+    post_data.comment_approved = 1
+
+    let comment_id = post_data.comment_id
+    await query('update comments set ? where comment_id = ? and (comment_author = ? or 1 = ?)',
+                [post_data, comment_id, context.current_user.user_id, context.current_user.user_id], context.db)
+
+    // now select the inserted row so that we pick up the comment_post_id
+    let comment = await get_row('select * from comments where comment_id = ?', [comment_id], context.db)
+
+    if (comment.comment_adhom_when) redirect(`/comment_jail#comment-${comment_id}`, context)
+    else {
+        let offset = await cid2offset(comment.comment_post_id, comment_id, context.db)
+        redirect(`/post/${comment.comment_post_id}?offset=${offset}#comment-${comment_id}`, context)
+    }
+}
+
+routes.POST.accept_post = async function(context) { // insert new post or update old post
+
+    if (!context.current_user) return die(`anonymous posts are not allowed`, context)
+
+    let post_data = await collect_post_data_and_trim(context)
+
+    post_data.post_topic    = find_topic(post_data.post_content)
+    post_data.post_content  = strip_tags(post_data.post_content.linkify()) // remove all but a small set of allowed html tags
+    post_data.post_approved = 1 // may need to be more restrictive if spammers start getting through
+
+    // get all valid topics in an array; if post topic is not in that array, reject, asking for one of the #elements in array
+
+    var p = intval(post_data.post_id)
+    if (p) { // editing old post, do not update post_modified time because it confuses users
+        await query('update posts set ? where post_id=?', [post_data, p], context.db)
+    }
+    else { // new post
+        post_data.post_author = context.current_user.user_id
+
+        if ((context.current_user.user_comments < 3) && is_foreign(context) && CHEERIO.load(post_data.post_content)('a').length)
+            return die(`spam rejected`, context) // new, foreign, and posting link
+
+        if (await hit_daily_post_limit(context)) return die(`you hit your new post limit for today`, context)
 
         try {
-            var insert_result = await query('insert into comments set ?', post_data, context.db)
-            var comment_id = insert_result.insertId
+            var results = await query('insert into posts set ?, post_modified=now()', post_data, context.db)
+            p = results.insertId
+            if (!p) return die(`failed to insert ${post_data} into posts`, context)
         }
-        catch(e) {
-            console.error(`${e} at accept_comment`)
-            return send_json(200, { err: true, content: popup('database failed to accept some part of the content, maybe an emoticon') }, context)
-        }
+        catch (e) { return die(e, context) }
 
-        let comment = await get_row('select * from comments left join users on comment_author=user_id where comment_id = ?', [comment_id], context.db)
+        post_mail(p, context.db) // reasons to send out post emails: @user, user following post author, user following post topic
+    }
 
-        send_json(200, { err: false, content: format_comment(comment, context, context.comments, _GET(context.req.url, 'offset')) }, context)
+    await update_prev_next(post_data.post_topic, p, context.db)
 
-        await after_accept_comment(comment, context)
-    },
+    const post_row = await get_post(p, context.db)
 
-    accept_edited_comment : async function(context) { // update old comment
+    redirect(post2path(post_row), context)
+}
 
-        if (!valid_nonce(context)) return die(invalid_nonce_message(), context)
+routes.GET.approve_comment = async function(context) {
 
-        let post_data = await collect_post_data_and_trim(context)
+    const comment_id = intval(_GET(context.req.url, 'comment_id'))
+    if (!comment_id)                                   return send_html(200, '', context)
+    if (!context.current_user)                         return send_html(200, '', context)
+    if (!valid_nonce(context))                         return send_html(200, '', context)
 
-        if (!post_data.comment_content) return die('please go back and enter some content', context)
+    const topic = await comment_id2topic(comment_id, context)
 
-        // rate limit by user's ip address
-        if (await too_fast(context.ip, context.db)) return send_json(200, { err: true, content: popup('You are posting comments too quickly') }, context)
+    if (!context.current_user.is_moderator_of.includes(topic) &&
+        !context.current_user.user_id === 1)           return send_html(200, '', context)
 
-        post_data.comment_content  = strip_tags(post_data.comment_content.linkify())
-        post_data.comment_dislikes = 0
-        post_data.comment_likes    = 0
-        post_data.comment_approved = 1
+    await query('update comments set comment_approved=1, comment_date=now() where comment_id=?', [comment_id], context.db)
 
-        let comment_id = post_data.comment_id
-        await query('update comments set ? where comment_id = ? and (comment_author = ? or 1 = ?)',
-                    [post_data, comment_id, context.current_user.user_id, context.current_user.user_id], context.db)
+    const post_id = await get_var('select comment_post_id from comments where comment_id=?', [comment_id], context.db)
+    await reset_latest_comment(post_id, context.db)
 
-        // now select the inserted row so that we pick up the comment_post_id
-        let comment = await get_row('select * from comments where comment_id = ?', [comment_id], context.db)
+    send_html(200, '', context) // make it disappear from comment_moderation page
+}
 
-        if (comment.comment_adhom_when) redirect(`/comment_jail#comment-${comment_id}`, context)
-        else {
-            let offset = await cid2offset(comment.comment_post_id, comment_id, context.db)
-            redirect(`/post/${comment.comment_post_id}?offset=${offset}#comment-${comment_id}`, context)
-        }
-    },
+routes.GET.approve_post = async function(context) {
 
-    accept_post : async function(context) { // insert new post or update old post
+    let post_id = intval(_GET(context.req.url, 'post_id'))
 
-        if (!context.current_user) return die(`anonymous posts are not allowed`, context)
+    if (!post_id)                              return send_html(200, '', context)
+    if (!context.current_user)                 return send_html(200, '', context)
+    if (context.current_user.user_level !== 4) return send_html(200, '', context)
+    if (!valid_nonce(context))                 return send_html(200, '', context)
 
-        let post_data = await collect_post_data_and_trim(context)
+    await query('update posts set post_approved=1, post_modified=now() where post_id=?', [post_id], context.db)
 
-        post_data.post_topic    = find_topic(post_data.post_content)
-        post_data.post_content  = strip_tags(post_data.post_content.linkify()) // remove all but a small set of allowed html tags
-        post_data.post_approved = 1 // may need to be more restrictive if spammers start getting through
+    send_html(200, '', context) // make it disappear from post_moderation page
+}
 
-        // get all valid topics in an array; if post topic is not in that array, reject, asking for one of the #elements in array
+routes.GET.autowatch = async function(context) {
 
-        var p = intval(post_data.post_id)
-        if (p) { // editing old post, do not update post_modified time because it confuses users
-            await query('update posts set ? where post_id=?', [post_data, p], context.db)
-        }
-        else { // new post
-            post_data.post_author = context.current_user.user_id
+    var current_user_id = context.current_user ? context.current_user.user_id : 0
 
-            if ((context.current_user.user_comments < 3) && is_foreign(context) && CHEERIO.load(post_data.post_content)('a').length)
-                return die(`spam rejected`, context) // new, foreign, and posting link
+    if (!current_user_id) die('must be logged in to stop watching all posts', context)
 
-            if (await hit_daily_post_limit(context)) return die(`you hit your new post limit for today`, context)
+    // left joins to also get each post's viewing and voting data for the current user if there is one
+    let sql = `update postviews set postview_want_email=0 where postview_user_id = ?`
+    await query(sql, [current_user_id], context.db)
 
-            try {
-                var results = await query('insert into posts set ?, post_modified=now()', post_data, context.db)
-                p = results.insertId
-                if (!p) return die(`failed to insert ${post_data} into posts`, context)
+    var content = html(
+        render_query_times(context.res.start_time, context.db.queries),
+        head(CONF.stylesheet, CONF.description, context.post ? context.post.post_title : CONF.domain),
+        header(context),
+        midpage(
+            h1(`All email of new post comments turned off`)
+        )
+    )
+
+    return send_html(200, content, context)
+}
+
+routes.GET.ban_from_topic = async function(context) {
+
+    if (!valid_nonce(context)) return send_html(200, invalid_nonce_message(), context)
+
+    let user_id = intval(_GET(context.req.url, 'user_id'))
+    if (!user_id) return send_html(200, 'missing user_id', context)
+
+    let topic = _GET(context.req.url, 'topic')
+    if (!topic) return send_html(200, 'missing topic', context)
+    
+    topic = topic.replace(/\W/, '')
+
+    let topic_moderator = await get_moderator(topic, context.db)
+
+    if (context.current_user.user_id !== topic_moderator) return send_html(200, 'non-moderator may not ban', context)
+
+    await query(`insert into topicwatches (topicwatch_name, topicwatch_user_id,         topicwatch_banned_until)
+                                   values (              ?,                  ?, date_add(now(), interval 1 day))
+                 on duplicate key update topicwatch_banned_until=date_add(now(), interval 1 day)`, [topic, user_id], context.db)
+
+    let bans = await user_topic_bans(user_id, context.db)
+    
+    return send_html(200, is_user_banned(bans, topic, context.current_user), context)
+}
+
+routes.GET.best = async function(context) {
+
+    if ('true' === _GET(context.req.url, 'all')) {
+        var sql = `select * from comments left join users on user_id=comment_author where comment_likes > 3
+                   order by comment_likes desc limit 40`
+
+        var m = `<h2>best comments of all time</h2>or view the <a href='/best'>last week's</a> best comments<p>`
+    }
+    else {
+        var sql = `select * from comments left join users on user_id=comment_author where comment_likes > 3
+                   and comment_date > date_sub(now(), interval 7 day) order by comment_likes desc limit 40`
+
+        var m = `<h2>best comments in the last week</h2>or view the <a href='/best?all=true'>all-time</a> best comments<p>`
+    }
+
+    let comments = await query(sql, [], context.db)
+
+    let offset = 0
+    comments = comments.map(comment => { comment.row_number = ++offset; return comment })
+
+    let content = html(
+        render_query_times(context.res.start_time, context.db.queries),
+        head(CONF.stylesheet, CONF.description, context.post ? context.post.post_title : CONF.domain),
+        header(context),
+        midpage(
+            m,
+            comment_list(comments, context)
+        )
+    )
+
+    return send_html(200, content, context)
+}
+
+routes.GET.comment_jail = async function(context) { // no pagination, just most recent 80
+
+    // comments not freed in 30 days will be deleted
+    await query(`delete from comments where comment_adhom_when < date_sub(now(), interval 30 day)`, [], context.db)
+
+    await query(`create temporary table tmp
+                 select sql_calc_found_rows * from comments
+                 left join users on user_id=comment_author
+                 where comment_adhom_when is not null order by comment_date desc`, [], context.db)
+
+    await query(`alter table tmp add column reporter_name varchar(80)`, [], context.db)
+
+    await query(`update tmp, users set tmp.reporter_name=users.user_name where tmp.comment_adhom_reporter=users.user_id`, [], context.db)
+
+    let comments = await query(`select sql_calc_found_rows * from tmp`, [], context.db)
+
+    await query(`drop table if exists tmp`, [], context.db)
+
+    let offset = 0
+    comments = comments.map(comment => { comment.row_number = ++offset; return comment })
+
+    let content = html(
+        render_query_times(context.res.start_time, context.db.queries),
+        head(CONF.stylesheet, CONF.description, context.post ? context.post.post_title : CONF.domain),
+        header(context),
+        midpage(
+            h1('Uncivil Comment Jail'),
+            'These comments were marked as uncivil. Patrick will review them and liberate comments which do not deserve to be here. You can edit your comment here to make it more civil and get it out of jail. Comments not freed within 30 days will be deleted.',
+            comment_list(comments, context)
+        )
+    )
+
+    return send_html(200, content, context)
+}
+
+routes.GET.comment_moderation = async function(context) {
+
+    const current_user = context.current_user
+
+    if (!current_user) return die('you must be logged in to moderate comments', context)
+    if (!current_user || !current_user.is_moderator_of || !current_user.is_moderator_of.length) return die('you are not moderator of any topic', context)
+
+    let comments = await comments_to_moderate(context)
+
+    let offset = 0
+    comments = comments.map(comment => { comment.row_number = ++offset; return comment })
+
+    let content = html(
+        render_query_times(context.res.start_time, context.db.queries),
+        head(CONF.stylesheet, CONF.description, context.post ? context.post.post_title : CONF.domain),
+        header(context),
+        midpage(
+            h1('comment moderation'),
+            comment_list(comments, context)
+        )
+    )
+
+    return send_html(200, content, context)
+}
+
+routes.GET.comments = async function(context) { // show a list of comments by user, or by comment-frequence, or from a search
+
+    let offset  = intval(_GET(context.req.url, 'offset'))
+    let comments
+    let message = ''
+
+    if (_GET(context.req.url, 'a')) {      // a is author name
+        let a   = decodeURIComponent(_GET(context.req.url, 'a').replace(/[^\w %]/, ''))
+        let user = await get_user_by_name(a, context.db)
+        if (!user) return die(`no such user: ${ a }`, context)
+        comments = await get_comment_list_by_author(user, 40, context.db, context.req.url)
+        message = `<h2>${a}'s comments</h2>`
+    }
+    else if (_GET(context.req.url, 'n')) { // n is number of comments per author, so we can see all comments by one-comment authors, for example
+        let n   = intval(_GET(context.req.url, 'n'))
+        comments = await get_comment_list_by_number(n, offset, 40, context.db)
+        message = `<h2>comments by users with ${n} comments</h2>`
+    }
+    else if (_GET(context.req.url, 's')) { // comment search
+        let s   = _GET(context.req.url, 's').replace(/[^\w %]/, '')
+        comments = await get_comment_list_by_search(s, offset, 40, context.db)
+        message = `<h2>comments that contain "${s}"</h2>`
+    }
+    else return send_html(200, `invalid request`, context)
+
+    let content = html(
+        render_query_times(context.res.start_time, context.db.queries),
+        head(CONF.stylesheet, CONF.description, context.post ? context.post.post_title : CONF.domain),
+        header(context),
+        midpage(
+            h1(message),
+            comment_pagination(comments, context.req.url),
+            comment_list(comments, context),
+            comment_search_box()
+        )
+    )
+
+    return send_html(200, content, context)
+}
+
+routes.GET.delete_comment = async function(context) { // delete a comment
+
+    let comment_id = intval(_GET(context.req.url, 'comment_id'))
+    let post_id    = intval(_GET(context.req.url, 'post_id'))
+
+    if (!context.current_user)    return send_html(200, '', context)
+    if (!valid_nonce(context))    return send_html(200, '', context)
+    if (!(comment_id && post_id)) return send_html(200, '', context)
+
+    var topic = (await get_post(post_id, context.db)).post_topic
+    var topic_moderator = intval(await get_moderator(topic, context.db))
+
+    var comment_author = await get_var('select comment_author from comments where comment_id=?', [comment_id], context.db)
+
+    await query(`delete from comments where comment_id = ? and (comment_author = ? or 1 = ? or ${topic_moderator}=?)`,
+                [comment_id, context.current_user.user_id, context.current_user.user_id, context.current_user.user_id], context.db)
+
+    await query(`update users set user_comments=(select count(*) from comments where comment_author = ?) where user_id = ?`,
+                [comment_author, comment_author], context.db)
+
+    await reset_latest_comment(post_id, context.db)
+
+    send_html(200, '', context)
+}
+
+routes.GET.delete_post = async function(context) { // delete a whole post, but not its comments
+
+    if (!context.current_user) return die('you must be logged in to delete a post', context)
+    if (!valid_nonce(context)) return die(invalid_nonce_message(), context)
+
+    var post_id
+    if (post_id = intval(_GET(context.req.url, 'post_id'))) {
+
+        let post = await get_post(post_id, context.db)
+        if (!post) return die('no such post', context)
+
+        // if it's their own post or if it's admin
+        if ((context.current_user.user_id === post.post_author) || (context.current_user.user_id === 1)) {
+
+            let results = await query(`delete from posts where post_id = ?`, [post_id], context.db)
+
+            if (post.post_topic) {
+                await update_prev_next(post.post_topic, post.post_prev_in_topic, context.db)
+                await update_prev_next(post.post_topic, post.post_next_in_topic, context.db)
             }
-            catch (e) { return die(e, context) }
 
-            post_mail(p, context.db) // reasons to send out post emails: @user, user following post author, user following post topic
+            return die(`${results.affectedRows} post deleted`, context)
         }
+        else return die('permission to delete post denied', context)
+    }
+    else return die('need a post_id', context)
+}
 
-        await update_prev_next(post_data.post_topic, p, context.db)
+routes.GET.dislike = async function(context) { // given a comment or post, downvote it
 
-        const post_row = await get_post(p, context.db)
+    const user_id = context.current_user ? context.current_user.user_id : await find_or_create_anon(context.db, context.ip)
 
-        redirect(post2path(post_row), context)
-    },
-
-    approve_comment : async function(context) {
-
-        const comment_id = intval(_GET(context.req.url, 'comment_id'))
-        if (!comment_id)                                   return send_html(200, '', context)
-        if (!context.current_user)                         return send_html(200, '', context)
-        if (!valid_nonce(context))                         return send_html(200, '', context)
-
-        const topic = await comment_id2topic(comment_id, context)
-
-        if (!context.current_user.is_moderator_of.includes(topic) &&
-            !context.current_user.user_id === 1)           return send_html(200, '', context)
-
-        await query('update comments set comment_approved=1, comment_date=now() where comment_id=?', [comment_id], context.db)
-
-        const post_id = await get_var('select comment_post_id from comments where comment_id=?', [comment_id], context.db)
-        await reset_latest_comment(post_id, context.db)
-
-        send_html(200, '', context) // make it disappear from comment_moderation page
-    },
-
-    approve_post : async function(context) {
-
-        let post_id = intval(_GET(context.req.url, 'post_id'))
-
-        if (!post_id)                              return send_html(200, '', context)
-        if (!context.current_user)                 return send_html(200, '', context)
-        if (context.current_user.user_level !== 4) return send_html(200, '', context)
-        if (!valid_nonce(context))                 return send_html(200, '', context)
-
-        await query('update posts set post_approved=1, post_modified=now() where post_id=?', [post_id], context.db)
-
-        send_html(200, '', context) // make it disappear from post_moderation page
-    },
-
-    autowatch : async function(context) {
-
-        var current_user_id = context.current_user ? context.current_user.user_id : 0
-
-        if (!current_user_id) die('must be logged in to stop watching all posts', context)
-
-        // left joins to also get each post's viewing and voting data for the current user if there is one
-        let sql = `update postviews set postview_want_email=0 where postview_user_id = ?`
-        await query(sql, [current_user_id], context.db)
-
-        var content = html(
-            render_query_times(context.res.start_time, context.db.queries),
-            head(CONF.stylesheet, CONF.description, context.post ? context.post.post_title : CONF.domain),
-            header(context),
-            midpage(
-                h1(`All email of new post comments turned off`)
-            )
-        )
-
+    if (intval(_GET(context.req.url, 'comment_id'))) {
+        const content = await dislike_comment(user_id, context)
         return send_html(200, content, context)
-    },
+    }
+    else if (intval(_GET(context.req.url, 'post_id'))) {
+        const content = await dislike_post(user_id, context)
+        return send_html(200, content, context)
+    }
+    else return send_html(200, '', context) // send empty string if no comment_id or post_id
+}
 
-    ban_from_topic : async function(context) {
+routes.GET.edit_comment = async function (context) {
 
-        if (!valid_nonce(context)) return send_html(200, invalid_nonce_message(), context)
+    if (!valid_nonce(context)) return die(invalid_nonce_message(), context)
 
-        let user_id = intval(_GET(context.req.url, 'user_id'))
-        if (!user_id) return send_html(200, 'missing user_id', context)
+    let comment_id = intval(_GET(context.req.url, 'c'))
+    let comment = await get_row(`select * from comments left join users on user_id=comment_author where comment_id=?`, [comment_id], context.db)
 
-        let topic = _GET(context.req.url, 'topic')
-        if (!topic) return send_html(200, 'missing topic', context)
-        
-        topic = topic.replace(/\W/, '')
-
-        let topic_moderator = await get_moderator(topic, context.db)
-
-        if (context.current_user.user_id !== topic_moderator) return send_html(200, 'non-moderator may not ban', context)
-
-        await query(`insert into topicwatches (topicwatch_name, topicwatch_user_id,         topicwatch_banned_until)
-                                       values (              ?,                  ?, date_add(now(), interval 1 day))
-                     on duplicate key update topicwatch_banned_until=date_add(now(), interval 1 day)`, [topic, user_id], context.db)
-
-        let bans = await user_topic_bans(user_id, context.db)
-        
-        return send_html(200, is_user_banned(bans, topic, context.current_user), context)
-    },
-
-    best : async function(context) {
-
-        if ('true' === _GET(context.req.url, 'all')) {
-            var sql = `select * from comments left join users on user_id=comment_author where comment_likes > 3
-                       order by comment_likes desc limit 40`
-
-            var m = `<h2>best comments of all time</h2>or view the <a href='/best'>last week's</a> best comments<p>`
-        }
-        else {
-            var sql = `select * from comments left join users on user_id=comment_author where comment_likes > 3
-                       and comment_date > date_sub(now(), interval 7 day) order by comment_likes desc limit 40`
-
-            var m = `<h2>best comments in the last week</h2>or view the <a href='/best?all=true'>all-time</a> best comments<p>`
-        }
-
-        let comments = await query(sql, [], context.db)
-
-        let offset = 0
-        comments = comments.map(comment => { comment.row_number = ++offset; return comment })
+    if (!comment) return send_html(404, `No comment with id "${comment_id}"`, context)
+    else {
 
         let content = html(
             render_query_times(context.res.start_time, context.db.queries),
             head(CONF.stylesheet, CONF.description, context.post ? context.post.post_title : CONF.domain),
             header(context),
             midpage(
-                m,
-                comment_list(comments, context)
-            )
-        )
-
-        return send_html(200, content, context)
-    },
-
-    comment_jail : async function(context) { // no pagination, just most recent 80
-
-        // comments not freed in 30 days will be deleted
-        await query(`delete from comments where comment_adhom_when < date_sub(now(), interval 30 day)`, [], context.db)
-
-        await query(`create temporary table tmp
-                     select sql_calc_found_rows * from comments
-                     left join users on user_id=comment_author
-                     where comment_adhom_when is not null order by comment_date desc`, [], context.db)
-
-        await query(`alter table tmp add column reporter_name varchar(80)`, [], context.db)
-
-        await query(`update tmp, users set tmp.reporter_name=users.user_name where tmp.comment_adhom_reporter=users.user_id`, [], context.db)
-
-        let comments = await query(`select sql_calc_found_rows * from tmp`, [], context.db)
-
-        await query(`drop table if exists tmp`, [], context.db)
-
-        let offset = 0
-        comments = comments.map(comment => { comment.row_number = ++offset; return comment })
-
-        let content = html(
-            render_query_times(context.res.start_time, context.db.queries),
-            head(CONF.stylesheet, CONF.description, context.post ? context.post.post_title : CONF.domain),
-            header(context),
-            midpage(
-                h1('Uncivil Comment Jail'),
-                'These comments were marked as uncivil. Patrick will review them and liberate comments which do not deserve to be here. You can edit your comment here to make it more civil and get it out of jail. Comments not freed within 30 days will be deleted.',
-                comment_list(comments, context)
-            )
-        )
-
-        return send_html(200, content, context)
-    },
-
-    comment_moderation : async function(context) {
-
-        const current_user = context.current_user
-
-        if (!current_user) return die('you must be logged in to moderate comments', context)
-        if (!current_user || !current_user.is_moderator_of || !current_user.is_moderator_of.length) return die('you are not moderator of any topic', context)
-
-        let comments = await comments_to_moderate(context)
-
-        let offset = 0
-        comments = comments.map(comment => { comment.row_number = ++offset; return comment })
-
-        let content = html(
-            render_query_times(context.res.start_time, context.db.queries),
-            head(CONF.stylesheet, CONF.description, context.post ? context.post.post_title : CONF.domain),
-            header(context),
-            midpage(
-                h1('comment moderation'),
-                comment_list(comments, context)
-            )
-        )
-
-        return send_html(200, content, context)
-    },
-
-    comments : async function(context) { // show a list of comments by user, or by comment-frequence, or from a search
-
-        let offset  = intval(_GET(context.req.url, 'offset'))
-        let comments
-        let message = ''
-
-        if (_GET(context.req.url, 'a')) {      // a is author name
-            let a   = decodeURIComponent(_GET(context.req.url, 'a').replace(/[^\w %]/, ''))
-            let user = await get_user_by_name(a, context.db)
-            if (!user) return die(`no such user: ${ a }`, context)
-            comments = await get_comment_list_by_author(user, 40, context.db, context.req.url)
-            message = `<h2>${a}'s comments</h2>`
-        }
-        else if (_GET(context.req.url, 'n')) { // n is number of comments per author, so we can see all comments by one-comment authors, for example
-            let n   = intval(_GET(context.req.url, 'n'))
-            comments = await get_comment_list_by_number(n, offset, 40, context.db)
-            message = `<h2>comments by users with ${n} comments</h2>`
-        }
-        else if (_GET(context.req.url, 's')) { // comment search
-            let s   = _GET(context.req.url, 's').replace(/[^\w %]/, '')
-            comments = await get_comment_list_by_search(s, offset, 40, context.db)
-            message = `<h2>comments that contain "${s}"</h2>`
-        }
-        else return send_html(200, `invalid request`, context)
-
-        let content = html(
-            render_query_times(context.res.start_time, context.db.queries),
-            head(CONF.stylesheet, CONF.description, context.post ? context.post.post_title : CONF.domain),
-            header(context),
-            midpage(
-                h1(message),
-                comment_pagination(comments, context.req.url),
-                comment_list(comments, context),
-                comment_search_box()
-            )
-        )
-
-        return send_html(200, content, context)
-    },
-
-    delete_comment : async function(context) { // delete a comment
-
-        let comment_id = intval(_GET(context.req.url, 'comment_id'))
-        let post_id    = intval(_GET(context.req.url, 'post_id'))
-
-        if (!context.current_user)    return send_html(200, '', context)
-        if (!valid_nonce(context))    return send_html(200, '', context)
-        if (!(comment_id && post_id)) return send_html(200, '', context)
-
-        var topic = (await get_post(post_id, context.db)).post_topic
-        var topic_moderator = intval(await get_moderator(topic, context.db))
-
-        var comment_author = await get_var('select comment_author from comments where comment_id=?', [comment_id], context.db)
-
-        await query(`delete from comments where comment_id = ? and (comment_author = ? or 1 = ? or ${topic_moderator}=?)`,
-                    [comment_id, context.current_user.user_id, context.current_user.user_id, context.current_user.user_id], context.db)
-
-        await query(`update users set user_comments=(select count(*) from comments where comment_author = ?) where user_id = ?`,
-                    [comment_author, comment_author], context.db)
-
-        await reset_latest_comment(post_id, context.db)
-
-        send_html(200, '', context)
-    },
-
-    delete_post : async function(context) { // delete a whole post, but not its comments
-
-        if (!context.current_user) return die('you must be logged in to delete a post', context)
-        if (!valid_nonce(context)) return die(invalid_nonce_message(), context)
-
-        var post_id
-        if (post_id = intval(_GET(context.req.url, 'post_id'))) {
-
-            let post = await get_post(post_id, context.db)
-            if (!post) return die('no such post', context)
-
-            // if it's their own post or if it's admin
-            if ((context.current_user.user_id === post.post_author) || (context.current_user.user_id === 1)) {
-
-                let results = await query(`delete from posts where post_id = ?`, [post_id], context.db)
-
-                if (post.post_topic) {
-                    await update_prev_next(post.post_topic, post.post_prev_in_topic, context.db)
-                    await update_prev_next(post.post_topic, post.post_next_in_topic, context.db)
-                }
-
-                return die(`${results.affectedRows} post deleted`, context)
-            }
-            else return die('permission to delete post denied', context)
-        }
-        else return die('need a post_id', context)
-    },
-
-    dislike : async function(context) { // given a comment or post, downvote it
-
-        const user_id = context.current_user ? context.current_user.user_id : await find_or_create_anon(context.db, context.ip)
-
-        if (intval(_GET(context.req.url, 'comment_id'))) {
-            const content = await dislike_comment(user_id, context)
-            return send_html(200, content, context)
-        }
-        else if (intval(_GET(context.req.url, 'post_id'))) {
-            const content = await dislike_post(user_id, context)
-            return send_html(200, content, context)
-        }
-        else return send_html(200, '', context) // send empty string if no comment_id or post_id
-    },
-
-    edit_comment : async function (context) {
-
-        if (!valid_nonce(context)) return die(invalid_nonce_message(), context)
-
-        let comment_id = intval(_GET(context.req.url, 'c'))
-        let comment = await get_row(`select * from comments left join users on user_id=comment_author where comment_id=?`, [comment_id], context.db)
-
-        if (!comment) return send_html(404, `No comment with id "${comment_id}"`, context)
-        else {
-
-            let content = html(
-                render_query_times(context.res.start_time, context.db.queries),
-                head(CONF.stylesheet, CONF.description, context.post ? context.post.post_title : CONF.domain),
-                header(context),
-                midpage(
-                    comment_edit_box(comment, context)
-                )
-            )
-
-            send_html(200, content, context)
-        }
-    },
-
-    edit_post : async function (context) {
-
-        if (!valid_nonce(context)) return die(invalid_nonce_message(), context)
-
-        let post_id = intval(_GET(context.req.url, 'p'))
-        let post = await get_row(`select * from posts left join users on user_id=post_author where post_id=?`, [post_id], context.db)
-
-        if (!post) return send_html(404, `No post with id "${post_id}"`, context.res, context.db, context.ip)
-        else {
-
-            let content = html(
-                render_query_times(context.res.start_time, context.db.queries),
-                head(CONF.stylesheet, CONF.description, post ? post.post_title : CONF.domain),
-                header(context),
-                midpage(
-                    post_form(_GET(context.req.url, 'p'), post)
-                )
-            )
-
-            send_html(200, content, context)
-        }
-    },
-
-    edit_profile : async function(context) {
-
-        if (!context.current_user) return die('please log in to edit your profile', context)
-
-        let content = html(
-            render_query_times(context.res.start_time, context.db.queries),
-            head(CONF.stylesheet, CONF.description, context.post ? context.post.post_title : CONF.domain),
-            header(context),
-            midpage(
-                profile_form(_GET(context.req.url, 'updated'), context)
+                comment_edit_box(comment, context)
             )
         )
 
         send_html(200, content, context)
-    },
+    }
+}
 
-    follow_topic : async function(context) { // get or turn off emails of posts in a topic; can be called as ajax or full page
+routes.GET.edit_post = async function (context) {
 
-        let ajax  = intval(_GET(context.req.url, 'ajax'))
-        let topic = _GET(context.req.url, 'topic').replace(/\W/, '').toLowerCase()
+    if (!valid_nonce(context)) return die(invalid_nonce_message(), context)
 
-        if (!topic)                return ajax ? send_html(200, '', context) : die('topic missing', context)
-        if (!context.current_user) return ajax ? send_html(200, '', context) : die('must be logged in to follow or unfollow', context)
-        if (!valid_nonce(context)) return ajax ? send_html(200, '', context) : die(invalid_nonce_message(), context)
+    let post_id = intval(_GET(context.req.url, 'p'))
+    let post = await get_row(`select * from posts left join users on user_id=post_author where post_id=?`, [post_id], context.db)
 
-        if (intval(_GET(context.req.url, 'undo'))) {
+    if (!post) return send_html(404, `No post with id "${post_id}"`, context.res, context.db, context.ip)
+    else {
 
-            await query(`delete from topicwatches where topicwatch_name=? and topicwatch_user_id=?`,
-                        [topic, context.current_user.user_id], context.db)
-        }
-        else {
-            await query(`replace into topicwatches set topicwatch_start=now(), topicwatch_name=?, topicwatch_user_id=?`,
-                        [topic, context.current_user.user_id], context.db)
-        }
+        let content = html(
+            render_query_times(context.res.start_time, context.db.queries),
+            head(CONF.stylesheet, CONF.description, post ? post.post_title : CONF.domain),
+            header(context),
+            midpage(
+                post_form(_GET(context.req.url, 'p'), post)
+            )
+        )
 
-        // either way, output follow button with right context and update this user's follow count
-        ajax ? send_html(200, follow_topic_button(topic, context.current_user, context.ip), context) : die('Follow status updated', context)
-    },
+        send_html(200, content, context)
+    }
+}
 
-    follow_user : async function(context) { // get or turn off emails of a user's new posts; can be called as ajax or full page
+routes.GET.edit_profile = async function(context) {
 
-        let ajax     = intval(_GET(context.req.url, 'ajax'))
-        let other_id = intval(_GET(context.req.url, 'other_id'))
+    if (!context.current_user) return die('please log in to edit your profile', context)
 
-        if (!other_id)             return ajax ? send_html(200, '', context) : die('other_id missing', context)
-        if (!context.current_user) return ajax ? send_html(200, '', context) : die('must be logged in to follow or unfollow', context)
-        if (!valid_nonce(context)) return ajax ? send_html(200, '', context) : die(invalid_nonce_message(), context)
+    let content = html(
+        render_query_times(context.res.start_time, context.db.queries),
+        head(CONF.stylesheet, CONF.description, context.post ? context.post.post_title : CONF.domain),
+        header(context),
+        midpage(
+            profile_form(_GET(context.req.url, 'updated'), context)
+        )
+    )
 
-        if (intval(_GET(context.req.url, 'undo'))) {
-            await query(`replace into relationships set rel_i_follow=0, rel_self_id=?, rel_other_id=?`,
-                        [context.current_user.user_id, other_id], context.db)
-        }
-        else {
-            await query(`replace into relationships set rel_i_follow=unix_timestamp(now()), rel_self_ID=?, rel_other_id=?`,
-                        [context.current_user.user_id, other_id], context.db)
-        }
+    send_html(200, content, context)
+}
 
-        // either way, output follow button with right context and update this user's follow count
-        ajax ? send_html(200, follow_user_button(await get_userrow(other_id, context.db)), context) : die('Follow status updated', context)
+routes.GET.follow_topic = async function(context) { // get or turn off emails of posts in a topic; can be called as ajax or full page
 
-        await query(`update users set user_followers=(select count(*) from relationships where rel_i_follow > 0 and rel_other_id=?)
-                     where user_id=?`, [other_id, other_id], context.db)
+    let ajax  = intval(_GET(context.req.url, 'ajax'))
+    let topic = _GET(context.req.url, 'topic').replace(/\W/, '').toLowerCase()
 
-        // mail the user who has just been followed
-        let u = await get_userrow(other_id, context.db)
-        mail(u.user_email, `you have a new follower on ${CONF.domain}`,
-            `<a href='https://${CONF.domain}/user/${context.current_user.user_name}'>${context.current_user.user_name}</a> is now following
-             you on ${CONF.domain} and will get emails of your new posts`)
-    },
+    if (!topic)                return ajax ? send_html(200, '', context) : die('topic missing', context)
+    if (!context.current_user) return ajax ? send_html(200, '', context) : die('must be logged in to follow or unfollow', context)
+    if (!valid_nonce(context)) return ajax ? send_html(200, '', context) : die(invalid_nonce_message(), context)
 
-    home : async function(context) {
+    if (intval(_GET(context.req.url, 'undo'))) {
 
-        var p
+        await query(`delete from topicwatches where topicwatch_name=? and topicwatch_user_id=?`,
+                    [topic, context.current_user.user_id], context.db)
+    }
+    else {
+        await query(`replace into topicwatches set topicwatch_start=now(), topicwatch_name=?, topicwatch_user_id=?`,
+                    [topic, context.current_user.user_id], context.db)
+    }
 
-        if (p = intval(_GET(context.req.url, 'p'))) return redirect(`/post/${p}`, context, 301) // legacy redirect for cases like /?p=1216301
+    // either way, output follow button with right context and update this user's follow count
+    ajax ? send_html(200, follow_topic_button(topic, context.current_user, context.ip), context) : die('Follow status updated', context)
+}
 
-        let current_user_id = context.current_user ? context.current_user.user_id : 0
+routes.GET.follow_user = async function(context) { // get or turn off emails of a user's new posts; can be called as ajax or full page
 
-        let [curpage, slimit, order, order_by] = which_page(_GET(context.req.url, 'page'), _GET(context.req.url, 'order'))
+    let ajax     = intval(_GET(context.req.url, 'ajax'))
+    let other_id = intval(_GET(context.req.url, 'other_id'))
 
-        // left joins to also get each post's viewing and voting data for the current user if there is one
-        let sql = `select sql_calc_found_rows * from posts
-                   left join postviews on postview_post_id=post_id and postview_user_id= ?
-                   left join postvotes on postvote_post_id=post_id and postvote_user_id= ?
-                   left join users     on user_id=post_author where post_modified > date_sub(now(), interval 7 day) and post_approved=1
-                   ${order_by} limit ${slimit}`
+    if (!other_id)             return ajax ? send_html(200, '', context) : die('other_id missing', context)
+    if (!context.current_user) return ajax ? send_html(200, '', context) : die('must be logged in to follow or unfollow', context)
+    if (!valid_nonce(context)) return ajax ? send_html(200, '', context) : die(invalid_nonce_message(), context)
 
-        let posts = await query(sql, [current_user_id, current_user_id], context.db)
+    if (intval(_GET(context.req.url, 'undo'))) {
+        await query(`replace into relationships set rel_i_follow=0, rel_self_id=?, rel_other_id=?`,
+                    [context.current_user.user_id, other_id], context.db)
+    }
+    else {
+        await query(`replace into relationships set rel_i_follow=unix_timestamp(now()), rel_self_ID=?, rel_other_id=?`,
+                    [context.current_user.user_id, other_id], context.db)
+    }
 
-        let path = URL.parse(context.req.url).pathname // "pathname" is url path without ? parms, unlike "path"
+    // either way, output follow button with right context and update this user's follow count
+    ajax ? send_html(200, follow_user_button(await get_userrow(other_id, context.db)), context) : die('Follow status updated', context)
+
+    await query(`update users set user_followers=(select count(*) from relationships where rel_i_follow > 0 and rel_other_id=?)
+                 where user_id=?`, [other_id, other_id], context.db)
+
+    // mail the user who has just been followed
+    let u = await get_userrow(other_id, context.db)
+    mail(u.user_email, `you have a new follower on ${CONF.domain}`,
+        `<a href='https://${CONF.domain}/user/${context.current_user.user_name}'>${context.current_user.user_name}</a> is now following
+         you on ${CONF.domain} and will get emails of your new posts`)
+}
+
+routes.GET.home = async function(context) {
+
+    var p
+
+    if (p = intval(_GET(context.req.url, 'p'))) return redirect(`/post/${p}`, context, 301) // legacy redirect for cases like /?p=1216301
+
+    let current_user_id = context.current_user ? context.current_user.user_id : 0
+
+    let [curpage, slimit, order, order_by] = which_page(_GET(context.req.url, 'page'), _GET(context.req.url, 'order'))
+
+    // left joins to also get each post's viewing and voting data for the current user if there is one
+    let sql = `select sql_calc_found_rows * from posts
+               left join postviews on postview_post_id=post_id and postview_user_id= ?
+               left join postvotes on postvote_post_id=post_id and postvote_user_id= ?
+               left join users     on user_id=post_author where post_modified > date_sub(now(), interval 7 day) and post_approved=1
+               ${order_by} limit ${slimit}`
+
+    let posts = await query(sql, [current_user_id, current_user_id], context.db)
+
+    let path = URL.parse(context.req.url).pathname // "pathname" is url path without ? parms, unlike "path"
+
+    let content = html(
+        render_query_times(context.res.start_time, context.db.queries),
+        head(CONF.stylesheet, CONF.description, CONF.domain),
+        header(context),
+        (await comments_to_moderate(context)).length ? `Welcome moderator, you have <a href='/comment_moderation'>comments to moderate</a>` : '',
+        midpage(
+            tabs(order, '', path),
+            post_list(posts, context),
+            post_pagination(posts.found_rows, curpage, `&order=${order}`, context.req.url)
+        )
+    )
+
+    send_html(200, content, context)
+}
+
+routes.GET.ignore = async function(context) { // ignore a user
+
+    let other_id = intval(_GET(context.req.url, 'other_id'))
+
+    if (!context.current_user) return send_html(200, '', context)
+    if (!valid_nonce(context)) return send_html(200, '', context)
+
+    if (intval(_GET(context.req.url, 'undo'))) {
+        await query(`replace into relationships set rel_i_ban=0, rel_self_id=?, rel_other_id=?`,
+                    [context.current_user.user_id, other_id], context.db)
+
+        send_html(200, '', context) // make the user disappear from edit_profile page
+    }
+    else {
+        await query(`replace into relationships set rel_i_ban=unix_timestamp(now()), rel_self_ID=?, rel_other_ID=?`,
+                    [context.current_user.user_id, other_id], context.db)
+
+        send_html(200, '', context)
+    }
+
+    // either way, update this user's ignore count
+    await query(`update users set user_bannedby=(select count(*) from relationships where rel_i_ban > 0 and rel_other_id=?)
+                 where user_id=?`, [other_id, other_id], context.db)
+}
+
+routes.GET.key_login = async function(context) {
+
+    let key      = _GET(context.req.url, 'key')
+    let password = get_nonce(Date.now(), context.ip).substring(0, 6)
+
+    var email = await get_var('select user_email from users where user_activation_key = ?', [key], context.db)
+
+    if (email) {
+        // erase key so it cannot be used again, and set new password
+        await query('update users set user_activation_key=null, user_pass=? where user_activation_key=?', [md5(password), key], context.db)
+
+        login(email, password, context)
+    }
+    else {
 
         let content = html(
             render_query_times(context.res.start_time, context.db.queries),
             head(CONF.stylesheet, CONF.description, CONF.domain),
             header(context),
-            (await comments_to_moderate(context)).length ? `Welcome moderator, you have <a href='/comment_moderation'>comments to moderate</a>` : '',
             midpage(
-                tabs(order, '', path),
-                post_list(posts, context),
-                post_pagination(posts.found_rows, curpage, `&order=${order}`, context.req.url)
+                h1(`Darn, that key has already been used. Please try 'forgot password' if you need to log in.`)
             )
         )
 
         send_html(200, content, context)
-    },
+    }
+}
 
-    ignore : async function(context) { // ignore a user
+routes.GET.liberate = async function(context) { // liberate a comment from comment jail
 
-        let other_id = intval(_GET(context.req.url, 'other_id'))
+    const comment_id = intval(_GET(context.req.url, 'comment_id'))
 
-        if (!context.current_user) return send_html(200, '', context)
-        if (!valid_nonce(context)) return send_html(200, '', context)
+    if (!comment_id)           return send_html(200, '', context)
+    if (!context.current_user) return send_html(200, '', context)
+    if (!valid_nonce(context)) return send_html(200, '', context)
 
-        if (intval(_GET(context.req.url, 'undo'))) {
-            await query(`replace into relationships set rel_i_ban=0, rel_self_id=?, rel_other_id=?`,
-                        [context.current_user.user_id, other_id], context.db)
+    await query(`update comments set comment_adhom_when=null where comment_id = ? and (1 = ?)`, [comment_id, context.current_user.user_id], context.db)
 
-            send_html(200, '', context) // make the user disappear from edit_profile page
-        }
-        else {
-            await query(`replace into relationships set rel_i_ban=unix_timestamp(now()), rel_self_ID=?, rel_other_ID=?`,
-                        [context.current_user.user_id, other_id], context.db)
-
-            send_html(200, '', context)
-        }
-
-        // either way, update this user's ignore count
-        await query(`update users set user_bannedby=(select count(*) from relationships where rel_i_ban > 0 and rel_other_id=?)
-                     where user_id=?`, [other_id, other_id], context.db)
-    },
-
-    key_login : async function(context) {
-
-        let key      = _GET(context.req.url, 'key')
-        let password = get_nonce(Date.now(), context.ip).substring(0, 6)
-
-        var email = await get_var('select user_email from users where user_activation_key = ?', [key], context.db)
-
-        if (email) {
-            // erase key so it cannot be used again, and set new password
-            await query('update users set user_activation_key=null, user_pass=? where user_activation_key=?', [md5(password), key], context.db)
-
-            login(email, password, context)
-        }
-        else {
-
-            let content = html(
-                render_query_times(context.res.start_time, context.db.queries),
-                head(CONF.stylesheet, CONF.description, CONF.domain),
-                header(context),
-                midpage(
-                    h1(`Darn, that key has already been used. Please try 'forgot password' if you need to log in.`)
-                )
-            )
-
-            send_html(200, content, context)
-        }
-    },
-
-    liberate : async function(context) { // liberate a comment from comment jail
-
-        const comment_id = intval(_GET(context.req.url, 'comment_id'))
-
-        if (!comment_id)           return send_html(200, '', context)
-        if (!context.current_user) return send_html(200, '', context)
-        if (!valid_nonce(context)) return send_html(200, '', context)
-
-        await query(`update comments set comment_adhom_when=null where comment_id = ? and (1 = ?)`, [comment_id, context.current_user.user_id], context.db)
-
-        send_html(200, '', context)
-    },
+    send_html(200, '', context)
+}
 
 
-    like : async function(context) { // given a comment or post, upvote it
+routes.GET.like = async function(context) { // given a comment or post, upvote it
 
-        var user_id   = context.current_user ? context.current_user.user_id   : await find_or_create_anon(context.db, context.ip)
-        var user_name = context.current_user ? context.current_user.user_name : ip2anon(context.ip)
+    var user_id   = context.current_user ? context.current_user.user_id   : await find_or_create_anon(context.db, context.ip)
+    var user_name = context.current_user ? context.current_user.user_name : ip2anon(context.ip)
 
-        if (intval(_GET(context.req.url, 'comment_id'))) {
-            let content = await like_comment(user_id, user_name, context)
-            send_html(200, content, context)
-            return await send_comment_like_email(user_name, context)
-        }
-        else if (intval(_GET(context.req.url, 'post_id'))) {
-            let content = await like_post(user_id, context)
-            send_html(200, content, context)
-            return await send_post_like_email(user_name, context)
-        }
-        else return send_html(200, '', context) // send empty string if no comment_id or post_id
-    },
-
-    logout : async function(context) {
-
-        var d    = new Date()
-        var html = loginprompt(context.login_failed_email)
-
-        // you must use the undocumented "array" feature of res.writeHead to set multiple cookies, because json
-        var headers = [
-            ['Content-Type'   , 'text/html'                               ],
-            ['Expires'        , d.toUTCString()                           ],
-            ['Set-Cookie'     , `${ CONF.usercookie }=_; Expires=${d}; Path=/`],
-            ['Set-Cookie'     , `${ CONF.pwcookie   }=_; Expires=${d}; Path=/`]
-        ] // do not use 'secure' parm with cookie or will be unable to test login in dev, bc dev is http only
-
-        send(200, headers, html, context)
-    },
-
-    new_post : async function(context) {
-
-        if (!context.current_user || !context.current_user.user_id) return die('anonymous users may not create posts', context)
-
-        // if the user is logged in and has posted MAX_POSTS times today, don't let them post more
-        var posts_today = await get_var('select count(*) as c from posts where post_author=? and post_date >= curdate()',
-                                        [context.current_user.user_id], context.db)
-
-        if (posts_today >= MAX_POSTS || posts_today > context.current_user.user_comments) {
-            var content = html(
-                render_query_times(context.res.start_time, context.db.queries),
-                head(CONF.stylesheet, CONF.description, CONF.domain),
-                header(context),
-                midpage(
-                    `You hit your posting limit for today. Please post more tomorrow!`
-                )
-            )
-        }
-        else {
-            var content = html(
-                render_query_times(context.res.start_time, context.db.queries),
-                head(CONF.stylesheet, CONF.description, CONF.domain),
-                header(context),
-                midpage(
-                    post_form(_GET(context.req.url, 'p'))
-                )
-            )
-        }
-
+    if (intval(_GET(context.req.url, 'comment_id'))) {
+        let content = await like_comment(user_id, user_name, context)
         send_html(200, content, context)
-    },
+        return await send_comment_like_email(user_name, context)
+    }
+    else if (intval(_GET(context.req.url, 'post_id'))) {
+        let content = await like_post(user_id, context)
+        send_html(200, content, context)
+        return await send_post_like_email(user_name, context)
+    }
+    else return send_html(200, '', context) // send empty string if no comment_id or post_id
+}
 
-    nuke : async function(context) { // given a user ID, nuke all his posts, comments, and his ID
+routes.GET.logout = async function(context) {
 
-        let nuke_id = intval(_GET(context.req.url, 'nuke_id'))
-        let u = await get_userrow(nuke_id, context.db)
+    var d    = new Date()
+    var html = loginprompt(context.login_failed_email)
 
-        if (!valid_nonce(context))              return die(invalid_nonce_message(), context)
-        if (1 !== context.current_user.user_id) return die('non-admin may not nuke', context)
-        if (1 === nuke_id)                      return die('admin cannot nuke himself', context)
+    // you must use the undocumented "array" feature of res.writeHead to set multiple cookies, because json
+    var headers = [
+        ['Content-Type'   , 'text/html'                               ],
+        ['Expires'        , d.toUTCString()                           ],
+        ['Set-Cookie'     , `${ CONF.usercookie }=_; Expires=${d}; Path=/`],
+        ['Set-Cookie'     , `${ CONF.pwcookie   }=_; Expires=${d}; Path=/`]
+    ] // do not use 'secure' parm with cookie or will be unable to test login in dev, bc dev is http only
 
-        let country = await ip2country(u.user_last_comment_ip, context.db)
+    send(200, headers, html, context)
+}
 
-        let rows = await query('select distinct comment_post_id from comments where comment_author=?', [nuke_id], context.db)
+routes.GET.new_post = async function(context) {
 
-        for (var i=0; i<rows.length; i++) {
-            let row = rows[i]
-            await query('delete from comments where comment_post_id=? and comment_author=?', [row.comment_post_id, nuke_id], context.db)
-            await reset_latest_comment(row.comment_post_id, context.db)
-        }
-        await query('delete from posts     where post_author=?',      [nuke_id], context.db)
-        await query('delete from postviews where postview_user_id=?', [nuke_id], context.db)
-        await query('delete from users     where user_id=?',          [nuke_id], context.db)
+    if (!context.current_user || !context.current_user.user_id) return die('anonymous users may not create posts', context)
 
-        try {
-            await query(`insert into nukes (nuke_date, nuke_email, nuke_username,                nuke_ip,  nuke_country) values
-                       (now(), ?, ?, ?, ?)`, [u.user_email, u.user_name, u.user_last_comment_ip, country], context.db)
-        }
-        catch(e) { console.error(e) } // try-catch for case where ip is already in nukes table somehow
+    // if the user is logged in and has posted MAX_POSTS times today, don't let them post more
+    var posts_today = await get_var('select count(*) as c from posts where post_author=? and post_date >= curdate()',
+                                    [context.current_user.user_id], context.db)
 
-        redirect(context.req.headers.referer, context) 
-    },
-
-    old : async function(context) {
-
-        let years_ago = intval(_GET(context.req.url, 'years_ago'))
-
-        let user_id = context.current_user ? context.current_user.user_id : 0
-        
-        let sql = `select sql_calc_found_rows * from posts
-                   left join postviews on postview_post_id=post_id and postview_user_id= ?
-                   left join postvotes on postvote_post_id=post_id and postvote_user_id= ?
-                   left join users on user_id=post_author
-                   where post_approved=1 and
-                   post_date <          date_sub(now(), interval ${years_ago} year) and
-                   post_date > date_sub(date_sub(now(), interval ${years_ago} year), interval 1 year)
-                   order by post_date desc limit 40`
-
-        let posts = await query(sql, [user_id, user_id], context.db)
-        let s = (years_ago === 1) ? '' : 's'
-        
-        let content = html(
+    if (posts_today >= MAX_POSTS || posts_today > context.current_user.user_comments) {
+        var content = html(
             render_query_times(context.res.start_time, context.db.queries),
-            head(CONF.stylesheet, CONF.description, context.post ? context.post.post_title : CONF.domain),
+            head(CONF.stylesheet, CONF.description, CONF.domain),
             header(context),
             midpage(
-                h1(`Posts from ${years_ago} year${s} ago`),
-                post_list(posts, context)
+                `You hit your posting limit for today. Please post more tomorrow!`
             )
         )
+    }
+    else {
+        var content = html(
+            render_query_times(context.res.start_time, context.db.queries),
+            head(CONF.stylesheet, CONF.description, CONF.domain),
+            header(context),
+            midpage(
+                post_form(_GET(context.req.url, 'p'))
+            )
+        )
+    }
 
-        send_html(200, content, context)
-    },
+    send_html(200, content, context)
+}
 
-    post : async function(context) { // show a single post and its comments
+routes.GET.nuke = async function(context) { // given a user ID, nuke all his posts, comments, and his ID
 
-        let current_user_id = context.current_user ? context.current_user.user_id : 0
-        let post_id         = intval(segments(context.req.url)[2]) // get post's db row number from url, eg 47 from /post/47/slug-goes-here
+    let nuke_id = intval(_GET(context.req.url, 'nuke_id'))
+    let u = await get_userrow(nuke_id, context.db)
 
-        let c
-        if (c = _GET(context.req.url, 'c')) { // permalink to a comment
-            let offset = await cid2offset(post_id, c, context.db)
-            return redirect(`/post/${post_id}?offset=${offset}#comment-${c}`, context)
+    if (!valid_nonce(context))              return die(invalid_nonce_message(), context)
+    if (1 !== context.current_user.user_id) return die('non-admin may not nuke', context)
+    if (1 === nuke_id)                      return die('admin cannot nuke himself', context)
+
+    let country = await ip2country(u.user_last_comment_ip, context.db)
+
+    let rows = await query('select distinct comment_post_id from comments where comment_author=?', [nuke_id], context.db)
+
+    for (var i=0; i<rows.length; i++) {
+        let row = rows[i]
+        await query('delete from comments where comment_post_id=? and comment_author=?', [row.comment_post_id, nuke_id], context.db)
+        await reset_latest_comment(row.comment_post_id, context.db)
+    }
+    await query('delete from posts     where post_author=?',      [nuke_id], context.db)
+    await query('delete from postviews where postview_user_id=?', [nuke_id], context.db)
+    await query('delete from users     where user_id=?',          [nuke_id], context.db)
+
+    try {
+        await query(`insert into nukes (nuke_date, nuke_email, nuke_username,                nuke_ip,  nuke_country) values
+                   (now(), ?, ?, ?, ?)`, [u.user_email, u.user_name, u.user_last_comment_ip, country], context.db)
+    }
+    catch(e) { console.error(e) } // try-catch for case where ip is already in nukes table somehow
+
+    redirect(context.req.headers.referer, context) 
+}
+
+routes.GET.old = async function(context) {
+
+    let years_ago = intval(_GET(context.req.url, 'years_ago'))
+
+    let user_id = context.current_user ? context.current_user.user_id : 0
+    
+    let sql = `select sql_calc_found_rows * from posts
+               left join postviews on postview_post_id=post_id and postview_user_id= ?
+               left join postvotes on postvote_post_id=post_id and postvote_user_id= ?
+               left join users on user_id=post_author
+               where post_approved=1 and
+               post_date <          date_sub(now(), interval ${years_ago} year) and
+               post_date > date_sub(date_sub(now(), interval ${years_ago} year), interval 1 year)
+               order by post_date desc limit 40`
+
+    let posts = await query(sql, [user_id, user_id], context.db)
+    let s = (years_ago === 1) ? '' : 's'
+    
+    let content = html(
+        render_query_times(context.res.start_time, context.db.queries),
+        head(CONF.stylesheet, CONF.description, context.post ? context.post.post_title : CONF.domain),
+        header(context),
+        midpage(
+            h1(`Posts from ${years_ago} year${s} ago`),
+            post_list(posts, context)
+        )
+    )
+
+    send_html(200, content, context)
+}
+
+routes.GET.post = async function(context) { // show a single post and its comments
+
+    let current_user_id = context.current_user ? context.current_user.user_id : 0
+    let post_id         = intval(segments(context.req.url)[2]) // get post's db row number from url, eg 47 from /post/47/slug-goes-here
+
+    let c
+    if (c = _GET(context.req.url, 'c')) { // permalink to a comment
+        let offset = await cid2offset(post_id, c, context.db)
+        return redirect(`/post/${post_id}?offset=${offset}#comment-${c}`, context)
+    }
+
+    let p = await get_post(post_id, context.db, current_user_id)
+
+    let err = await check_post(p, context)
+    if (err) return die(err, context)
+
+    let comments = await post_comment_list(p, context) // pick up the comment list for this post
+    p.watchers   = await get_var(`select count(*) as c from postviews where postview_post_id=? and postview_want_email=1`, [post_id], context.db)
+    p.post_views++ // increment here for display and in db on next line as record
+    await query(`update posts set post_views = ? where post_id=?`, [p.post_views, post_id], context.db)
+
+    if (current_user_id) await update_postview(p, context)
+    if (p.post_topic)    await check_topic(p, context)
+
+    let content = html(
+        render_query_times(context.res.start_time, context.db.queries),
+        head(CONF.stylesheet, CONF.description, p ? p.post_title : CONF.domain),
+        header(context, p.post_topic),
+        midpage(
+            topic_nav(p),
+            post(p, context.ip, context.current_user),
+            comment_pagination(comments, context.req.url),
+            comment_list(comments, context),
+            comment_pagination(comments, context.req.url),
+            comment_box(p, context.current_user, context.ip)
+        )
+    )
+
+    send_html(200, content, context)
+}
+
+routes.POST.post_login = async function(context) {
+    let post_data = await collect_post_data_and_trim(context)
+    login(post_data.email, post_data.password, context)
+}
+
+routes.GET.post_moderation = async function (context) {
+
+    if (!context.current_user) return die('you must be logged in to moderate posts', context)
+
+    let posts = await query(`select * from posts left join users on user_id=post_author where post_approved=0 or post_approved is null`, [], context.db)
+
+    let content = html(
+        render_query_times(context.res.start_time, context.db.queries),
+        head(CONF.stylesheet, CONF.description, context.post ? context.post.post_title : CONF.domain),
+        header(context),
+        midpage(
+            post_list(posts, context)
+        )
+    )
+
+    send_html(200, content, context)
+}
+
+routes.GET.random = async function(context) {
+
+    let rand = await get_var(`select round(rand() * (select count(*) from posts)) as r`, [], context.db)
+    let p    = await get_var(`select post_id from posts limit 1 offset ?`, [rand], context.db)
+
+    redirect(`/post/${p}`, context)
+}
+
+routes.POST.recoveryemail = async function(context) {
+
+    let post_data = await collect_post_data_and_trim(context)
+
+    let message = await send_login_link(context.ip, context.db, post_data)
+
+    let content = html(
+        render_query_times(context.res.start_time, context.db.queries),
+        head(CONF.stylesheet, CONF.description, context.post ? context.post.post_title : CONF.domain),
+        header(context),
+        midpage(
+            h1(message)
+        )
+    )
+
+    send_html(200, content, context)
+}
+
+routes.POST.registration = async function(context) {
+
+    let post_data = await collect_post_data_and_trim(context)
+    let message = ''
+
+    if (/\W/.test(post_data.user_name))     message = 'Please go back and enter username consisting only of letters'
+    if (!valid_email(post_data.user_email)) message = 'Please go back and enter a valid email'
+
+    if (!message) { // no error yet
+
+        if (await get_row('select * from users where user_email = ?', [post_data.user_email], context.db)) {
+            message = `That email is already registered. Please use the "forgot password" link above.</a>`
         }
-
-        let p = await get_post(post_id, context.db, current_user_id)
-
-        let err = await check_post(p, context)
-        if (err) return die(err, context)
-
-        let comments = await post_comment_list(p, context) // pick up the comment list for this post
-        p.watchers   = await get_var(`select count(*) as c from postviews where postview_post_id=? and postview_want_email=1`, [post_id], context.db)
-        p.post_views++ // increment here for display and in db on next line as record
-        await query(`update posts set post_views = ? where post_id=?`, [p.post_views, post_id], context.db)
-
-        if (current_user_id) await update_postview(p, context)
-        if (p.post_topic)    await check_topic(p, context)
-
-        let content = html(
-            render_query_times(context.res.start_time, context.db.queries),
-            head(CONF.stylesheet, CONF.description, p ? p.post_title : CONF.domain),
-            header(context, p.post_topic),
-            midpage(
-                topic_nav(p),
-                post(p, context.ip, context.current_user),
-                comment_pagination(comments, context.req.url),
-                comment_list(comments, context),
-                comment_pagination(comments, context.req.url),
-                comment_box(p, context.current_user, context.ip)
-            )
-        )
-
-        send_html(200, content, context)
-    },
-
-    post_login : async function(context) {
-        let post_data = await collect_post_data_and_trim(context)
-        login(post_data.email, post_data.password, context)
-    },
-
-    post_moderation : async function (context) {
-
-        if (!context.current_user) return die('you must be logged in to moderate posts', context)
-
-        let posts = await query(`select * from posts left join users on user_id=post_author where post_approved=0 or post_approved is null`, [], context.db)
-
-        let content = html(
-            render_query_times(context.res.start_time, context.db.queries),
-            head(CONF.stylesheet, CONF.description, context.post ? context.post.post_title : CONF.domain),
-            header(context),
-            midpage(
-                post_list(posts, context)
-            )
-        )
-
-        send_html(200, content, context)
-    },
-
-    random : async function(context) {
-
-        let rand = await get_var(`select round(rand() * (select count(*) from posts)) as r`, [], context.db)
-        let p    = await get_var(`select post_id from posts limit 1 offset ?`, [rand], context.db)
-
-        redirect(`/post/${p}`, context)
-    },
-
-    recoveryemail : async function(context) {
-
-        let post_data = await collect_post_data_and_trim(context)
-
-        let message = await send_login_link(context.ip, context.db, post_data)
-
-        let content = html(
-            render_query_times(context.res.start_time, context.db.queries),
-            head(CONF.stylesheet, CONF.description, context.post ? context.post.post_title : CONF.domain),
-            header(context),
-            midpage(
-                h1(message)
-            )
-        )
-
-        send_html(200, content, context)
-    },
-
-    registration : async function(context) {
-
-        let post_data = await collect_post_data_and_trim(context)
-        let message = ''
-
-        if (/\W/.test(post_data.user_name))     message = 'Please go back and enter username consisting only of letters'
-        if (!valid_email(post_data.user_email)) message = 'Please go back and enter a valid email'
-
-        if (!message) { // no error yet
-
-            if (await get_row('select * from users where user_email = ?', [post_data.user_email], context.db)) {
-                message = `That email is already registered. Please use the "forgot password" link above.</a>`
+        else {
+            if (await get_row('select * from users where user_name = ?', [post_data.user_name], context.db)) {
+                message = `That user name is already registered. Please choose a different one.</a>`
             }
             else {
-                if (await get_row('select * from users where user_name = ?', [post_data.user_name], context.db)) {
-                    message = `That user name is already registered. Please choose a different one.</a>`
-                }
-                else {
-                    await query('insert into users set user_registered=now(), ?', post_data, context.db)
-                    message = await send_login_link(context.ip, context.db, post_data)
-                }
+                await query('insert into users set user_registered=now(), ?', post_data, context.db)
+                message = await send_login_link(context.ip, context.db, post_data)
             }
         }
+    }
 
-        let content = html(
-            render_query_times(context.res.start_time, context.db.queries),
-            head(CONF.stylesheet, CONF.description, context.post ? context.post.post_title : CONF.domain),
-            header(context),
-            midpage(`<h2>${message}</h2>`)
+    let content = html(
+        render_query_times(context.res.start_time, context.db.queries),
+        head(CONF.stylesheet, CONF.description, context.post ? context.post.post_title : CONF.domain),
+        header(context),
+        midpage(`<h2>${message}</h2>`)
+    )
+
+    send_html(200, content, context)
+}
+
+routes.GET.search = async function(context) {
+
+    // if (is_robot()) die('robots may not do searches', context)
+
+    let s = _GET(context.req.url, 's').trim().replace(/[^0-9a-z ]/gi, '') // allow only alphanum and spaces for now
+    let us = encodeURI(s)
+
+    if (!s) return die('You searched for nothing. It was found.', context)
+
+    let [curpage, slimit, order, order_by] = which_page(_GET(context.req.url, 'page'), _GET(context.req.url, 'order'))
+
+    // These match() requests require the existence of fulltext index:
+    //      create fulltext index post_title_content_index on posts (post_title, post_content)
+
+    let sql = `select sql_calc_found_rows * from posts left join users on user_id=post_author
+               where match(post_title, post_content) against ('${s}') ${order_by} limit ${slimit}`
+
+    let posts = await query(sql, [], context.db)
+
+    let path = URL.parse(context.req.url).pathname // "pathNAME" is url path without ? parms, unlike "path"
+
+    let content = html(
+        render_query_times(context.res.start_time, context.db.queries),
+        head(CONF.stylesheet, CONF.description, context.post ? context.post.post_title : CONF.domain),
+        header(context),
+        midpage(
+            h1(`search results for "${s}"`),
+            '<p>',
+            post_pagination(posts.found_rows, curpage, `&s=${us}&order=${order}`, context.req.url),
+            tabs(order, `&s=${us}`, path),
+            post_list(posts, context),
+            post_pagination(posts.found_rows, curpage, `&s=${us}&order=${order}`, context.req.url)
         )
+    )
 
-        send_html(200, content, context)
-    },
+    send_html(200, content, context)
+}
 
-    search : async function(context) {
+routes.GET.since = async function(context) { // given a post_id and epoch timestamp, redirect to post's first comment after that timestamp
 
-        // if (is_robot()) die('robots may not do searches', context)
+    // these will die on replace() if p or when is not defined and that's the right thing to do
+    let p    = intval(_GET(context.req.url, 'p'))
+    let when = intval(_GET(context.req.url, 'when'))
 
-        let s = _GET(context.req.url, 's').trim().replace(/[^0-9a-z ]/gi, '') // allow only alphanum and spaces for now
-        let us = encodeURI(s)
+    let c = await get_var(`select comment_id from comments
+                               where comment_post_id = ? and comment_approved > 0 and comment_date > from_unixtime(?)
+                               order by comment_date limit 1`, [p, when], context.db)
 
-        if (!s) return die('You searched for nothing. It was found.', context)
+    let offset = await cid2offset(p, c, context.db)
+    let post = await get_post(p, context.db)
+    redirect(`${post2path(post)}?offset=${offset}#comment-${c}`, context)
+}
 
-        let [curpage, slimit, order, order_by] = which_page(_GET(context.req.url, 'page'), _GET(context.req.url, 'order'))
+routes.GET.topic = async function(context) {
 
-        // These match() requests require the existence of fulltext index:
-        //      create fulltext index post_title_content_index on posts (post_title, post_content)
+    let topic = segments(context.req.url)[2] // like /topic/housing
+    if (!topic) return die('no topic given', context)
 
-        let sql = `select sql_calc_found_rows * from posts left join users on user_id=post_author
-                   where match(post_title, post_content) against ('${s}') ${order_by} limit ${slimit}`
+    let user_id = context.current_user ? context.current_user.user_id : 0
+    let [curpage, slimit, order, order_by] = which_page(_GET(context.req.url, 'page'), _GET(context.req.url, 'order'))
+    let posts = await query(`select sql_calc_found_rows * from posts
+                             left join postviews on postview_post_id=post_id and postview_user_id= ?
+                             left join postvotes on postvote_post_id=post_id and postvote_user_id= ?
+                             left join users on user_id=post_author
+                             where post_topic = ? and post_approved=1 ${order_by} limit ${slimit}`, [user_id, user_id, topic], context.db)
+    
+    var row = await get_row('select * from users, topics where topic=? and topic_moderator=user_id', [topic], context.db)
 
-        let posts = await query(sql, [], context.db)
+    if (row) {
+        var moderator_announcement = `<br>Moderator is <a href='/user/${row.user_name}'>${row.user_name}</a>.
+            <a href='/post/${row.topic_about_post_id}' title='rules for #${topic}' >Read before posting.</a>`
+    }
+    else var moderator_announcement = `<br>#${topic} needs a moderator, write <a href='mailto:${ CONF.admin_email }' >${ CONF.admin_email }</a> if
+        you\'re interested`
 
-        let path = URL.parse(context.req.url).pathname // "pathNAME" is url path without ? parms, unlike "path"
+    let path = URL.parse(context.req.url).pathname // "pathNAME" is url path without ? parms, unlike "path"
 
-        let content = html(
-            render_query_times(context.res.start_time, context.db.queries),
-            head(CONF.stylesheet, CONF.description, context.post ? context.post.post_title : CONF.domain),
-            header(context),
-            midpage(
-                h1(`search results for "${s}"`),
-                '<p>',
-                post_pagination(posts.found_rows, curpage, `&s=${us}&order=${order}`, context.req.url),
-                tabs(order, `&s=${us}`, path),
-                post_list(posts, context),
-                post_pagination(posts.found_rows, curpage, `&s=${us}&order=${order}`, context.req.url)
-            )
+    let content = html(
+        render_query_times(context.res.start_time, context.db.queries),
+        head(CONF.stylesheet, CONF.description, context.post ? context.post.post_title : CONF.domain),
+        header(context, topic),
+        midpage(
+            h1('#' + topic),
+            follow_topic_button(topic, context.current_user, context.ip),
+            moderator_announcement,
+            tabs(order, `&topic=${topic}`, path),
+            post_list(posts, context),
+            post_pagination(posts.found_rows, curpage, `&topic=${topic}&order=${order}`, context.req.url),
+            topic_moderation(topic, context.current_user)
         )
+    )
 
-        send_html(200, content, context)
-    },
+    send_html(200, content, context)
+}
 
-    since : async function(context) { // given a post_id and epoch timestamp, redirect to post's first comment after that timestamp
+routes.GET.topics = async function (context) {
 
-        // these will die on replace() if p or when is not defined and that's the right thing to do
-        let p    = intval(_GET(context.req.url, 'p'))
-        let when = intval(_GET(context.req.url, 'when'))
+    let topics = await query(`select post_topic, count(*) as c from posts
+                              where length(post_topic) > 0 group by post_topic having c >=3 order by c desc`, null, context.db)
 
-        let c = await get_var(`select comment_id from comments
-                                   where comment_post_id = ? and comment_approved > 0 and comment_date > from_unixtime(?)
-                                   order by comment_date limit 1`, [p, when], context.db)
-
-        let offset = await cid2offset(p, c, context.db)
-        let post = await get_post(p, context.db)
-        redirect(`${post2path(post)}?offset=${offset}#comment-${c}`, context)
-    },
-
-    topic : async function(context) {
-
-        let topic = segments(context.req.url)[2] // like /topic/housing
-        if (!topic) return die('no topic given', context)
-
-        let user_id = context.current_user ? context.current_user.user_id : 0
-        let [curpage, slimit, order, order_by] = which_page(_GET(context.req.url, 'page'), _GET(context.req.url, 'order'))
-        let posts = await query(`select sql_calc_found_rows * from posts
-                                 left join postviews on postview_post_id=post_id and postview_user_id= ?
-                                 left join postvotes on postvote_post_id=post_id and postvote_user_id= ?
-                                 left join users on user_id=post_author
-                                 where post_topic = ? and post_approved=1 ${order_by} limit ${slimit}`, [user_id, user_id, topic], context.db)
-        
-        var row = await get_row('select * from users, topics where topic=? and topic_moderator=user_id', [topic], context.db)
-
-        if (row) {
-            var moderator_announcement = `<br>Moderator is <a href='/user/${row.user_name}'>${row.user_name}</a>.
-                <a href='/post/${row.topic_about_post_id}' title='rules for #${topic}' >Read before posting.</a>`
-        }
-        else var moderator_announcement = `<br>#${topic} needs a moderator, write <a href='mailto:${ CONF.admin_email }' >${ CONF.admin_email }</a> if
-            you\'re interested`
-
-        let path = URL.parse(context.req.url).pathname // "pathNAME" is url path without ? parms, unlike "path"
-
-        let content = html(
-            render_query_times(context.res.start_time, context.db.queries),
-            head(CONF.stylesheet, CONF.description, context.post ? context.post.post_title : CONF.domain),
-            header(context, topic),
-            midpage(
-                h1('#' + topic),
-                follow_topic_button(topic, context.current_user, context.ip),
-                moderator_announcement,
-                tabs(order, `&topic=${topic}`, path),
-                post_list(posts, context),
-                post_pagination(posts.found_rows, curpage, `&topic=${topic}&order=${order}`, context.req.url),
-                topic_moderation(topic, context.current_user)
-            )
+    let content = html(
+        render_query_times(context.res.start_time, context.db.queries),
+        head(CONF.stylesheet, CONF.description, context.post ? context.post.post_title : CONF.domain),
+        header(context),
+        midpage(
+            h1('Topics'),
+            topic_list(topics)
         )
+    )
 
-        send_html(200, content, context)
-    },
+    send_html(200, content, context)
+}
 
-    topics : async function (context) {
+routes.GET.uncivil = async function(context) { // move a comment to comment jail, or a post to post moderation
 
-        let topics = await query(`select post_topic, count(*) as c from posts
-                                  where length(post_topic) > 0 group by post_topic having c >=3 order by c desc`, null, context.db)
+    let comment_id = intval(_GET(context.req.url, 'c'))
 
-        let content = html(
-            render_query_times(context.res.start_time, context.db.queries),
-            head(CONF.stylesheet, CONF.description, context.post ? context.post.post_title : CONF.domain),
-            header(context),
-            midpage(
-                h1('Topics'),
-                topic_list(topics)
-            )
-        )
+    if (context.current_user && (context.current_user.user_pbias > 3) && valid_nonce(context) && comment_id) {
+        await query(`update comments set comment_adhom_reporter=?, comment_adhom_when=now() where comment_id = ?`,
+                    [context.current_user.user_id, comment_id], context.db)
+    }
 
-        send_html(200, content, context)
-    },
+    mail(CONF.admin_email, 'new comment in jail', `<a href='https://${CONF.domain}/comment_jail'>jail page</a>`)
 
-    uncivil : async function(context) { // move a comment to comment jail, or a post to post moderation
+    send_html(200, '', context) // blank response in all cases
+}
 
-        let comment_id = intval(_GET(context.req.url, 'c'))
+routes.POST.update_profile = async function(context) { // accept data from profile_form
 
-        if (context.current_user && (context.current_user.user_pbias > 3) && valid_nonce(context) && comment_id) {
-            await query(`update comments set comment_adhom_reporter=?, comment_adhom_when=now() where comment_id = ?`,
-                        [context.current_user.user_id, comment_id], context.db)
-        }
+    if (!valid_nonce(context)) return die(invalid_nonce_message(), context)
+    if (!context.current_user) return die('must be logged in to update profile', context)
 
-        mail(CONF.admin_email, 'new comment in jail', `<a href='https://${CONF.domain}/comment_jail'>jail page</a>`)
+    let post_data = await collect_post_data_and_trim(context)
 
-        send_html(200, '', context) // blank response in all cases
-    },
+    if (/\W/.test(post_data.user_name))     return die('Please go back and enter username consisting only of letters', context)
+    if (!valid_email(post_data.user_email)) return die('Please go back and enter a valid email', context)
 
-    update_profile : async function(context) { // accept data from profile_form
+    post_data.user_summonable            = intval(post_data.user_summonable)
+    post_data.user_hide_post_list_photos = intval(post_data.user_hide_post_list_photos)
 
-        if (!valid_nonce(context)) return die(invalid_nonce_message(), context)
-        if (!context.current_user) return die('must be logged in to update profile', context)
+    if (get_external_links(post_data.user_aboutyou).length) return die('Sorry, no external links allowed in profile', context)
+    post_data.user_aboutyou = strip_tags(post_data.user_aboutyou.linkify()) 
 
-        let post_data = await collect_post_data_and_trim(context)
+    await query(`update users set user_email                 = ?,
+                                  user_name                  = ?,
+                                  user_summonable            = ?,
+                                  user_hide_post_list_photos = ?,
+                                  user_aboutyou              = ?  where user_id = ?`,
+        [post_data.user_email,
+         post_data.user_name,
+         post_data.user_summonable,
+         post_data.user_hide_post_list_photos,
+         post_data.user_aboutyou,
+         context.current_user.user_id], context.db).catch(error => {
+            if (error.code.match(/ER_DUP_ENTRY/)) return die(`Sorry, looks like someone already took that email or user name`, context)
+            else                                  return die(`Something went wrong with save`, context)
+         })
 
-        if (/\W/.test(post_data.user_name))     return die('Please go back and enter username consisting only of letters', context)
-        if (!valid_email(post_data.user_email)) return die('Please go back and enter a valid email', context)
+    redirect('/edit_profile?updated=true', context)
+}
 
-        post_data.user_summonable            = intval(post_data.user_summonable)
-        post_data.user_hide_post_list_photos = intval(post_data.user_hide_post_list_photos)
+routes.GET.upload = async function(context) {
+    if (!context.current_user) return die('you must be logged in to upload images', context)
 
-        if (get_external_links(post_data.user_aboutyou).length) return die('Sorry, no external links allowed in profile', context)
-        post_data.user_aboutyou = strip_tags(post_data.user_aboutyou.linkify()) 
+    var form = new FORMIDABLE.IncomingForm()
+    form.maxFieldsSize = 7 * 1024 * 1024 // max upload is 4MB, but this seems to fail; nginx config will block larger images anyway
+    form.maxFields = 1                   // only one image at a time
 
-        await query(`update users set user_email                 = ?,
-                                      user_name                  = ?,
-                                      user_summonable            = ?,
-                                      user_hide_post_list_photos = ?,
-                                      user_aboutyou              = ?  where user_id = ?`,
-            [post_data.user_email,
-             post_data.user_name,
-             post_data.user_summonable,
-             post_data.user_hide_post_list_photos,
-             post_data.user_aboutyou,
-             context.current_user.user_id], context.db).catch(error => {
-                if (error.code.match(/ER_DUP_ENTRY/)) return die(`Sorry, looks like someone already took that email or user name`, context)
-                else                                  return die(`Something went wrong with save`, context)
-             })
+    form.parse(context.req, async function (err, fields, files) {
+        if (err) throw err
 
-        redirect('/edit_profile?updated=true', context)
-    },
+        let [url_path, abs_path] = await get_image_path()
+        let clean_name           = clean_upload_path(abs_path, files.image.name, context.current_user)
 
-    upload : async function(context) {
-        if (!context.current_user) return die('you must be logged in to upload images', context)
-
-        var form = new FORMIDABLE.IncomingForm()
-        form.maxFieldsSize = 7 * 1024 * 1024 // max upload is 4MB, but this seems to fail; nginx config will block larger images anyway
-        form.maxFields = 1                   // only one image at a time
-
-        form.parse(context.req, async function (err, fields, files) {
+        FS.rename(files.image.path, `${abs_path}/${clean_name}`, async function (err) { // note that files.image.path includes filename at end
             if (err) throw err
 
-            let [url_path, abs_path] = await get_image_path()
-            let clean_name           = clean_upload_path(abs_path, files.image.name, context.current_user)
+            let addendum = ''
+            let dims     = await getimagesize(`${abs_path}/${clean_name}`).catch(error => { addendum = `"${error}"` })
+            if (!dims) return die('failed to find image dimensions', context)
 
-            FS.rename(files.image.path, `${abs_path}/${clean_name}`, async function (err) { // note that files.image.path includes filename at end
-                if (err) throw err
+            if (context.req.headers.referer.match(/edit_profile/)) { // uploading user icon
+                dims = await resize_image(`${abs_path}/${clean_name}`, 80)    // limit max width to 80 px
+                await update_icon(`${url_path}/${clean_name}`, dims, context)
+                return redirect('/edit_profile', context)
+            }
+            else { // uploading image link to post or comment text area
+                if (dims[0] > 600) dims = await resize_image(`${abs_path}/${clean_name}`, 600)   // limit max width to 600 px
+                addendum = `"<img src='${url_path}/${clean_name}' width='${dims[0]}' height='${dims[1]}' >"`
 
-                let addendum = ''
-                let dims     = await getimagesize(`${abs_path}/${clean_name}`).catch(error => { addendum = `"${error}"` })
-                if (!dims) return die('failed to find image dimensions', context)
+                let content = `
+                    <html>
+                        <script>
+                            var textarea = parent.document.getElementById('ta');
+                            textarea.value = textarea.value + ${addendum};
+                        </script>
+                    </html>`
 
-                if (context.req.headers.referer.match(/edit_profile/)) { // uploading user icon
-                    dims = await resize_image(`${abs_path}/${clean_name}`, 80)    // limit max width to 80 px
-                    await update_icon(`${url_path}/${clean_name}`, dims, context)
-                    return redirect('/edit_profile', context)
-                }
-                else { // uploading image link to post or comment text area
-                    if (dims[0] > 600) dims = await resize_image(`${abs_path}/${clean_name}`, 600)   // limit max width to 600 px
-                    addendum = `"<img src='${url_path}/${clean_name}' width='${dims[0]}' height='${dims[1]}' >"`
-
-                    let content = `
-                        <html>
-                            <script>
-                                var textarea = parent.document.getElementById('ta');
-                                textarea.value = textarea.value + ${addendum};
-                            </script>
-                        </html>`
-
-                    send_html(200, content, context)
-                }
-            })
+                send_html(200, content, context)
+            }
         })
-    },
+    })
+}
 
-    user : async function(context) {
+routes.GET.user = async function(context) {
 
-        let current_user_id = context.current_user ? context.current_user.user_id : 0
-        let [curpage, slimit, order, order_by] = which_page(_GET(context.req.url, 'page'), _GET(context.req.url, 'order'))
-        let user_name = decodeURIComponent(segments(context.req.url)[2]).replace(/[^\w._ -]/g, '') // like /user/Patrick
-        let u = await get_row(`select * from users where user_name=?`, [user_name], context.db)
+    let current_user_id = context.current_user ? context.current_user.user_id : 0
+    let [curpage, slimit, order, order_by] = which_page(_GET(context.req.url, 'page'), _GET(context.req.url, 'order'))
+    let user_name = decodeURIComponent(segments(context.req.url)[2]).replace(/[^\w._ -]/g, '') // like /user/Patrick
+    let u = await get_row(`select * from users where user_name=?`, [user_name], context.db)
 
-        if (!u) return die(`no such user: ${user_name}`, context)
+    if (!u) return die(`no such user: ${user_name}`, context)
 
-        // left joins to also get each post's viewing and voting data for the current user if there is one
-        let sql = `select sql_calc_found_rows * from posts
-                   left join postviews on postview_post_id=post_id and postview_user_id= ?
-                   left join postvotes on postvote_post_id=post_id and postvote_user_id= ?
-                   left join users     on user_id=post_author
-                   where post_approved=1 and user_id=?
-                   ${order_by} limit ${slimit}`
+    // left joins to also get each post's viewing and voting data for the current user if there is one
+    let sql = `select sql_calc_found_rows * from posts
+               left join postviews on postview_post_id=post_id and postview_user_id= ?
+               left join postvotes on postvote_post_id=post_id and postvote_user_id= ?
+               left join users     on user_id=post_author
+               where post_approved=1 and user_id=?
+               ${order_by} limit ${slimit}`
 
-        let posts = await query(sql, [current_user_id, current_user_id, u.user_id], context.db)
+    let posts = await query(sql, [current_user_id, current_user_id, u.user_id], context.db)
 
-        u.bans = await user_topic_bans(u.user_id, context.db)
+    u.bans = await user_topic_bans(u.user_id, context.db)
 
-        let path = URL.parse(context.req.url).pathname // "pathNAME" is url path without ? parms, unlike "path"
+    let path = URL.parse(context.req.url).pathname // "pathNAME" is url path without ? parms, unlike "path"
 
-        let content = html(
-            render_query_times(context.res.start_time, context.db.queries),
-            head(CONF.stylesheet, CONF.description, context.post ? context.post.post_title : CONF.domain),
-            header(context),
-            midpage(
-                render_user_info(u, context.current_user, context.ip),
-                tabs(order, '', path),
-                post_list(posts, context),
-                post_pagination(posts.found_rows, curpage, `&order=${order}`, context.req.url),
-                admin_user(u, context.current_user, context.ip)
-            )
+    let content = html(
+        render_query_times(context.res.start_time, context.db.queries),
+        head(CONF.stylesheet, CONF.description, context.post ? context.post.post_title : CONF.domain),
+        header(context),
+        midpage(
+            render_user_info(u, context.current_user, context.ip),
+            tabs(order, '', path),
+            post_list(posts, context),
+            post_pagination(posts.found_rows, curpage, `&order=${order}`, context.req.url),
+            admin_user(u, context.current_user, context.ip)
         )
+    )
 
-        send_html(200, content, context)
-    },
+    send_html(200, content, context)
+}
 
-    users : async function(context) {
+routes.GET.users = async function(context) {
 
-        let d  = _GET(context.req.url, 'd')  ? _GET(context.req.url, 'd').replace(/[^adesc]/g, '').substring(0,4)  : 'desc' // asc or desc
-        let ob = _GET(context.req.url, 'ob') ? _GET(context.req.url, 'ob').replace(/[^a-z_]/g, '').substring(0,32) : 'user_comments' // order by
-        let offset = intval(_GET(context.req.url, 'offset')) || 0
-        let message = ''
-        let users
+    let d  = _GET(context.req.url, 'd')  ? _GET(context.req.url, 'd').replace(/[^adesc]/g, '').substring(0,4)  : 'desc' // asc or desc
+    let ob = _GET(context.req.url, 'ob') ? _GET(context.req.url, 'ob').replace(/[^a-z_]/g, '').substring(0,32) : 'user_comments' // order by
+    let offset = intval(_GET(context.req.url, 'offset')) || 0
+    let message = ''
+    let users
 
-        if      (_GET(context.req.url, 'unrequited'))  [message, users] = await get_unrequited( context, d, ob, offset)
-        else if (_GET(context.req.url, 'followersof')) [message, users] = await get_followersof(context, d, ob, offset)
-        else if (_GET(context.req.url, 'following'))   [message, users] = await get_following(  context, d, ob, offset)
-        else if (_GET(context.req.url, 'friendsof'))   [message, users] = await get_friendsof(  context, d, ob, offset)
-        else if (_GET(context.req.url, 'user_name'))   [message, users] = await get_user_name(  context, d, ob, offset)
-        else                                           [message, users] = await get_users(      context, d, ob, offset)
+    if      (_GET(context.req.url, 'unrequited'))  [message, users] = await get_unrequited( context, d, ob, offset)
+    else if (_GET(context.req.url, 'followersof')) [message, users] = await get_followersof(context, d, ob, offset)
+    else if (_GET(context.req.url, 'following'))   [message, users] = await get_following(  context, d, ob, offset)
+    else if (_GET(context.req.url, 'friendsof'))   [message, users] = await get_friendsof(  context, d, ob, offset)
+    else if (_GET(context.req.url, 'user_name'))   [message, users] = await get_user_name(  context, d, ob, offset)
+    else                                           [message, users] = await get_users(      context, d, ob, offset)
 
-        let next_page = context.req.url.match(/offset=/) ? context.req.url.replace(/offset=\d+/, `offset=${offset + 40}`) :
-            context.req.url.match(/\?/) ? context.req.url + '&offset=40' : context.req.url + '?offset=40'
+    let next_page = context.req.url.match(/offset=/) ? context.req.url.replace(/offset=\d+/, `offset=${offset + 40}`) :
+        context.req.url.match(/\?/) ? context.req.url + '&offset=40' : context.req.url + '?offset=40'
 
-        let content = html(
-            render_query_times(context.res.start_time, context.db.queries),
-            head(CONF.stylesheet, CONF.description, context.post ? context.post.post_title : CONF.domain),
-            header(context),
-            midpage(
-                h1(message),
-                `<p><a href='${next_page}'>next page &raquo;</a><p>`,
-                user_list(users, _GET(context.req.url, 'd')),
-                `<hr><a href='${next_page}'>next page &raquo;</a>`
-            )
+    let content = html(
+        render_query_times(context.res.start_time, context.db.queries),
+        head(CONF.stylesheet, CONF.description, context.post ? context.post.post_title : CONF.domain),
+        header(context),
+        midpage(
+            h1(message),
+            `<p><a href='${next_page}'>next page &raquo;</a><p>`,
+            user_list(users, _GET(context.req.url, 'd')),
+            `<hr><a href='${next_page}'>next page &raquo;</a>`
         )
+    )
 
-        send_html(200, content, context)
-    },
+    send_html(200, content, context)
+}
 
-    watch : async function(context) { // toggle a watch from a post
+routes.GET.watch = async function(context) { // toggle a watch from a post
 
-        let post_id = intval(_GET(context.req.url, 'post_id'))
+    let post_id = intval(_GET(context.req.url, 'post_id'))
 
-        if (!context.current_user) return send_html(200, '', context)
-        if (!valid_nonce(context)) return send_html(200, '', context)
-        if (!post_id)              return send_html(200, '', context)
+    if (!context.current_user) return send_html(200, '', context)
+    if (!valid_nonce(context)) return send_html(200, '', context)
+    if (!post_id)              return send_html(200, '', context)
 
-        let postview_want_email = await get_var(`select postview_want_email from postviews
-                                                 where postview_user_id=? and postview_post_id=?`,
-                                                 [context.current_user.user_id, post_id], context.db)
+    let postview_want_email = await get_var(`select postview_want_email from postviews
+                                             where postview_user_id=? and postview_post_id=?`,
+                                             [context.current_user.user_id, post_id], context.db)
 
-        if (postview_want_email) var want_email = 0 // invert
-        else                     var want_email = 1
+    if (postview_want_email) var want_email = 0 // invert
+    else                     var want_email = 1
 
-        await query(`insert into postviews (postview_user_id, postview_post_id, postview_want_email) values (?, ?, ?)
-                     on duplicate key update postview_want_email=?`,
-                    [context.current_user.user_id, post_id, want_email, want_email], context.db)
+    await query(`insert into postviews (postview_user_id, postview_post_id, postview_want_email) values (?, ?, ?)
+                 on duplicate key update postview_want_email=?`,
+                [context.current_user.user_id, post_id, want_email, want_email], context.db)
 
-        send_html(200, render_watch_indicator(want_email), context)
-    },
-
-} // end of routes
+    send_html(200, render_watch_indicator(want_email), context)
+}
 
 // from here to end are only html components
 // * all pure synchronous functions: no reading outside parms, no modification of parms, no side effects, can be replaced with ret value
