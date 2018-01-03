@@ -1363,7 +1363,7 @@ async function dislike_comment(user_id, context) {
 
     await query(`update users set user_dislikes=user_dislikes+1 where user_id=?`, [comment_row.comment_author], context.db)
 
-    // Now if Patrick was the disliker, then the user gets a bias bump down.
+    // Now if admin was the disliker, then the user gets a bias bump down.
     if (1 === user_id) await query(`update users set user_pbias=user_pbias-1 where user_id=?`, [comment_row.comment_author], context.db)
 
     return `&#8595;&nbsp;you dislike this (${comment_row.comment_dislikes + 1})`
@@ -1773,7 +1773,7 @@ routes.GET.comment_jail = async function(context) { // no pagination, just most 
         header(context),
         midpage(
             h1('Uncivil Comment Jail'),
-            'These comments were marked as uncivil. Patrick will review them and liberate comments which do not deserve to be here. You can edit your comment here to make it more civil and get it out of jail. Comments not freed within 30 days will be deleted.',
+            'These comments were marked as uncivil. Admin will review them and liberate comments which do not deserve to be here. You can edit your comment here to make it more civil and get it out of jail. Comments not freed within 30 days will be deleted.',
             comment_list(comments, context)
         )
     )
@@ -3420,7 +3420,7 @@ function post(post, ip, current_user) { // format a single post for display
 
 function post_link(post) {
     let path = post2path(post)
-    return `<a href='${path}' title='patrick.net' >${post.post_title}</a>`
+    return `<a href='${path}' >${post.post_title}</a>`
 }
 
 function share_post(post) {
