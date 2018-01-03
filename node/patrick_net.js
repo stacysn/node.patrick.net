@@ -2546,7 +2546,7 @@ routes.POST.update_profile = async function(context) { // accept data from profi
     redirect('/edit_profile?updated=true', context)
 }
 
-routes.GET.upload = async function(context) {
+routes.POST.upload = async function(context) {
     if (!context.current_user) return die('you must be logged in to upload images', context)
 
     var form = new FORMIDABLE.IncomingForm()
