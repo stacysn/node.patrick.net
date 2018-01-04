@@ -731,7 +731,7 @@ function which_page(page, order) { // tell homepage, search, userpage, topic whi
 
 function _GET(url, parm) { // given a string, return the GET parameter by that name
     if (!url) return ''
-    return URL.parse(url, true).query[parm]
+    return URL.parse(url, true).query[parm] || '' // always return a string so string methods like trim will work even if parm undefined
 }
 
 async function get_post(post_id, db, user_id) {
