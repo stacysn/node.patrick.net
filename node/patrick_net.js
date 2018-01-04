@@ -12,7 +12,6 @@ const FS          = require('fs')
 const HTTP        = require('http')
 const JSDOM       = require('jsdom').JSDOM
 const LOCKS       = {}                         // db locks to allow only one db connection per ip; helps mitigate dos attacks
-const MAX_POSTS   = 7                          // max new thread posts per user per day
 const MOMENT      = require('moment-timezone') // via npm for time parsing
 const MYSQL       = require('mysql')           // via npm to interface to mysql
 const NODEMAILER  = require('nodemailer')      // via npm to send emails
