@@ -1223,7 +1223,7 @@ async function hit_daily_post_limit(context) {
     var whole_weeks_registered = await get_var('select floor(datediff(curdate(), user_registered)/7) from users where user_id=?',
         [context.current_user.user_id], context.db)
 
-    return (posts_today >= MAX_POSTS || posts_today > whole_weeks_registered) ? true : false
+    return (posts_today >= CONF.max_posts || posts_today > whole_weeks_registered) ? true : false
 }
 
 function find_topic(post_content) {
@@ -2171,11 +2171,11 @@ routes.GET.new_post = async function(context) {
 
     if (!context.current_user || !context.current_user.user_id) return die('anonymous users may not create posts', context)
 
-    // if the user is logged in and has posted MAX_POSTS times today, don't let them post more
+    // if the user is logged in and has posted CONF.max_posts times today, don't let them post more
     var posts_today = await get_var('select count(*) as c from posts where post_author=? and post_date >= curdate()',
                                     [context.current_user.user_id], context.db)
 
-    if (posts_today >= MAX_POSTS || posts_today > context.current_user.user_comments) {
+    if (posts_today >= CONF.max_posts || posts_today > context.current_user.user_comments) {
         var content = html(
             render_query_times(context.res.start_time, context.db.queries),
             head(CONF.stylesheet, CONF.description, CONF.domain),
