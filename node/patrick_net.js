@@ -2629,8 +2629,19 @@ routes.GET.user = async function(context) {
 
 routes.GET.users = async function(context) {
 
-    let d  = _GET(context.req.url, 'd')  ? _GET(context.req.url, 'd').replace(/[^adesc]/g, '').substring(0,4)  : 'desc' // asc or desc
-    let ob = _GET(context.req.url, 'ob') ? _GET(context.req.url, 'ob').replace(/[^a-z_]/g, '').substring(0,32) : 'user_comments' // order by
+    const d = ['asc', 'desc'].includes(_GET(context.req.url, 'd')) ? _GET(context.req.url, 'd') : 'desc'
+
+    const ob = ['user_bannedby',
+                'user_banning',
+                'user_comments',
+                'user_dislikes',
+                'user_followers',
+                'user_friends',
+                'user_likes',
+                'user_name',
+                'user_posts',
+                'user_registered'].includes(_GET(context.req.url, 'ob')) ? _GET(context.req.url, 'ob') : 'user_comments' // order by
+
     let offset = intval(_GET(context.req.url, 'offset')) || 0
     let message = ''
     let users
