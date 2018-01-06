@@ -561,14 +561,12 @@ function getimagesize(file) {
 
             identify.stderr.on('data', data => { // remove the file because something is wrong with it
                 if (FS.existsSync(file)) FS.unlinkSync(file)
-                console.error(data)
                 reject('identify failed on image')
             })
 
             identify.on('close', code => {
                 if (code > 0) { // if code is non-zero, remove the file because something is wrong with it
-                    FS.unlinkSync(file)
-                    console.trace()
+                    if (FS.existsSync(file)) FS.unlinkSync(file)
                     reject(`non-zero code from identify: ${code}`)
                 }
             })
