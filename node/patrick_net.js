@@ -1206,7 +1206,7 @@ async function after_accept_comment(comment, context) {
                  where user_id = ?`, [context.ip, comment.comment_author, comment.comment_author], context.db)
 
     if (!comment.comment_approved) { // email moderator if comment not approved
-        mail(CONF.admin_email, 'new comment needs review',
+        //mail(CONF.admin_email, 'new comment needs review',
         `${comment.comment_content}<p><a href='https://${CONF.domain}/comment_moderation'>moderation page</a>`)
     }
     else comment_mail(comment, context.db)
