@@ -875,10 +875,10 @@ async function post_comment_list(post, context) {
     let sql = `select sql_calc_found_rows * from comments
                left join users on comment_author=user_id
                left join commentvotes on (comment_id = commentvote_comment_id and commentvote_user_id = ?)
-               where comment_post_id = ? and (comment_approved = 1 or user_name='${ip2anon(context.ip)}')
+               where comment_post_id = ? and (comment_approved = 1 or user_name='${ip2anon(context.ip)}' or comment_author = ?)
                order by comment_date limit 40 offset ?`
 
-    let comments = await query(sql, [user_id, post.post_id, offset], context.db)
+    let comments = await query(sql, [user_id, post.post_id, user_id, offset], context.db)
     let found_rows = comments.found_rows
 
     let topic_moderator = await get_moderator(post.post_topic, context.db)
