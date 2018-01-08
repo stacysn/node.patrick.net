@@ -3260,7 +3260,7 @@ function brag(header_data) {
 
     return `${ header_data.comments.number_format() } comments by
             <a href='/users'>${ header_data.tot.number_format() } users</a>;
-            ${ online_list } and ${ header_data.lurkers } lurker${ header_data.lurkers === 1 ? '' : 's'} online now`
+            ${ online_list } ${online_list.length ? 'and' : ''} ${ header_data.lurkers } lurker${ header_data.lurkers === 1 ? '' : 's'} online now`
 }
 
 function registerform() {
