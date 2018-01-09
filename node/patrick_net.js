@@ -1636,7 +1636,7 @@ routes.GET.approve_comment = async function(context) {
     const topic = await comment_id2topic(comment_id, context)
 
     if (!context.current_user.is_moderator_of.includes(topic) &&
-        !context.current_user.user_id === 1)           return send_html(200, '', context)
+        !context.current_user.user_level === 4) return send_html(200, '', context)
 
     await query('update comments set comment_approved=1, comment_date=now() where comment_id=?', [comment_id], context.db)
 
@@ -1877,7 +1877,7 @@ routes.GET.delete_post = async function(context) { // delete a whole post, but n
         if (!post) return die('no such post', context)
 
         // if it's their own post or if it's admin
-        if ((context.current_user.user_id === post.post_author) || (context.current_user.user_id === 1)) {
+        if ((context.current_user.user_id === post.post_author) || (context.current_user.user_level === 4)) {
 
             let results = await query(`delete from posts where post_id = ?`, [post_id], context.db)
 
@@ -2935,7 +2935,7 @@ function contextual_link(c, current_user, url, ip) { // a link in the comment he
                 >approve</a>`
     }
 
-    if (current_user.user_pbias >= 3 || current_user.user_id === 1) {
+    if (current_user.user_pbias >= 3 || current_user.user_level === 4) {
         return `<a href='#'
                    title='attacks person, not point'
                    onclick="if (confirm('Really mark as uncivil?')) {
@@ -3109,7 +3109,7 @@ function render_ban_link(user, topic, current_user, ip) {
 
     if (ban_message) return ban_message
 
-    return (current_user.user_id === 1 || current_user.is_moderator_of.includes(topic)) ?
+    return (current_user.user_level === 4 || current_user.is_moderator_of.includes(topic)) ?
         `<a href='#'
             id='${id}'
             onclick="if (confirm('Ban ${user.user_name} from ${topic} for a day?')) {
@@ -3173,7 +3173,7 @@ function topic_nav(post) {
 function admin_user(u, current_user, ip) { // links to administer a user
 
     if (!current_user)                              return ``
-    if (current_user && current_user.user_id !== 1) return ``
+    if (current_user && current_user.user_level !== 4) return ``
 
     return `<hr>
         <a href='https://whatismyipaddress.com/ip/${u.user_last_comment_ip}'>geolocate</a> &nbsp;
@@ -3279,9 +3279,9 @@ function get_del_link(c, current_user, ip) {
 
     if (!current_user) return ''
 
-    return (current_user.user_id === c.comment_author ||
-            current_user.user_id === 1                ||
-            current_user.user_id === c.topic_moderator) ?
+    return (current_user.user_id    === c.comment_author ||
+            current_user.user_level === 4                ||
+            current_user.user_id    === c.topic_moderator) ?
         `<a href='#' onclick="if (confirm('Really delete?')) { $.get('/delete_comment?comment_id=${ c.comment_id }&post_id=${ c.comment_post_id }&${create_nonce_parms(ip)}', function() { $('#comment-${ c.comment_id }').remove() }); return false}">delete</a>` : ''
 }
 
@@ -3466,7 +3466,7 @@ function get_nuke_link(c, current_user, ip, req) {
     if (!current_user) return ''
     if (!req.url)      return ''
 
-    return (URL.parse(req.url).pathname.match(/comment_moderation/) && (current_user.user_id === 1)) ?
+    return (URL.parse(req.url).pathname.match(/comment_moderation/) && (current_user.user_level === 4)) ?
         `<a href='/nuke?nuke_id=${c.comment_author}&${create_nonce_parms(ip)}' onClick='return confirm("Really?")' >nuke</a>` : ''
 }
 
