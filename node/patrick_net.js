@@ -3649,7 +3649,6 @@ function post_list(posts, context) { // format a list of posts from whatever sou
 
 function post_summary(post, current_user, moderation, nonce_parms) { // format item in list of posts according to user and whether post is in moderation
     const unread        = render_unread_comments_icon(post, current_user) // last view by this user, from left join
-    const hashlink      = post.post_topic ? `in <a href='/topic/${post.post_topic}'>#${post.post_topic}</a>` : ''
     const imgdiv        = (current_user && current_user.user_hide_post_list_photos) ? '' : get_first_image(post)
     const arrowbox_html = arrowbox(post)
     const firstwords    = `<font size='-1'>${first_words(post.post_content, 30)}</font>`
@@ -3670,7 +3669,7 @@ function post_summary(post, current_user, moderation, nonce_parms) { // format i
     const date = render_date(post.post_date, utz, 'D MMM YYYY')
 
     return `<div class='post' id='post-${post.post_id}' >${arrowbox_html}${imgdiv}${link}
-    <br>by <a href='/user/${ post.user_name }'>${ post.user_name }</a> ${hashlink} on ${date}&nbsp;
+    <br>by <a href='/user/${ post.user_name }'>${ post.user_name }</a> on ${date}&nbsp;
     ${latest} ${unread} ${approval_link} ${delete_link} ${nuke_link}<br>${firstwords}</div>`
 }
 
