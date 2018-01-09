@@ -3590,27 +3590,15 @@ function post_form(p, post) { // used both for composing new posts and for editi
 
     return `
     <h1>${fn}</h1>
-    <form action='/accept_post' method='post' name='postform' onsubmit='return checkforhash()' >
+    <form action='/accept_post' method='post' name='postform' >
         <div class='form-group'><input name='post_title' type='text' class='form-control' placeholder='title' id='title' value='${title}' ></div>
-        <textarea class='form-control' name='post_content' rows='12' id='ta' name='ta'
-            placeholder='please include one of these topic hashtags at the beginning of a line to classify your post:
-#cheesecake #crime #economics #environment #housing #humor #investing #misc #politics #religion #scitech ' >${content}</textarea><p>
+        <textarea class='form-control' name='post_content' rows='12' id='ta' name='ta' >${content}</textarea><p>
         ${post_id}
         <button type='submit' id='submit' class='btn btn-success btn-sm' >submit</button>
     </form>
 
     <script>
     document.getElementById('title').focus();
-
-    function checkforhash() {
-        let text = document.forms['postform']['ta'].value;
-
-        if (!text.match(/#\\w+/gm)) {
-            alert('Please include a topic hashtag like #investing or #politics at the beginning of a line.');
-            return false;
-        }
-        else return true;
-    }
     </script>
     ${render_upload_form()}`
 }
