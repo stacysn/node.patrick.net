@@ -361,7 +361,6 @@ String.prototype.linkify = function() {
     let blockquotePattern = /""(.+?)""/gim
     let boldPattern       = / \*(.+?)\*/gim
     let emailpostPattern  = /([\w.]+@[a-zA-Z_-]+?(?:\.[a-zA-Z]{2,6})+)\b(?!["<])/gim
-    let hashtagPattern    = /^#(\w+)/gim
     let imagePattern      = /((https?:\/\/[\w$%&~\/.\-;:=,?@\[\]+]*?)\.(jpg|jpeg|gif|gifv|png|bmp))(\s|$)/gim
     let ipadPattern       = /Sent from my iPad/gim
     let italicPattern     = / _(.+?)_/gim
@@ -377,7 +376,6 @@ String.prototype.linkify = function() {
         .replace(ipadPattern,      '')
         .replace(vimeoPattern,     '<iframe src="//player.vimeo.com/video/$3" width="500" height="375" frameborder="0" webkitallowfullscreen mozallowfullscreen allowfullscreen></iframe>')
         .replace(youtubePattern,   '<iframe width="500" height="375" src="//www.youtube.com/embed/$2$3" allowfullscreen></iframe>')
-        .replace(hashtagPattern,   '<a href="/topic/$1">#$1</a>')
         .replace(imagePattern,     '<img src="$1"> ')
         .replace(urlPattern,       '<a href="$1">$1</a> ')
         .replace(pseudoUrlPattern, '$1<a href="http://$2">$2</a> ')
@@ -2835,14 +2833,9 @@ function header(context, topic) {
     const header_data        = context.header_data
     const login_failed_email = context.login_failed_email
 
-    var hashtag = ''
-
-    // display hashtag in title if we are on a post in that topic, or in the index for that topic
-    if (topic) hashtag = `<a href='/topic/${topic}'><h1 class='sitename' >#${topic}</h1></a>`
-
     return `<div class='comment' id='header' >
         <div style='float:right' >${ icon_or_loginprompt(current_user, login_failed_email) }</div>
-        <a href='/' ><h1 class='sitename' title='back to home page' >${ CONF.domain }</h1></a> &nbsp; ${hashtag}
+        <a href='/' ><h1 class='sitename' title='back to home page' >${ CONF.domain }</h1></a>
         <br>
         ${ CONF.description + '<br>' + brag(header_data) + '</font><br>' + new_post_button() }
         </div>`
