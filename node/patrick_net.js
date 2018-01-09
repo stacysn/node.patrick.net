@@ -2844,7 +2844,7 @@ function header(context, topic) {
         <div style='float:right' >${ icon_or_loginprompt(current_user, login_failed_email) }</div>
         <a href='/' ><h1 class='sitename' title='back to home page' >${ CONF.domain }</h1></a> &nbsp; ${hashtag}
         <br>
-        ${ top_topics() + '<br>' + brag(header_data) + '</font><br>' + new_post_button() }
+        ${ CONF.description + '<br>' + brag(header_data) + '</font><br>' + new_post_button() }
         </div>`
 }
 
