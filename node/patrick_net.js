@@ -972,7 +972,7 @@ async function find_or_create_anon(db, ip) { // find the user_id derived from th
     user_id = await get_var('select user_id from users where user_name = ?', [ip2anon(ip)], db)
 
     if (!user_id) {
-        var results = await query('insert into users (user_name, user_registered) values (?, now())', [ip2anon(ip)], db)
+        var results = await query('insert into users (user_name, user_registered, user_level) values (?, now(), 1)', [ip2anon(ip)], db) // anons are level 1 users
         var user_id = results.insertId
         if (!user_id) throw { code : 500, message : `failed to create anon user ${ip2anon(ip)}`, }
     }
@@ -1938,7 +1938,7 @@ routes.GET.logout = async function(context) {
 
 routes.GET.new_post = async function(context) {
 
-    if (!context.current_user || !context.current_user.user_id) return die('anonymous users may not create posts', context)
+    if (!context.current_user || !context.current_user.user_id) return die('anonymous users may not create posts, please register', context)
 
     // if the user is logged in and has posted CONF.max_posts times today, don't let them post more
     var posts_today = await get_var('select count(*) as c from posts where post_author=? and post_date >= curdate()',
