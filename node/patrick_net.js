@@ -1634,14 +1634,10 @@ routes.POST.accept_post = async function(context) { // insert new post or update
 routes.GET.approve_comment = async function(context) {
 
     const comment_id = intval(_GET(context.req.url, 'comment_id'))
-    if (!comment_id)                                   return send_html(200, '', context)
-    if (!context.current_user)                         return send_html(200, '', context)
-    if (!valid_nonce(context))                         return send_html(200, '', context)
-
-    const topic = await comment_id2topic(comment_id, context)
-
-    if (!context.current_user.is_moderator_of.includes(topic) &&
-        !context.current_user.user_level === 4) return send_html(200, '', context)
+    if (!comment_id)                         return send_html(200, '', context)
+    if (!valid_nonce(context))               return send_html(200, '', context)
+    if (!context.current_user)               return send_html(200, '', context)
+    if (context.current_user.user_level < 3) return send_html(200, '', context) // must be moderator or admin to approve comment
 
     await query('update comments set comment_approved=1, comment_date=now() where comment_id=?', [comment_id], context.db)
 
@@ -2902,7 +2898,7 @@ function contextual_link(c, current_user, url, ip) { // a link in the comment he
         return retval
     }
     
-    if (URL.parse(url).pathname.match(/comment_moderation/) && (current_user.user_level === 4)) {
+    if (URL.parse(url).pathname.match(/comment_moderation/) && (current_user.user_level >= 3)) { // moderators can approve comments
         return `<a href='#'
                    onclick="$.get('/approve_comment?comment_id=${ c.comment_id }&${create_nonce_parms(ip)}',
                             function() { $('#comment-${ c.comment_id }').remove() }); return false"
