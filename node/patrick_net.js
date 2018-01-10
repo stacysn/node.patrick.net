@@ -1399,6 +1399,9 @@ async function check_topic(p, context) { // if we never set prev|next (null) or 
 async function penalize(comment_author, context) { // decrement user_pbias
     if (context.current_user.user_id === comment_author) return // you can't penalize yourself
     await query(`update users set user_pbias=user_pbias-1 where user_id=?`, [comment_author], context.db)
+
+    // if their pbias is below zero, make sure their user_level is set to 1 so that all their comments will go into moderation
+    await query(`update users set user_level=1 where user_id=? and user_pbias < 0`, [comment_author], context.db)
 }
 
 async function check_post(p, context) {
