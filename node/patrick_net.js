@@ -1396,6 +1396,11 @@ async function check_topic(p, context) { // if we never set prev|next (null) or 
        ) [p.post_prev_in_topic, p.post_next_in_topic] = await update_prev_next(p.post_topic, p.post_id, context.db)
 }
 
+async function penalize(comment_author, context) { // decrement user_pbias
+    if (context.current_user.user_id === comment_author) return // you can't penalize yourself
+    await query(`update users set user_pbias=user_pbias-1 where user_id=?`, [comment_author], context.db)
+}
+
 async function check_post(p, context) {
 
     if (!p) {
@@ -1825,6 +1830,7 @@ routes.GET.delete_comment = async function(context) { // delete a comment
                 [comment_author, comment_author], context.db)
 
     await reset_latest_comment(post_id, context.db)
+    await penalize(comment_author, context)
 
     // notify admin if comment deleted by a moderator (a level 3 user)
     if (3 === context.current_user.user_level) {
