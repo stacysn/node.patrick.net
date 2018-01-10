@@ -1842,17 +1842,18 @@ routes.GET.comments = async function(context) { // show a list of comments by us
 
 routes.GET.delete_comment = async function(context) { // delete a comment
 
-    let comment_id = intval(_GET(context.req.url, 'comment_id'))
-    let post_id    = intval(_GET(context.req.url, 'post_id'))
+    const comment_id = intval(_GET(context.req.url, 'comment_id'))
+    const post_id    = intval(_GET(context.req.url, 'post_id'))
 
     if (!context.current_user)    return send_html(200, '', context)
     if (!valid_nonce(context))    return send_html(200, '', context)
     if (!(comment_id && post_id)) return send_html(200, '', context)
 
-    var topic = (await get_post(post_id, context.db)).post_topic
-    var topic_moderator = intval(await get_moderator(topic, context.db))
+    const topic = (await get_post(post_id, context.db)).post_topic
+    const topic_moderator = intval(await get_moderator(topic, context.db))
 
-    var comment_author = await get_var('select comment_author from comments where comment_id=?', [comment_id], context.db)
+    const comment        = await get_row('select * from comments where comment_id=?', [comment_id], context.db)
+    const comment_author = comment.comment_autor
 
     await query(`delete from comments where comment_id = ? and (comment_author = ? or 1 = ? or ${topic_moderator}=?)`,
                 [comment_id, context.current_user.user_id, context.current_user.user_id, context.current_user.user_id], context.db)
@@ -1861,6 +1862,13 @@ routes.GET.delete_comment = async function(context) { // delete a comment
                 [comment_author, comment_author], context.db)
 
     await reset_latest_comment(post_id, context.db)
+
+    // notify admin if comment deleted by a moderator (a level 3 user)
+    if (3 === context.current_user.user_level) {
+        mail(CONF.admin_email,
+             `comment deleted by ${context.current_user.user_name}`,
+             `${comment.comment_author} said: ${comment.comment_content}`)
+    }
 
     send_html(200, '', context)
 }
