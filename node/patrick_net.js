@@ -2049,6 +2049,8 @@ routes.GET.post = async function(context) { // show a single post and its commen
     p.watchers   = await get_var(`select count(*) as c from postviews where postview_post_id=? and postview_want_email=1`, [post_id], context.db)
     p.post_views++ // increment here for display and in db on next line as record
     await query(`update posts set post_views = ? where post_id=?`, [p.post_views, post_id], context.db)
+    const prev = await get_var(`select max(post_id) from posts where post_id < ?`, [post_id], context.db)
+    const next = await get_var(`select min(post_id) from posts where post_id > ?`, [post_id], context.db)
 
     if (current_user_id) await update_postview(p, context)
 
@@ -2057,7 +2059,7 @@ routes.GET.post = async function(context) { // show a single post and its commen
         head(CONF.stylesheet, CONF.description, p ? p.post_title : CONF.domain),
         header(context),
         midpage(
-            prev_next(p),
+            prev_next(prev, next),
             post(p, context.ip, context.current_user),
             comment_pagination(comments, context.req.url),
             comment_list(comments, context),
@@ -2807,12 +2809,12 @@ function render_upload_form() {
     <iframe id='upload_target' name='upload_target' src='' style='display: none;' ></iframe>` // for uploading a bit of js to insert the img link
 }
 
-function prev_next(post) {
+function prev_next(prev, next) {
     if (post) {
-        let prev_link = post.post_prev_in_topic ? `&laquo; <a href='/post/${post.post_prev_in_topic}'>prev</a>  &nbsp;` : ''
-        let next_link = post.post_next_in_topic ? `&nbsp;  <a href='/post/${post.post_next_in_topic}'>next</a> &raquo;` : ''
+        let prev_link = prev ? `&laquo; <a href='/post/${prev}'>prev</a>  &nbsp;` : ''
+        let next_link = next ? `&nbsp;  <a href='/post/${next}'>next</a> &raquo;` : ''
 
-        return `<b>${prev_link} ${next_link}</b>`
+        return `<b>${prev_link} <a href='/random' title='take me to a random post' >random</a> ${next_link}</b>`
     }
     else return ``
 }
