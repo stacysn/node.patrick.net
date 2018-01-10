@@ -2057,7 +2057,7 @@ routes.GET.post = async function(context) { // show a single post and its commen
         head(CONF.stylesheet, CONF.description, p ? p.post_title : CONF.domain),
         header(context),
         midpage(
-            nav(p),
+            prev_next(p),
             post(p, context.ip, context.current_user),
             comment_pagination(comments, context.req.url),
             comment_list(comments, context),
@@ -2460,16 +2460,13 @@ function footer() {
     return `
     <div id='footer' >
         <center>
+            <form method='get' action='/search' ><input name='s' type='text' placeholder='search...' size='20' ></form>
+            <br>
             <a href='/users'>users</a> &nbsp;
             <a href='/about'>about</a> &nbsp;
-            <a href='/post/1302130/2017-01-28-patnet-improvement-suggestions'>suggestions</a> &nbsp;
-            <a href='https://github.com/killelea/node.${CONF.domain}'>source code</a> &nbsp;
             <a href='mailto:${ CONF.admin_email }' >contact</a> &nbsp;
-            <br>
             <a href='/best'>best comments</a> &nbsp;
             <a href='/old?years_ago=1'>old posts by year</a> &nbsp;
-            <br>
-            <form method='get' action='/search' ><input name='s' type='text' placeholder='search...' size='20' ></form>
             <p>
         </center>
         ${nav()}
@@ -2477,10 +2474,12 @@ function footer() {
     </div>`
 }
 
-function nav() {
+function nav() { // navigation widget fixed to lower right corner of screen; really useful on mobile
     return `
     <div class='fixed' id='nav' >
-        <a href='#' title='top of page' >top</a> &nbsp; <a href='#footer' title='bottom of page' >bottom</a> &nbsp; <a href='/' title='home page' >home</a>
+        <a href='#'       title='top of page' >top</a> &nbsp;
+        <a href='#footer' title='bottom of page' >bottom</a> &nbsp;
+        <a href='/'       title='home page' >home</a>
     </div>`
 }
 
@@ -2512,7 +2511,7 @@ function header(context) {
         <div style='float:right' >${ icon_or_loginprompt(current_user, login_failed_email) }</div>
         <a href='/' ><h1 class='sitename' title='back to home page' >${ CONF.domain }</h1></a>
         <br>
-        ${ CONF.description + '<br>' + brag(header_data) + '</font><br>' + new_post_button() }
+        <a href='/post/${ CONF.about_post_id }'>${ CONF.description }</a><br>${ brag(header_data) }</font><br>${ new_post_button() }
         </div>`
 }
 
@@ -2808,7 +2807,7 @@ function render_upload_form() {
     <iframe id='upload_target' name='upload_target' src='' style='display: none;' ></iframe>` // for uploading a bit of js to insert the img link
 }
 
-function nav(post) {
+function prev_next(post) {
     if (post) {
         let prev_link = post.post_prev_in_topic ? `&laquo; <a href='/post/${post.post_prev_in_topic}'>prev</a>  &nbsp;` : ''
         let next_link = post.post_next_in_topic ? `&nbsp;  <a href='/post/${post.post_next_in_topic}'>next</a> &raquo;` : ''
