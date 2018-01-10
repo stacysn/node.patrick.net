@@ -1577,12 +1577,8 @@ routes.POST.accept_edited_comment = async function(context) { // update old comm
 
     // now select the inserted row so that we pick up the comment_post_id
     let comment = await get_row('select * from comments where comment_id = ?', [comment_id], context.db)
-
-    if (comment.comment_adhom_when) redirect(`/comment_jail#comment-${comment_id}`, context)
-    else {
-        let offset = await cid2offset(comment.comment_post_id, comment_id, context.db)
-        redirect(`/post/${comment.comment_post_id}?offset=${offset}#comment-${comment_id}`, context)
-    }
+    let offset  = await cid2offset(comment.comment_post_id, comment_id, context.db)
+    redirect(`/post/${comment.comment_post_id}?offset=${offset}#comment-${comment_id}`, context)
 }
 
 routes.POST.accept_post = async function(context) { // insert new post or update old post
@@ -1733,41 +1729,6 @@ routes.GET.best = async function(context) {
         header(context),
         midpage(
             m,
-            comment_list(comments, context)
-        )
-    )
-
-    return send_html(200, content, context)
-}
-
-routes.GET.comment_jail = async function(context) { // no pagination, just most recent 80
-
-    // comments not freed in 30 days will be deleted
-    await query(`delete from comments where comment_adhom_when < date_sub(now(), interval 30 day)`, [], context.db)
-
-    await query(`create temporary table tmp
-                 select sql_calc_found_rows * from comments
-                 left join users on user_id=comment_author
-                 where comment_adhom_when is not null order by comment_date desc`, [], context.db)
-
-    await query(`alter table tmp add column reporter_name varchar(80)`, [], context.db)
-
-    await query(`update tmp, users set tmp.reporter_name=users.user_name where tmp.comment_adhom_reporter=users.user_id`, [], context.db)
-
-    let comments = await query(`select sql_calc_found_rows * from tmp`, [], context.db)
-
-    await query(`drop table if exists tmp`, [], context.db)
-
-    let offset = 0
-    comments = comments.map(comment => { comment.row_number = ++offset; return comment })
-
-    let content = html(
-        render_query_times(context.res.start_time, context.db.queries),
-        head(CONF.stylesheet, CONF.description, context.post ? context.post.post_title : CONF.domain),
-        header(context),
-        midpage(
-            h1('Uncivil Comment Jail'),
-            'These comments were marked as uncivil. Admin will review them and liberate comments which do not deserve to be here. You can edit your comment here to make it more civil and get it out of jail. Comments not freed within 30 days will be deleted.',
             comment_list(comments, context)
         )
     )
@@ -2505,11 +2466,11 @@ routes.GET.uncivil = async function(context) { // move a comment to comment jail
     let comment_id = intval(_GET(context.req.url, 'c'))
 
     if (context.current_user && (context.current_user.user_pbias > 3) && valid_nonce(context) && comment_id) {
-        await query(`update comments set comment_adhom_reporter=?, comment_adhom_when=now() where comment_id = ?`,
+        await query(`update comments set comment_approved=0, comment_adhom_reporter=?, comment_adhom_when=now() where comment_id = ?`,
                     [context.current_user.user_id, comment_id], context.db)
     }
 
-    mail(CONF.admin_email, 'new comment in jail', `<a href='https://${CONF.domain}/comment_jail'>jail page</a>`)
+    mail(CONF.admin_email, 'comment marked uncivil', `<a href='https://${CONF.domain}/comment_moderation'>moderation page</a>`)
 
     send_html(200, '', context) // blank response in all cases
 }
@@ -2765,7 +2726,6 @@ function footer() {
             <br>
             <a href='/topics'>topics</a> &nbsp;
             <a href='/best'>best comments</a> &nbsp;
-            <a href='/comment_jail'>comment jail</a> &nbsp;
             <a href='/old?years_ago=1'>old posts by year</a> &nbsp;
             <br>
             <form method='get' action='/search' ><input name='s' type='text' placeholder='search...' size='20' ></form>
@@ -2905,9 +2865,6 @@ function format_comment(c, context, comments, offset) {
         var last = (c.row_number === comments.found_rows) ? `<span id='last'></span>` : ''
     else
         var last = ''
-
-    c.comment_content = (c.comment_adhom_when && !URL.parse(context.req.url).pathname.match(/jail/)) ?
-        `<a href='/comment_jail#comment-${c.comment_id}'>this comment has been jailed for incivility</a>` : c.comment_content
 
     const links = comment_links(c, context, offset)
 
