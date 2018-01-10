@@ -211,10 +211,7 @@ async function get_user(context) { // update context with whether they are logge
             [pairs[CONF.usercookie], pairs[CONF.pwcookie]], context.db)
 
         if (current_user && current_user.user_id) {
-            current_user.is_moderator_of = (await query('select topic from topics where topic_moderator = ?',
-                                                        [current_user.user_id], context.db)).map(row => row.topic)
             current_user = await set_relations(current_user, context)
-            current_user = await set_topics(current_user, context)
 
             // update users currently online for display in header
             await query(`delete from onlines where online_last_view < date_sub(now(), interval 5 minute)`, null, context.db)
@@ -250,16 +247,6 @@ async function set_relations(current_user, context) { // update current_user wit
         copy.relationships = [] // now renumber results array using user_ids to make later access easy
 
         for (var i = 0; i < results.length; ++i) copy.relationships[results[i].rel_other_id] = results[i]
-
-        return copy
-    }
-}
-
-async function set_topics(current_user, context) { // update current_user object with topics he follows
-    if (current_user) {
-        let copy = JSON.parse(JSON.stringify(current_user)) // we never modify our parameters
-        var results = await query(`select topicwatch_name from topicwatches where topicwatch_user_id=?`, [copy.user_id], context.db)
-        copy.topics = results.map(row => row.topicwatch_name)
 
         return copy
     }
@@ -631,12 +618,6 @@ function create_nonce_parms(ip) {
     return `ts=${ts}&nonce=${nonce}`
 }
 
-function is_user_banned(bans, topic, current_user) {
-    let ban = bans.filter(item => (item.topic === topic))[0] // there should be only one per topic
-    let utz = current_user ? current_user.user_timezone : 'America/Los_Angeles'
-    return ban ? `banned from ${ban.topic} until ${render_date(ban.until, utz)}` : ''
-}
-
 function slugify(s) { // url-safe pretty chars only; not used for navigation, only for seo and humans
     return s.replace(/\W+/g,'-').toLowerCase().replace(/-+/,'-').replace(/^-+|-+$/,'')
 }
@@ -709,7 +690,7 @@ function clean_upload_path(path, filename, current_user) {
     return filename
 }
 
-function which_page(page, order) { // tell homepage, search, userpage, topic which page we are on
+function which_page(page, order) { // tell homepage, search, userpage which page we are on
     let curpage = Math.floor(page) ? Math.floor(page) : 1
     let slimit  = (curpage - 1) * 20 + ', 20' // sql limit for pagination of results.
     let orders = { // maps order parm to a posts table column name to order by
@@ -739,26 +720,6 @@ async function get_post(post_id, db, user_id) {
                                        [user_id, user_id, post_id], db)
     
     return await get_row(`select * from posts left join users on user_id=post_author where post_id = ?`, [post_id], db)
-}
-
-async function user_topic_bans(user_id, db) {
-    return await query(`select topicwatch_name as topic, topicwatch_banned_until as until from topicwatches
-                        where topicwatch_user_id=? and topicwatch_banned_until > now()`, [user_id], db)
-}
-
-async function update_prev_next(post_topic, post_id, db) { // slow, so do this only when post is changed or the prev or next is null
-
-    if (!post_topic || !post_id) return
-
-    let prev = intval(await get_var(`select max(post_id) as prev from posts
-                                     where post_topic=? and post_id < ? and post_approved=1 limit 1`, [post_topic, post_id], db))
-
-    let next = intval(await get_var(`select min(post_id) as next from posts
-                                     where post_topic=? and post_id > ? and post_approved=1 limit 1`, [post_topic, post_id], db))
-
-    await query(`update posts set post_prev_in_topic=?, post_next_in_topic=? where post_id=?`, [prev, next, post_id], db)
-
-    return [prev, next]
 }
 
 async function too_fast(ip, db) { // rate limit comment insertion by user's ip address
@@ -826,20 +787,6 @@ async function reset_latest_comment(post_id, db) { // reset post table data abou
     }
 }
 
-async function repair_referer(req, db) { // look at referer to a bad post; if it exist, call update_prev_next() on that
-
-    if (!req.headers.referer) return
-
-    var matches
-    if (matches = req.headers.referer.match(/\/post\/(\d+)/m)) {
-        var referring_post_id = intval(matches[1])
-
-        var post = await get_post(referring_post_id, db)
-
-        if (post && post.post_topic) await update_prev_next(post.post_topic, post.post_id, db)
-    }
-}
-
 function redirect(redirect_to, context, code=303) { // put the code at the end; then if it isn't there we get a default
 
     var message = `Redirecting to ${ redirect_to }`
@@ -851,11 +798,6 @@ function redirect(redirect_to, context, code=303) { // put the code at the end; 
     }
 
     send(code, headers, message, context)
-}
-
-async function get_moderator(topic, db) {
-    topic = topic.replace(/\W/, '') // topic names contain only \w chars
-    return await get_var('select topic_moderator from topics where topic=?', [topic], db)
 }
 
 function get_offset(total, url) {
@@ -880,13 +822,9 @@ async function post_comment_list(post, context) {
     let comments = await query(sql, [user_id, post.post_id, user_id, offset], context.db)
     let found_rows = comments.found_rows
 
-    let topic_moderator = await get_moderator(post.post_topic, context.db)
-
     // add in the comment row number to the result here for easier pagination info; would be better to do in mysql, but how?
-    // also add in topic_moderator so we can display del link
     comments = comments.map(comment => {
         comment.row_number = ++offset
-        comment.topic_moderator = topic_moderator
         return comment
     })
 
@@ -951,38 +889,7 @@ async function post_followers(post, db, already_mailed) { // now do user followe
     return already_mailed
 }
 
-async function topic_followers(post, db, already_mailed) {
-
-    // now do topic follower emails
-    if (post.post_topic) {
-        let rows = []
-        if (rows = await query(`select distinct topicwatch_user_id from topicwatches where topicwatch_name = ?`, [post.post_topic], db)) {
-            rows.forEach(async function(row) {
-
-                if (already_mailed[row.topicwatch_user_id]) return
-
-                let u = await get_userrow(row.topicwatch_user_id, db)
-
-                if (!u) return
-
-                let subject = `New ${CONF.domain} post in ${post.post_topic}`
-
-                let notify_message  = `<html><body><head><base href="${BASEURL}" ></head>
-                New post in ${post.post_topic} by ${post.user_name}, <a href='${BASEURL}${post2path(post)}'>${post.post_title}</a>:<p>
-                <p>${post.post_content}<p>\r\n\r\n
-                <p><a href='${BASEURL}${post2path(post)}'>Reply</a><p>
-                <font size='-1'>Stop following <a href='${BASEURL}/topic/${post.post_topic}'>${post.post_topic}</a></font><br>`
-
-                mail(u.user_email, subject, notify_message)
-                already_mailed[u.user_id] ? already_mailed[u.user_id]++ : already_mailed[u.user_id] = 1
-            })
-        }
-    }
-
-    return already_mailed
-}
-
-async function post_mail(p, db) { // reasons to send out post emails: @user, user following post author, user following post topic
+async function post_mail(p, db) { // reasons to send out post emails: @user, user following post author
 
     let post = await get_row(`select * from posts, users where post_id=? and post_author=user_id`, [p], db) // p is just the post_id
 
@@ -990,7 +897,6 @@ async function post_mail(p, db) { // reasons to send out post emails: @user, use
 
     already_mailed = already_mailed.concat(post_summons(   post, db, already_mailed.slice())) // slice() so we don't modify array in fn, would be impure
     already_mailed = already_mailed.concat(post_followers( post, db, already_mailed.slice()))
-    already_mailed = already_mailed.concat(topic_followers(post, db, already_mailed.slice()))
 }
 
 async function login(email, password, context) {
@@ -1172,11 +1078,6 @@ async function allow_comment(post_data, context) {
     if (await too_fast(context.ip, context.db))      return { err: true, content: popup('You are posting comments too quickly') }
     if (await already_said_that(post_data, context)) return { err: true, content: popup('you already said that') }
 
-    let bans = await user_topic_bans(post_data.comment_author, context.db)
-    let topic = (await get_post(post_data.comment_post_id, context.db)).post_topic
-    let message = is_user_banned(bans, topic, context.current_user)
-    if (message) return { err: true, content: popup(message) }
-
     return { err: false, content: '' }
 }
 
@@ -1219,22 +1120,6 @@ async function hit_daily_post_limit(context) {
         [context.current_user.user_id], context.db)
 
     return (posts_today >= CONF.max_posts || posts_today > whole_weeks_registered) ? true : false
-}
-
-function find_topic(post_content) {
-
-    let matches
-
-    if      (matches = post_content.match(/^#(\w+)/m)) return matches[1] // first tag starting a line becomes topic
-    else if (matches = post_content.match(/>#(\w+)/m)) return matches[1] // else existing, linked topic
-    else                                               return 'misc'
-}
-
-async function comment_id2topic(comment_id, context) {
-   const cid = intval(comment_id)
-   if (!cid) return ''
-
-   return await get_var('select post_topic from posts left join comments on post_id=comment_post_id where comment_id = ?', [cid], context.db)
 }
 
 async function like_comment(user_id, user_name, context) {
@@ -1335,11 +1220,8 @@ async function comments_to_moderate(context) {
 
     if (!context.current_user) return []
 
-    // if user is not superuser, then limit to comments in topics user is moderating
-    const topic_constraint = (context.current_user.user_id != 1) ?  `and post_topic in ('${context.current_user.is_moderator_of.join("','")}')` : ''
-
     return await query(`select * from comments left join users on user_id=comment_author left join posts on post_id=comment_post_id where
-                        (comment_approved = 0 or comment_approved is null) ${topic_constraint}`, [], context.db)
+                        (comment_approved = 0 or comment_approved is null)`, [], context.db)
 }
 
 async function dislike_comment(user_id, context) {
@@ -1388,33 +1270,12 @@ async function dislike_post(user_id, context) {
     return String(post_row.post_dislikes)
 }
 
-async function check_topic(p, context) { // if we never set prev|next (null) or did set it to 0 AND are here from a new post referer, then update
-    if ((null === p.post_prev_in_topic || null === p.post_next_in_topic) ||
-        ((0   === p.post_prev_in_topic || 0    === p.post_next_in_topic) &&
-            context.req.headers.referer &&
-            context.req.headers.referer.match(/post/))
-       ) [p.post_prev_in_topic, p.post_next_in_topic] = await update_prev_next(p.post_topic, p.post_id, context.db)
-}
-
 async function penalize(comment_author, context) { // decrement user_pbias
     if (context.current_user.user_id === comment_author) return // you can't penalize yourself
     await query(`update users set user_pbias=user_pbias-1 where user_id=?`, [comment_author], context.db)
 
     // if their pbias is below zero, make sure their user_level is set to 1 so that all their comments will go into moderation
     await query(`update users set user_level=1 where user_id=? and user_pbias < 0`, [comment_author], context.db)
-}
-
-async function check_post(p, context) {
-
-    if (!p) {
-        await repair_referer(context.req, context.db)
-        return 'No post with that id'
-    }
-
-    if (!p.post_approved) {
-        await repair_referer(context.req, context.db)
-        return 'That post is waiting for moderation'
-    }
 }
 
 async function update_postview(p, context) {
@@ -1596,11 +1457,8 @@ routes.POST.accept_post = async function(context) { // insert new post or update
 
     let post_data = await collect_post_data_and_trim(context)
 
-    post_data.post_topic    = find_topic(post_data.post_content)
     post_data.post_content  = strip_tags(post_data.post_content.linkify()) // remove all but a small set of allowed html tags
     post_data.post_approved = 1 // may need to be more restrictive if spammers start getting through
-
-    // get all valid topics in an array; if post topic is not in that array, reject, asking for one of the #elements in array
 
     var p = intval(post_data.post_id)
     if (p) { // editing old post, do not update post_modified time because it confuses users
@@ -1621,10 +1479,8 @@ routes.POST.accept_post = async function(context) { // insert new post or update
         }
         catch (e) { return die(e, context) }
 
-        post_mail(p, context.db) // reasons to send out post emails: @user, user following post author, user following post topic
+        post_mail(p, context.db) // reasons to send out post emails: @user, user following post author
     }
-
-    await update_prev_next(post_data.post_topic, p, context.db)
 
     const post_row = await get_post(p, context.db)
 
@@ -1683,31 +1539,6 @@ routes.GET.autowatch = async function(context) {
     return send_html(200, content, context)
 }
 
-routes.GET.ban_from_topic = async function(context) {
-
-    if (!valid_nonce(context)) return send_html(200, invalid_nonce_message(), context)
-
-    let user_id = intval(_GET(context.req.url, 'user_id'))
-    if (!user_id) return send_html(200, 'missing user_id', context)
-
-    let topic = _GET(context.req.url, 'topic')
-    if (!topic) return send_html(200, 'missing topic', context)
-    
-    topic = topic.replace(/\W/, '')
-
-    let topic_moderator = await get_moderator(topic, context.db)
-
-    if (context.current_user.user_id !== topic_moderator) return send_html(200, 'non-moderator may not ban', context)
-
-    await query(`insert into topicwatches (topicwatch_name, topicwatch_user_id,         topicwatch_banned_until)
-                                   values (              ?,                  ?, date_add(now(), interval 1 day))
-                 on duplicate key update topicwatch_banned_until=date_add(now(), interval 1 day)`, [topic, user_id], context.db)
-
-    let bans = await user_topic_bans(user_id, context.db)
-    
-    return send_html(200, is_user_banned(bans, topic, context.current_user), context)
-}
-
 routes.GET.best = async function(context) {
 
     if ('true' === _GET(context.req.url, 'all')) {
@@ -1745,8 +1576,8 @@ routes.GET.comment_moderation = async function(context) {
 
     const current_user = context.current_user
 
-    if (!current_user) return die('you must be logged in to moderate comments', context)
-    if (!current_user || !current_user.is_moderator_of || !current_user.is_moderator_of.length) return die('you are not moderator of any topic', context)
+    if (!current_user)               return die('you must be logged in to moderate comments', context)
+    if (current_user.user_level < 3) return die('you are not a moderator', context)
 
     let comments = await comments_to_moderate(context)
 
@@ -1815,11 +1646,9 @@ routes.GET.delete_comment = async function(context) { // delete a comment
     if (!context.current_user)    return send_html(200, '', context)
     if (!valid_nonce(context))    return send_html(200, '', context)
 
-    const topic           = (await get_post(post_id, context.db)).post_topic
-    const topic_moderator = intval(await get_moderator(topic, context.db))
-    const comment         = await get_row('select * from comments where comment_id=?', [comment_id], context.db)
-    const comment_author  = comment.comment_autor
-    const user_id         = context.current_user.user_id
+    const comment        = await get_row('select * from comments where comment_id=?', [comment_id], context.db)
+    const comment_author = comment.comment_autor
+    const user_id        = context.current_user.user_id
 
     if (!permissions.may_delete_comment(comment, context.current_user)) return send_html(200, '', context)
 
@@ -1854,11 +1683,6 @@ routes.GET.delete_post = async function(context) { // delete a whole post, but n
         if ((context.current_user.user_id === post.post_author) || (context.current_user.user_level === 4)) {
 
             let results = await query(`delete from posts where post_id = ?`, [post_id], context.db)
-
-            if (post.post_topic) {
-                await update_prev_next(post.post_topic, post.post_prev_in_topic, context.db)
-                await update_prev_next(post.post_topic, post.post_next_in_topic, context.db)
-            }
 
             return die(`${results.affectedRows} post deleted`, context)
         }
@@ -1942,29 +1766,6 @@ routes.GET.edit_profile = async function(context) {
     )
 
     send_html(200, content, context)
-}
-
-routes.GET.follow_topic = async function(context) { // get or turn off emails of posts in a topic; can be called as ajax or full page
-
-    let ajax  = intval(_GET(context.req.url, 'ajax'))
-    let topic = _GET(context.req.url, 'topic').replace(/\W/, '').toLowerCase()
-
-    if (!topic)                return ajax ? send_html(200, '', context) : die('topic missing', context)
-    if (!context.current_user) return ajax ? send_html(200, '', context) : die('must be logged in to follow or unfollow', context)
-    if (!valid_nonce(context)) return ajax ? send_html(200, '', context) : die(invalid_nonce_message(), context)
-
-    if (intval(_GET(context.req.url, 'undo'))) {
-
-        await query(`delete from topicwatches where topicwatch_name=? and topicwatch_user_id=?`,
-                    [topic, context.current_user.user_id], context.db)
-    }
-    else {
-        await query(`replace into topicwatches set topicwatch_start=now(), topicwatch_name=?, topicwatch_user_id=?`,
-                    [topic, context.current_user.user_id], context.db)
-    }
-
-    // either way, output follow button with right context and update this user's follow count
-    ajax ? send_html(200, follow_topic_button(topic, context.current_user, context.ip), context) : die('Follow status updated', context)
 }
 
 routes.GET.follow_user = async function(context) { // get or turn off emails of a user's new posts; can be called as ajax or full page
@@ -2241,9 +2042,8 @@ routes.GET.post = async function(context) { // show a single post and its commen
     }
 
     let p = await get_post(post_id, context.db, current_user_id)
-
-    let err = await check_post(p, context)
-    if (err) return die(err, context)
+    if (!p)               return die('No post with that id', context)
+    if (!p.post_approved) return die('That post is waiting for moderation', context)
 
     let comments = await post_comment_list(p, context) // pick up the comment list for this post
     p.watchers   = await get_var(`select count(*) as c from postviews where postview_post_id=? and postview_want_email=1`, [post_id], context.db)
@@ -2251,14 +2051,13 @@ routes.GET.post = async function(context) { // show a single post and its commen
     await query(`update posts set post_views = ? where post_id=?`, [p.post_views, post_id], context.db)
 
     if (current_user_id) await update_postview(p, context)
-    if (p.post_topic)    await check_topic(p, context)
 
     let content = html(
         render_query_times(context.res.start_time, context.db.queries),
         head(CONF.stylesheet, CONF.description, p ? p.post_title : CONF.domain),
-        header(context, p.post_topic),
+        header(context),
         midpage(
-            topic_nav(p),
+            nav(p),
             post(p, context.ip, context.current_user),
             comment_pagination(comments, context.req.url),
             comment_list(comments, context),
@@ -2406,66 +2205,6 @@ routes.GET.since = async function(context) { // given a post_id and epoch timest
     redirect(`${post2path(post)}?offset=${offset}#comment-${c}`, context)
 }
 
-routes.GET.topic = async function(context) {
-
-    let topic = segments(context.req.url)[2] // like /topic/housing
-    if (!topic) return die('no topic given', context)
-
-    let user_id = context.current_user ? context.current_user.user_id : 0
-    let [curpage, slimit, order, order_by] = which_page(_GET(context.req.url, 'page'), _GET(context.req.url, 'order'))
-    let posts = await query(`select sql_calc_found_rows * from posts
-                             left join postviews on postview_post_id=post_id and postview_user_id= ?
-                             left join postvotes on postvote_post_id=post_id and postvote_user_id= ?
-                             left join users on user_id=post_author
-                             where post_topic = ? and post_approved=1 ${order_by} limit ${slimit}`, [user_id, user_id, topic], context.db)
-    
-    var row = await get_row('select * from users, topics where topic=? and topic_moderator=user_id', [topic], context.db)
-
-    if (row) {
-        var moderator_announcement = `<br>Moderator is <a href='/user/${row.user_name}'>${row.user_name}</a>.
-            <a href='/post/${row.topic_about_post_id}' title='rules for #${topic}' >Read before posting.</a>`
-    }
-    else var moderator_announcement = `<br>#${topic} needs a moderator, write <a href='mailto:${ CONF.admin_email }' >${ CONF.admin_email }</a> if
-        you\'re interested`
-
-    let path = URL.parse(context.req.url).pathname // "pathNAME" is url path without ? parms, unlike "path"
-
-    let content = html(
-        render_query_times(context.res.start_time, context.db.queries),
-        head(CONF.stylesheet, CONF.description, context.post ? context.post.post_title : CONF.domain),
-        header(context, topic),
-        midpage(
-            h1('#' + topic),
-            follow_topic_button(topic, context.current_user, context.ip),
-            moderator_announcement,
-            tabs(order, `&topic=${topic}`, path),
-            post_list(posts, context),
-            post_pagination(posts.found_rows, curpage, `&topic=${topic}&order=${order}`, context.req.url),
-            topic_moderation(topic, context.current_user)
-        )
-    )
-
-    send_html(200, content, context)
-}
-
-routes.GET.topics = async function (context) {
-
-    let topics = await query(`select post_topic, count(*) as c from posts
-                              where length(post_topic) > 0 group by post_topic having c >=3 order by c desc`, null, context.db)
-
-    let content = html(
-        render_query_times(context.res.start_time, context.db.queries),
-        head(CONF.stylesheet, CONF.description, context.post ? context.post.post_title : CONF.domain),
-        header(context),
-        midpage(
-            h1('Topics'),
-            topic_list(topics)
-        )
-    )
-
-    send_html(200, content, context)
-}
-
 routes.GET.uncivil = async function(context) { // move a comment to comment jail
 
     let comment_id = intval(_GET(context.req.url, 'c'))
@@ -2575,8 +2314,6 @@ routes.GET.user = async function(context) {
                ${order_by} limit ${slimit}`
 
     let posts = await query(sql, [current_user_id, current_user_id, u.user_id], context.db)
-
-    u.bans = await user_topic_bans(u.user_id, context.db)
 
     let path = URL.parse(context.req.url).pathname // "pathNAME" is url path without ? parms, unlike "path"
 
@@ -2729,7 +2466,6 @@ function footer() {
             <a href='https://github.com/killelea/node.${CONF.domain}'>source code</a> &nbsp;
             <a href='mailto:${ CONF.admin_email }' >contact</a> &nbsp;
             <br>
-            <a href='/topics'>topics</a> &nbsp;
             <a href='/best'>best comments</a> &nbsp;
             <a href='/old?years_ago=1'>old posts by year</a> &nbsp;
             <br>
@@ -2766,41 +2502,7 @@ function like_dislike() {
     </script>`
 }
 
-function follow_topic_button(t, current_user, ip) { // t is the topic to follow, a \w+ string
-
-    let b = `<button type='button' class='btn btn-default btn-xs' title='get emails of new posts in ${t}' >follow ${t}</button>`
-
-    var unfollow_topic_link = `
-        <span id='unfollow_topic_link' >following
-            <sup>
-            <a href='#'
-               title='unfollow ${t}'
-               onclick="$.get('/follow_topic?topic=${t}&undo=1&${create_nonce_parms(ip)}&ajax=1',
-                function() { document.getElementById('follow').innerHTML = document.getElementById('follow_topic_link').innerHTML }); return false" >x</a>
-            </sup>
-        </span>`
-
-    var follow_topic_link = `
-        <span id='follow_topic_link'>
-            <a href='#'
-               title='get emails of new posts in ${t}'
-               onclick="$.get('/follow_topic?topic=${t}&${create_nonce_parms(ip)}&ajax=1',
-                function() { document.getElementById('follow').innerHTML = document.getElementById('unfollow_topic_link').innerHTML }); return false" >${b}</a>
-        </span>`
-
-    if (current_user
-     && current_user.topics
-     && current_user.topics.includes(t)) {
-        var follow = `<span id='follow' >${unfollow_topic_link}</span>`
-    }
-    else {
-        var follow = `<span id='follow' >${follow_topic_link}</span>`
-    }
-
-    return `<span style='display: none;' id='follow_topic_button' > ${follow_topic_link} ${unfollow_topic_link} </span> ${follow}`
-}
-
-function header(context, topic) {
+function header(context) {
 
     const current_user       = context.current_user
     const header_data        = context.header_data
@@ -3069,29 +2771,6 @@ function follow_user_button(u, current_user, ip) { // u is the user to follow, a
     return `<span style='display: none;' > ${follow_user_link} ${unfollow_user_link} </span> ${follow}`
 }
 
-function render_ban_link(user, topic, current_user, ip) {
-
-    if (!current_user) return ''
-
-    var id=`ban_${user.user_id}_from_${topic}`
-
-    var ban_message = is_user_banned(user.bans, topic, current_user)
-
-    if (ban_message) return ban_message
-
-    return (current_user.user_level === 4 || current_user.is_moderator_of.includes(topic)) ?
-        `<a href='#'
-            id='${id}'
-            onclick="if (confirm('Ban ${user.user_name} from ${topic} for a day?')) {
-                         $.get(
-                             '/ban_from_topic?user_id=${user.user_id}&topic=${topic}&${create_nonce_parms(ip)}',
-                             function(response) { $('#${id}').html(response) }
-                         );
-                         return false;
-                     }";
-         >ban ${user.user_name} from ${topic} for a day</a>` : ''
-}
-
 function render_unread_comments_icon(post, current_user) { // return the blinky icon if there are unread comments in a post
 
     if (!current_user) return ''
@@ -3129,13 +2808,12 @@ function render_upload_form() {
     <iframe id='upload_target' name='upload_target' src='' style='display: none;' ></iframe>` // for uploading a bit of js to insert the img link
 }
 
-function topic_nav(post) {
-
-    if (post && post.post_topic) {
+function nav(post) {
+    if (post) {
         let prev_link = post.post_prev_in_topic ? `&laquo; <a href='/post/${post.post_prev_in_topic}'>prev</a>  &nbsp;` : ''
         let next_link = post.post_next_in_topic ? `&nbsp;  <a href='/post/${post.post_next_in_topic}'>next</a> &raquo;` : ''
 
-        return `<b>${prev_link} ${post.post_topic} ${next_link}</b>`
+        return `<b>${prev_link} ${next_link}</b>`
     }
     else return ``
 }
@@ -3166,36 +2844,6 @@ function arrowbox(post) { // output html for vote up/down arrows; takes a post l
             <span id='post_${post.post_id}_down' />${post.post_dislikes}</span><br>
             <a ${dislikelink} title='${post.post_dislikes} downvotes' >&#9660;</a>
             </div>`
-}
-
-function topic_moderation(topic, current_user) {
-
-    if (!current_user || !current_user.is_moderator_of) return ''
-    if (!current_user.is_moderator_of.includes(topic))  return ''
-
-    return `<hr id='moderation' >
-        <h2>Welcome ${current_user.user_name}, moderator of ${topic}!</h2>
-        set or edit "About ${topic}"<br>
-        posts waiting for moderation<br>
-        comments waiting for moderation<br>
-        review jailed comments<br>
-        user blacklist by ip or username<br>
-        user whitelist<br>
-        set background image<br>
-        set color<br>
-        set donation link<br>`
-}
-
-function topic_list(topics) {
-    return topics ? topics.map(item => `<a href='/topic/${ item.post_topic }'>#${ item.post_topic }</a>`).join(' ') : ''
-}
-
-function top_topics() {
-    return `
-        <a href='/topic/housing'>#housing</a> 
-        <a href='/topic/investing'>#investing</a> 
-        <a href='/topic/politics'>#politics</a> 
-        <a href='/random'>#random</a> <a href='/topics/'>more&raquo;</a>`
 }
 
 function tabs(order, extra='', path) {
@@ -3331,11 +2979,6 @@ function render_user_info(u, current_user, ip) {
     }
     else var ignore = `<span id='ignore' >${ignore_link}</span>`
 
-    var ban_links = ''
-    if (current_user && current_user.is_moderator_of.length) {
-        ban_links = current_user.is_moderator_of.map(topic => render_ban_link(u, topic, current_user, ip)).join('<br>')
-    }
-
     return `${edit_or_logout}
             <center><a href='/user/${u.user_name}' >${ img }</a><h2>${u.user_name}</h2>
                 ${u.user_aboutyou || ''}
@@ -3345,7 +2988,7 @@ function render_user_info(u, current_user, ip) {
                 <a href='/comments?a=${encodeURI(u.user_name)}'>${ u.user_comments.number_format() } comments</a> &nbsp;
                 ${follow_user_button(u, current_user, ip)} &nbsp;
                 <span style='display: none;' > ${ignore_link} ${unignore_link} </span>${ignore}
-                <p>${ban_links}
+                <p>
             </center>`
 }
 
