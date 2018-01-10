@@ -23,9 +23,10 @@ const URL         = require('url')
 const BASEURL     = ('dev' === process.env.environment) ? CONF.baseurl_dev : CONF.baseurl // CONF.baseurl_dev is for testing
 const POOL        = MYSQL.createPool(CONF.db)
 
-const routes = {}
-routes.GET   = {}
-routes.POST  = {}
+const permissions = {}
+const routes      = {}
+routes.GET        = {}
+routes.POST       = {}
 
 process.on('unhandledRejection', (reason, p) => { // very valuable for debugging unhandled promise rejections
     console.error('Unhandled Rejection at promise:', p, 'reason:', reason)
@@ -1806,18 +1807,19 @@ routes.GET.delete_comment = async function(context) { // delete a comment
     const comment_id = intval(_GET(context.req.url, 'comment_id'))
     const post_id    = intval(_GET(context.req.url, 'post_id'))
 
+    if (!(comment_id && post_id)) return send_html(200, '', context)
     if (!context.current_user)    return send_html(200, '', context)
     if (!valid_nonce(context))    return send_html(200, '', context)
-    if (!(comment_id && post_id)) return send_html(200, '', context)
 
-    const topic = (await get_post(post_id, context.db)).post_topic
+    const topic           = (await get_post(post_id, context.db)).post_topic
     const topic_moderator = intval(await get_moderator(topic, context.db))
+    const comment         = await get_row('select * from comments where comment_id=?', [comment_id], context.db)
+    const comment_author  = comment.comment_autor
+    const user_id         = context.current_user.user_id
 
-    const comment        = await get_row('select * from comments where comment_id=?', [comment_id], context.db)
-    const comment_author = comment.comment_autor
+    if (!permissions.may_delete_comment(comment, context.current_user)) return send_html(200, '', context)
 
-    await query(`delete from comments where comment_id = ? and (comment_author = ? or 1 = ? or ${topic_moderator}=?)`,
-                [comment_id, context.current_user.user_id, context.current_user.user_id, context.current_user.user_id], context.db)
+    await query(`delete from comments where comment_id = ?`, [comment_id, user_id, user_id, user_id], context.db)
 
     await query(`update users set user_comments=(select count(*) from comments where comment_author = ?) where user_id = ?`,
                 [comment_author, comment_author], context.db)
@@ -1826,9 +1828,7 @@ routes.GET.delete_comment = async function(context) { // delete a comment
 
     // notify admin if comment deleted by a moderator (a level 3 user)
     if (3 === context.current_user.user_level) {
-        mail(CONF.admin_email,
-             `comment deleted by ${context.current_user.user_name}`,
-             `${comment.comment_author} said: ${comment.comment_content}`)
+        mail(CONF.admin_email, `comment deleted by ${context.current_user.user_name}`, `${comment.comment_author} said: ${comment.comment_content}`)
     }
 
     send_html(200, '', context)
@@ -2018,7 +2018,7 @@ routes.GET.home = async function(context) {
         render_query_times(context.res.start_time, context.db.queries),
         head(CONF.stylesheet, CONF.description, CONF.domain),
         header(context),
-        (await comments_to_moderate(context)).length ? `Welcome moderator, you have <a href='/comment_moderation'>comments to moderate</a>` : '',
+        (await comments_to_moderate(context)).length ? `Welcome moderator, there are <a href='/comment_moderation'>comments to moderate</a>` : '',
         midpage(
             tabs(order, '', path),
             post_list(posts, context),
@@ -2461,7 +2461,7 @@ routes.GET.topics = async function (context) {
     send_html(200, content, context)
 }
 
-routes.GET.uncivil = async function(context) { // move a comment to comment jail, or a post to post moderation
+routes.GET.uncivil = async function(context) { // move a comment to comment jail
 
     let comment_id = intval(_GET(context.req.url, 'c'))
 
@@ -3240,14 +3240,23 @@ function get_permalink(c, utz) {
     return `<a href='/post/${c.comment_post_id}/?c=${c.comment_id}' title='permalink' >${render_date(c.comment_date, utz)}</a>`
 }
 
-function get_del_link(c, current_user, ip) {
+permissions.may_delete_comment = function (comment, current_user) {
 
-    if (!current_user) return ''
+    if (!current_user) return false
 
-    return (current_user.user_id    === c.comment_author ||
-            current_user.user_level === 4                ||
-            current_user.user_id    === c.topic_moderator) ?
-        `<a href='#' onclick="if (confirm('Really delete?')) { $.get('/delete_comment?comment_id=${ c.comment_id }&post_id=${ c.comment_post_id }&${create_nonce_parms(ip)}', function() { $('#comment-${ c.comment_id }').remove() }); return false}">delete</a>` : ''
+    return ((current_user.user_id    === comment.comment_author) || // it's your own comment
+            (current_user.user_level === 4)                      || // it's the site admin
+            (current_user.user_level === 3 && comment.comment_approved == 0 && comment.comment_adhom_reporter != current_user.user_id))
+            // level 3 users can delete comments from moderation, unless they put it in moderation themselves
+     ? true : false
+}
+
+function get_del_link(comment, current_user, ip) {
+    return permissions.may_delete_comment(comment, current_user)
+           ?
+           `<a href='#' onclick="if (confirm('Really delete?')) { $.get('/delete_comment?comment_id=${ comment.comment_id }&post_id=${ comment.comment_post_id }&${create_nonce_parms(ip)}', function() { $('#comment-${ comment.comment_id }').remove() }); return false}">delete</a>`
+           :
+           ''
 }
 
 function profile_form(updated, context) {
