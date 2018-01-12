@@ -1320,7 +1320,10 @@ async function get_followersof(context, d, ob, offset) {
 
 async function get_following(context, d, ob, offset) {
     const following = intval(_GET(context.req.url, 'following'))
-    const message = 'Users ' + (await get_userrow(following, context.db)).user_name + ' is Following'
+    const user = await get_userrow(following, context.db)
+    if (!user) return ['User Not Found', []]
+
+    const message = 'Users ' + user.user_name + ' is Following'
     const users = await query(`select sql_calc_found_rows * from users where user_id in
                         (select rel_other_id from relationships where rel_self_id=? and rel_i_follow > 0) order by ${ob} ${d} limit 40 offset ${offset}`,
                         [following], context.db)
@@ -1330,7 +1333,10 @@ async function get_following(context, d, ob, offset) {
 
 async function get_friendsof(context, d, ob, offset) {
     const friendsof = intval(_GET(context.req.url, 'friendsof'))
-    const message = 'Friends of ' + (await get_userrow(friendsof, context.db)).user_name
+    const user = await get_userrow(friendsof, context.db)
+    if (!user) return ['User Not Found', []]
+
+    const message = 'Friends of ' + user.user_name
     const users = await query(`select sql_calc_found_rows * from users where user_id in
                               (select r1.rel_other_id from relationships as r1, relationships as r2 where
                                   r1.rel_self_id=? and
@@ -2709,7 +2715,7 @@ function user_list(users, d) {
     </tr>`
 
     if (users.length) {
-        var formatted = users.map( (u) => {
+        var formatted = users.map((u) => {
             return `<tr>
                 <td >${render_user_icon(u)}</td>
                 <td align=left >${user_link(u)}</td>
