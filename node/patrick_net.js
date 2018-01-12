@@ -1068,7 +1068,7 @@ function die(message, context) {
         )
     )
 
-    send_html(200, content, context)
+    return send_html(200, content, context)
 }
 
 async function allow_comment(post_data, context) {
@@ -1506,7 +1506,7 @@ routes.GET.approve_comment = async function(context) {
     const post_id = await get_var('select comment_post_id from comments where comment_id=?', [comment_id], context.db)
     await reset_latest_comment(post_id, context.db)
 
-    send_html(200, '', context) // make it disappear from comment_moderation page
+    return send_html(200, '', context) // make it disappear from comment_moderation page
 }
 
 routes.GET.approve_post = async function(context) {
@@ -1520,7 +1520,7 @@ routes.GET.approve_post = async function(context) {
 
     await query('update posts set post_approved=1, post_modified=now() where post_id=?', [post_id], context.db)
 
-    send_html(200, '', context) // make it disappear from post_moderation page
+    return send_html(200, '', context) // make it disappear from post_moderation page
 }
 
 routes.GET.autowatch = async function(context) {
@@ -1671,7 +1671,7 @@ routes.GET.delete_comment = async function(context) { // delete a comment
         mail(CONF.admin_email, `comment deleted by ${context.current_user.user_name}`, `${comment.user_name} said: ${comment.comment_content}`)
     }
 
-    send_html(200, '', context)
+    return send_html(200, '', context)
 }
 
 routes.GET.delete_post = async function(context) { // delete a whole post, but not its comments
@@ -1731,7 +1731,7 @@ routes.GET.edit_comment = async function (context) {
             )
         )
 
-        send_html(200, content, context)
+        return send_html(200, content, context)
     }
 }
 
@@ -1754,7 +1754,7 @@ routes.GET.edit_post = async function (context) {
             )
         )
 
-        send_html(200, content, context)
+        return send_html(200, content, context)
     }
 }
 
@@ -1771,7 +1771,7 @@ routes.GET.edit_profile = async function(context) {
         )
     )
 
-    send_html(200, content, context)
+    return send_html(200, content, context)
 }
 
 routes.GET.follow_user = async function(context) { // get or turn off emails of a user's new posts; can be called as ajax or full page
@@ -1838,7 +1838,7 @@ routes.GET.home = async function(context) {
         )
     )
 
-    send_html(200, content, context)
+    return send_html(200, content, context)
 }
 
 routes.GET.ignore = async function(context) { // ignore a user
@@ -1852,13 +1852,13 @@ routes.GET.ignore = async function(context) { // ignore a user
         await query(`replace into relationships set rel_i_ban=0, rel_self_id=?, rel_other_id=?`,
                     [context.current_user.user_id, other_id], context.db)
 
-        send_html(200, '', context) // make the user disappear from edit_profile page
+        return send_html(200, '', context) // make the user disappear from edit_profile page
     }
     else {
         await query(`replace into relationships set rel_i_ban=unix_timestamp(now()), rel_self_ID=?, rel_other_ID=?`,
                     [context.current_user.user_id, other_id], context.db)
 
-        send_html(200, '', context)
+        return send_html(200, '', context)
     }
 
     // either way, update this user's ignore count
@@ -1890,7 +1890,7 @@ routes.GET.key_login = async function(context) {
             )
         )
 
-        send_html(200, content, context)
+        return send_html(200, content, context)
     }
 }
 
@@ -1904,7 +1904,7 @@ routes.GET.liberate = async function(context) { // liberate a comment from comme
 
     await query(`update comments set comment_adhom_when=null where comment_id = ? and (1 = ?)`, [comment_id, context.current_user.user_id], context.db)
 
-    send_html(200, '', context)
+    return send_html(200, '', context)
 }
 
 
@@ -1971,7 +1971,7 @@ routes.GET.new_post = async function(context) {
         )
     }
 
-    send_html(200, content, context)
+    return send_html(200, content, context)
 }
 
 routes.GET.nuke = async function(context) { // given a user ID, nuke all his posts, comments, and his ID
@@ -2033,7 +2033,7 @@ routes.GET.old = async function(context) {
         )
     )
 
-    send_html(200, content, context)
+    return send_html(200, content, context)
 }
 
 routes.GET.post = async function(context) { // show a single post and its comments
@@ -2074,7 +2074,7 @@ routes.GET.post = async function(context) { // show a single post and its commen
         )
     )
 
-    send_html(200, content, context)
+    return send_html(200, content, context)
 }
 
 routes.POST.post_login = async function(context) {
@@ -2097,7 +2097,7 @@ routes.GET.post_moderation = async function (context) {
         )
     )
 
-    send_html(200, content, context)
+    return send_html(200, content, context)
 }
 
 routes.GET.random = async function(context) {
@@ -2123,7 +2123,7 @@ routes.POST.recoveryemail = async function(context) {
         )
     )
 
-    send_html(200, content, context)
+    return send_html(200, content, context)
 }
 
 routes.POST.registration = async function(context) {
@@ -2157,7 +2157,7 @@ routes.POST.registration = async function(context) {
         midpage(`<h2>${message}</h2>`)
     )
 
-    send_html(200, content, context)
+    return send_html(200, content, context)
 }
 
 routes.GET.search = async function(context) {
@@ -2195,7 +2195,7 @@ routes.GET.search = async function(context) {
         )
     )
 
-    send_html(200, content, context)
+    return send_html(200, content, context)
 }
 
 routes.GET.since = async function(context) { // given a post_id and epoch timestamp, redirect to post's first comment after that timestamp
@@ -2215,6 +2215,8 @@ routes.GET.since = async function(context) { // given a post_id and epoch timest
 
 routes.GET.personal = async function(context) { // move a comment to moderation
 
+    if (!permissions.may_mark_personal(context.current_user)) return send_html(200, '', context)
+
     let comment_id = intval(_GET(context.req.url, 'c'))
 
     if (context.current_user && (context.current_user.user_pbias > 3) && valid_nonce(context) && comment_id) {
@@ -2222,9 +2224,11 @@ routes.GET.personal = async function(context) { // move a comment to moderation
                     [context.current_user.user_id, comment_id], context.db)
     }
 
-    mail(CONF.admin_email, 'comment marked personal', `<a href='https://${CONF.domain}/comment_moderation'>moderation page</a>`)
+    mail(CONF.admin_email,
+        `comment marked personal by context.current_user.user_id`,
+        `<a href='https://${CONF.domain}/comment_moderation'>moderation page</a>`)
 
-    send_html(200, '', context) // blank response in all cases
+    return send_html(200, '', context) // blank response in all cases
 }
 
 routes.POST.update_profile = async function(context) { // accept data from profile_form
@@ -2298,7 +2302,7 @@ routes.POST.upload = async function(context) {
                         </script>
                     </html>`
 
-                send_html(200, content, context)
+                return send_html(200, content, context)
             }
         })
     })
@@ -2338,7 +2342,7 @@ routes.GET.user = async function(context) {
         )
     )
 
-    send_html(200, content, context)
+    return send_html(200, content, context)
 }
 
 routes.GET.users = async function(context) {
@@ -2382,7 +2386,7 @@ routes.GET.users = async function(context) {
         )
     )
 
-    send_html(200, content, context)
+    return send_html(200, content, context)
 }
 
 routes.GET.watch = async function(context) { // toggle a watch from a post
@@ -2404,7 +2408,7 @@ routes.GET.watch = async function(context) { // toggle a watch from a post
                  on duplicate key update postview_want_email=?`,
                 [context.current_user.user_id, post_id, want_email, want_email], context.db)
 
-    send_html(200, render_watch_indicator(want_email), context)
+    return send_html(200, render_watch_indicator(want_email), context)
 }
 
 // from here to end are only html components
@@ -2614,7 +2618,7 @@ function contextual_link(c, current_user, url, ip) { // a link in the comment he
                 >approve</a>`
     }
 
-    if (current_user.user_pbias >= 3 || current_user.user_level === 4) {
+    if (permissions.may_mark_personal(current_user)) {
         return `<a href='#'
                    title='attacks person, not point'
                    onclick="if (confirm('Really mark as personal?')) {
@@ -2901,7 +2905,6 @@ function get_permalink(c, utz) {
 }
 
 permissions.may_delete_comment = function (comment, current_user) {
-
     if (!current_user) return false
 
     return ((current_user.user_id    === comment.comment_author) || // it's your own comment
@@ -2909,6 +2912,11 @@ permissions.may_delete_comment = function (comment, current_user) {
             (current_user.user_level === 3 && comment.comment_approved == 0 && comment.comment_adhom_reporter != current_user.user_id))
             // level 3 users can delete comments from moderation, unless they put it in moderation themselves
      ? true : false
+}
+
+permissions.may_mark_personal = function (current_user) {
+    if (!current_user) return false
+    return current_user.user_level > 1
 }
 
 function get_del_link(comment, current_user, ip) {
