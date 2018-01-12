@@ -1646,7 +1646,7 @@ routes.GET.delete_comment = async function(context) { // delete a comment
     if (!context.current_user)    return send_html(200, '', context)
     if (!valid_nonce(context))    return send_html(200, '', context)
 
-    const comment        = await get_row('select * from comments where comment_id=?', [comment_id], context.db)
+    const comment        = await get_row('select * from comments left join users on comment_author=user_id where comment_id = ?', [comment_id], context.db)
     const comment_author = comment.comment_autor
     const user_id        = context.current_user.user_id
 
@@ -1662,7 +1662,7 @@ routes.GET.delete_comment = async function(context) { // delete a comment
 
     // notify admin if comment deleted by a moderator (a level 3 user)
     if (3 === context.current_user.user_level) {
-        mail(CONF.admin_email, `comment deleted by ${context.current_user.user_name}`, `${comment.comment_author} said: ${comment.comment_content}`)
+        mail(CONF.admin_email, `comment deleted by ${context.current_user.user_name}`, `${comment.user_name} said: ${comment.comment_content}`)
     }
 
     send_html(200, '', context)
@@ -2207,7 +2207,7 @@ routes.GET.since = async function(context) { // given a post_id and epoch timest
     redirect(`${post2path(post)}?offset=${offset}#comment-${c}`, context)
 }
 
-routes.GET.uncivil = async function(context) { // move a comment to comment jail
+routes.GET.personal = async function(context) { // move a comment to moderation
 
     let comment_id = intval(_GET(context.req.url, 'c'))
 
@@ -2216,7 +2216,7 @@ routes.GET.uncivil = async function(context) { // move a comment to comment jail
                     [context.current_user.user_id, comment_id], context.db)
     }
 
-    mail(CONF.admin_email, 'comment marked uncivil', `<a href='https://${CONF.domain}/comment_moderation'>moderation page</a>`)
+    mail(CONF.admin_email, 'comment marked personal', `<a href='https://${CONF.domain}/comment_moderation'>moderation page</a>`)
 
     send_html(200, '', context) // blank response in all cases
 }
@@ -2611,11 +2611,11 @@ function contextual_link(c, current_user, url, ip) { // a link in the comment he
     if (current_user.user_pbias >= 3 || current_user.user_level === 4) {
         return `<a href='#'
                    title='attacks person, not point'
-                   onclick="if (confirm('Really mark as uncivil?')) {
-                                $.get('/uncivil?c=${ c.comment_id }&${create_nonce_parms(ip)}', function() { $('#comment-${ c.comment_id }').remove() });
+                   onclick="if (confirm('Really mark as personal?')) {
+                                $.get('/personal?c=${ c.comment_id }&${create_nonce_parms(ip)}', function() { $('#comment-${ c.comment_id }').remove() });
                                 return false
                             }"
-                >uncivil</a>`
+                >personal</a>`
     }
     else return ''
 }
@@ -2995,7 +2995,7 @@ function render_user_info(u, current_user, ip) {
 
 function post(post, ip, current_user) { // format a single post for display
 
-    let uncivil       = ''
+    let personal       = ''
     let arrowbox_html = arrowbox(post)
     let icon          = render_user_icon(post, 1, `align='left' hspace='5' vspace='2'`)
     let link          = post_link(post)
@@ -3004,8 +3004,8 @@ function post(post, ip, current_user) { // format a single post for display
     if (current_user && current_user.user_pbias >= 3) {
 
         if (!post.post_title.match(/thunderdome/)) {
-            let confirm_uncivil = `onClick="return confirm('Really mark as uncivil?')"`
-            uncivil = ` &nbsp; <a href='/uncivil?p=${post.post_id}&${nonce_parms}' ${confirm_uncivil} title='attacks person, not point' >uncivil</a> &nbsp;` 
+            let confirm_personal = `onClick="return confirm('Really mark as personal?')"`
+            personal = ` &nbsp; <a href='/personal?p=${post.post_id}&${nonce_parms}' ${confirm_personal} title='attacks person, not point' >personal</a> &nbsp;` 
         }
     }
 
@@ -3024,7 +3024,7 @@ function post(post, ip, current_user) { // format a single post for display
     var utz = current_user ? current_user.user_timezone : 'America/Los_Angeles'
 
     return `<div class='comment' >${arrowbox_html} ${icon} <h2 style='display:inline' >${ link }</h2>
-            <p>By ${user_link(post)} ${follow_user_button(post, current_user, ip)} &nbsp; ${render_date(post.post_date, utz)} ${uncivil}
+            <p>By ${user_link(post)} ${follow_user_button(post, current_user, ip)} &nbsp; ${render_date(post.post_date, utz)} ${personal}
             ${post.post_views.number_format()} views &nbsp; ${post.post_comments.number_format()} comments &nbsp;
             ${watcheye} &nbsp;
             <a href="#commentform" onclick="addquote( '${post.post_id}', '0', '0', '${post.user_name}' ); return false;"
