@@ -1228,6 +1228,7 @@ async function dislike_comment(user_id, context) {
 
     let comment_id  = intval(_GET(context.req.url, 'comment_id'))
     let comment_row = await get_row(`select * from comments where comment_id=?`, [comment_id], context.db)
+    if (!comment_row) return ''
     let vote        = await get_row(`select commentvote_up, count(*) as c from commentvotes where commentvote_user_id=? and commentvote_comment_id=?`,
                                     [user_id, comment_id], context.db)
 
