@@ -2219,13 +2219,13 @@ routes.GET.personal = async function(context) { // move a comment to moderation
 
     let comment_id = intval(_GET(context.req.url, 'c'))
 
-    if (context.current_user && (context.current_user.user_pbias > 3) && valid_nonce(context) && comment_id) {
+    if (valid_nonce(context) && comment_id) {
         await query(`update comments set comment_approved=0, comment_adhom_reporter=?, comment_adhom_when=now() where comment_id = ?`,
                     [context.current_user.user_id, comment_id], context.db)
     }
 
     mail(CONF.admin_email,
-        `comment marked personal by context.current_user.user_id`,
+        `comment marked personal by ${context.current_user.user_name}`,
         `<a href='https://${CONF.domain}/comment_moderation'>moderation page</a>`)
 
     return send_html(200, '', context) // blank response in all cases
@@ -2410,6 +2410,26 @@ routes.GET.watch = async function(context) { // toggle a watch from a post
 
     return send_html(200, render_watch_indicator(want_email), context)
 }
+
+routes.GET.nsfw = async function(context) { // mark a post as nsfw so porn images won't show on home page
+
+    if (!permissions.may_mark_nsfw(context.current_user)) return send_html(200, '', context)
+
+    let post_id = intval(_GET(context.req.url, 'p'))
+    let post    = await get_post(post_id, context.db)
+
+    if (post.post_nsfw) var x = 0 // invert
+    else                var x = 1
+
+    if (valid_nonce(context) && post_id) await query(`update posts set post_nsfw=? where post_id = ?`, [x, post_id], context.db)
+
+    mail(CONF.admin_email,
+        `post marked nsfw by ${context.current_user.user_name}`,
+        `<a href='https://${CONF.domain}/post/${post_id}'>see post</a>`)
+
+    return send_html(200, x ? 'nsfw' : 'sfw', context)
+}
+
 
 // from here to end are only html components
 // * all pure synchronous functions: no reading outside parms, no modification of parms, no side effects, can be replaced with ret value
@@ -2914,9 +2934,14 @@ permissions.may_delete_comment = function (comment, current_user) {
      ? true : false
 }
 
+permissions.may_mark_nsfw = function (current_user) {
+    if (!current_user) return false
+    return current_user.user_level >= 2
+}
+
 permissions.may_mark_personal = function (current_user) {
     if (!current_user) return false
-    return current_user.user_level > 1
+    return current_user.user_level >= 2
 }
 
 function get_del_link(comment, current_user, ip) {
@@ -3023,10 +3048,6 @@ function post(post, ip, current_user) { // format a single post for display
         }
     }
 
-    let watcheye = `<a href='#' id='watch' onclick="$.get('/watch?post_id=${post.post_id}&${nonce_parms}', function(data) {
-        document.getElementById('watch').innerHTML = data; });
-        return false" title='comments by email'>${render_watch_indicator(post.postview_want_email)}</a>`
-
     let edit_link = (current_user && ((current_user.user_id === post.post_author) || (current_user.user_level >= 4)) ) ?
         `<a href='/edit_post?p=${post.post_id}&${nonce_parms}'>edit</a> ` : ''
 
@@ -3040,11 +3061,24 @@ function post(post, ip, current_user) { // format a single post for display
     return `<div class='comment' >${arrowbox_html} ${icon} <h2 style='display:inline' >${ link }</h2>
             <p>By ${user_link(post)} ${follow_user_button(post, current_user, ip)} &nbsp; ${render_date(post.post_date, utz)} ${personal}
             ${post.post_views.number_format()} views &nbsp; ${post.post_comments.number_format()} comments &nbsp;
-            ${watcheye} &nbsp;
+            ${watcheye(post, nonce_parms)} &nbsp;
+            ${nsfw(post, nonce_parms)} &nbsp;
             <a href="#commentform" onclick="addquote( '${post.post_id}', '0', '0', '${post.user_name}' ); return false;"
                title="Select some text then click this to quote" >quote</a> &nbsp;
             &nbsp; ${share_post(post)} &nbsp; ${edit_link} &nbsp; ${delete_link}
             <p><hr><div class="entry" class="alt" id="comment-0-text" >${ post.post_content }</div></div>`
+}
+
+function watcheye(post, nonce_parms) {
+    return `<a href='#' id='watch' onclick="$.get('/watch?post_id=${post.post_id}&${nonce_parms}', function(data) {
+        document.getElementById('watch').innerHTML = data; });
+        return false" title='comments by email'>${render_watch_indicator(post.postview_want_email)}</a>`
+}
+
+function nsfw(post, nonce_parms) {
+    return `<a href='#' id='nsfw' onclick="$.get('/nsfw?p=${post.post_id}&${nonce_parms}', function(data) {
+        document.getElementById('nsfw').innerHTML = data; });
+        return false" title='image not suitable for work'>${post.post_nsfw ? 'nsfw' : 'sfw'}</a>`
 }
 
 function post_link(post) {
