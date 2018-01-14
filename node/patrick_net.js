@@ -2145,7 +2145,7 @@ routes.POST.registration = async function(context) {
                 message = `That user name is already registered. Please choose a different one.</a>`
             }
             else {
-                await query('insert into users set user_registered=now(), ?', post_data, context.db)
+                await query('insert into users set user_level=2, user_registered=now(), ?', post_data, context.db)
                 message = await send_login_link(context.ip, context.db, post_data)
             }
         }
