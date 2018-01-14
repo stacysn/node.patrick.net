@@ -1402,11 +1402,11 @@ routes.POST.accept_comment = async function(context) { // insert new comment
 
     if (context.current_user && context.current_user.user_id) {
         post_data.comment_author = context.current_user.user_id
-        post_data.comment_approved = 1
+        post_data.comment_approved = context.current_user.user_level > 1 ? 1 : 0 // users > level 1 get their comments automatically approved
     }
     else {
         post_data.comment_author = await find_or_create_anon(context.db, context.ip)
-        post_data.comment_approved = 0 // anon comments go into moderation
+        post_data.comment_approved = 0 // anon comments go into moderation; anon users are level 1
         //return send_json(200, { err: true, content: popup('anonymous comments have been disabled, please reg/login') }, context)
     }
 
