@@ -1308,15 +1308,13 @@ async function get_unrequited(context, d, ob, offset) {
 
 async function get_followersof(context, d, ob, offset) {
     const followersof = intval(_GET(context.req.url, 'followersof'))
-    const user = await get_userrow(followersof, context.db)
-    if (!user) return ['User Not Found', []]
-
-    const message = 'Followers of ' + user.user_name
+    const message = 'Followers of ' + (await get_userrow(followersof, context.db)).user_name
     const users = await query(`select sql_calc_found_rows * from users
         where user_id in (select rel_self_id from relationships where rel_other_id=? and rel_i_follow > 0)
         order by ${ob} ${d} limit 40 offset ${offset}`, [followersof, ob, d], context.db)
 
-    await query('update users set user_followers=? where user_id=?', [users.length, followersof], context.db) // keep followers-count cache in users table correct
+    // keep followers-count cache in users table correct
+    await query('update users set user_followers=? where user_id=?', [users.length, followersof], context.db)
 
     return [message, users]
 }
