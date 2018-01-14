@@ -3193,9 +3193,17 @@ function comment_box(post, current_user, ip) { // add new comment, just updates 
         <input type='hidden' name='comment_post_id' value='${post.post_id}' />
         <button class='btn btn-success btn-sm' id='accept_comment' href=${url} 
             onclick="$.post('${url}', $('#commentform').serialize()).done(function(response) {
-                response = JSON.parse(response) // was a string, now is an object
-                $('#comment_list').append(response.content)
-                if (!response.err) document.getElementById('commentform').reset() // don't clear the textbox if error
+                var get_parms = {}
+                location.search.substr(1).split('&').forEach(function(item) { get_parms[item.split('=')[0]] = item.split('=')[1] })
+
+                if (get_parms['offset']) { // if url includes offset, then we are not on last page of comments, so redirect to last page
+                    window.location = window.location.pathname + '#last'
+                }
+                else { // no offset, so we are on the last page of comments; just append
+                    response = JSON.parse(response) // was a string, now is an object
+                    $('#comment_list').append(response.content)
+                    if (!response.err) document.getElementById('commentform').reset() // don't clear the textbox if error
+                }
             }).fail(function() {
                 $('#comment_list').append('something went wrong on the server ')
             })
