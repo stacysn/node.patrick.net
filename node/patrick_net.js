@@ -2226,7 +2226,7 @@ routes.GET.personal = async function(context) { // move a comment to moderation
     if (!context.current_user)                                return send_html(200, '', context)
     if (!permissions.may_mark_personal(context.current_user)) return send_html(200, '', context)
 
-    const comment = get_comment(comment_id, context.db)
+    const comment = await get_comment(comment_id, context.db)
     if (!comment) return send_html(200, '', context)
 
     if (valid_nonce(context) && comment_id) {
