@@ -712,6 +712,10 @@ function _GET(url, parm) { // given a string, return the GET parameter by that n
     return URL.parse(url, true).query[parm] || '' // always return a string so string methods like trim will work even if parm undefined
 }
 
+async function get_comment(comment_id, db) {
+    return await get_row(`select * from comments where comment_id = ?`, [comment_id], db)
+}
+
 async function get_post(post_id, db, user_id) {
     if (user_id) return await get_row(`select * from posts
                                        left join postvotes on (postvote_post_id=post_id and postvote_user_id=?)
@@ -2216,9 +2220,14 @@ routes.GET.since = async function(context) { // given a post_id and epoch timest
 
 routes.GET.personal = async function(context) { // move a comment to moderation
 
+    const comment_id = intval(_GET(context.req.url, 'c'))
+
+    if (!comment_id)                                          return send_html(200, '', context)
+    if (!context.current_user)                                return send_html(200, '', context)
     if (!permissions.may_mark_personal(context.current_user)) return send_html(200, '', context)
 
-    let comment_id = intval(_GET(context.req.url, 'c'))
+    const comment = get_comment(comment_id, context.db)
+    if (!comment) return send_html(200, '', context)
 
     if (valid_nonce(context) && comment_id) {
         await query(`update comments set comment_approved=0, comment_adhom_reporter=?, comment_adhom_when=now() where comment_id = ?`,
@@ -2227,7 +2236,7 @@ routes.GET.personal = async function(context) { // move a comment to moderation
 
     mail(CONF.admin_email,
         `comment marked personal by ${context.current_user.user_name}`,
-        `<a href='https://${CONF.domain}/comment_moderation'>moderation page</a>`)
+        `${comment.comment_content} <a href='https://${CONF.domain}/comment_moderation'>moderation page</a>`)
 
     return send_html(200, '', context) // blank response in all cases
 }
