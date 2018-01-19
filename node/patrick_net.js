@@ -1952,7 +1952,7 @@ routes.GET.logout = async function(context) {
 
 routes.GET.new_post = async function(context) {
 
-    if (!context.current_user || !context.current_user.user_id) return die('anonymous users may not create posts, please register', context)
+    if (!permissions.may_create_new_post(context.current_user)) return die('permission to create new post denied', context)
 
     // if the user is logged in and has posted CONF.max_posts times today, don't let them post more
     var posts_today = await get_var('select count(*) as c from posts where post_author=? and post_date >= curdate()',
@@ -2556,7 +2556,7 @@ function header(context) {
         <div style='float:right' >${ icon_or_loginprompt(current_user, login_failed_email) }</div>
         <a href='/' ><h1 class='sitename' title='back to home page' >${ CONF.domain }</h1></a>
         <br>
-        <a href='/post/${ CONF.about_post_id }'>${ CONF.description }</a><br>${ brag(header_data) }</font><br>${ new_post_button() }
+        <a href='/post/${ CONF.about_post_id }'>${ CONF.description }</a><br>${ brag(header_data) }</font><br>${ new_post_button(current_user) }
         </div>`
 }
 
@@ -2957,6 +2957,11 @@ permissions.may_mark_personal = function (current_user) {
     return current_user.user_level >= 2
 }
 
+permissions.may_create_new_post = function (current_user) {
+    if (!current_user) return false
+    return current_user.user_level >= CONF.new_post_user_level
+}
+
 function get_del_link(comment, current_user, ip) {
     return permissions.may_delete_comment(comment, current_user)
            ?
@@ -3112,8 +3117,11 @@ function midpage(...args) { // just an id so we can easily swap out the middle o
         </div>`
 }
 
-function new_post_button() {
-    return '<a href="/new_post" class="btn btn-success btn-sm" title="start a new post" ><b>new post</b></a>'
+function new_post_button(current_user) {
+    if (permissions.may_create_new_post(current_user))
+        return `<a href="/new_post" class="btn btn-success btn-sm" title="start a new post" ><b>${CONF.new_post_button_text}</b></a>`
+    else
+        return ``
 }
 
 function popup(message) {
