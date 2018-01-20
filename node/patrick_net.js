@@ -21,8 +21,13 @@ const URL         = require('url')
 
 // following are dependent on requires above
 const BASEURL     = ('dev' === process.env.environment) ? CONF.baseurl_dev : CONF.baseurl // CONF.baseurl_dev is for testing
-const POOL        = MYSQL.createPool(CONF.db)
-POOL.query('select 1 + 1', (error, results, fields) => { if (error) throw new Error('Could not connect to mysql') })
+let   POOL        = MYSQL.createPool(CONF.db)
+POOL.query('select 1 + 1', (error, results, fields) => {
+    if (error) {
+        POOL = null // so we can detect when serving responses
+        throw new Error('Could not connect to mysql')
+    }
+})
 
 const permissions = {}
 const routes      = {}
@@ -48,6 +53,8 @@ if (CLUSTER.isMaster && !('dev' === process.env.environment)) { // to keep debug
 } else HTTP.createServer(render).listen(CONF.http_port)
 
 async function render(req, res) {
+
+    if (!POOL) return res.end('could not connect to database')
 
     res.start_time = Date.now()
 
