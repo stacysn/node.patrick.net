@@ -1,4 +1,4 @@
-// copyright 2017 by Patrick Killelea under the GPLv2 license
+// copyright 2017, 2018 by Patrick Killelea
 
 'use strict'
 
@@ -1125,13 +1125,9 @@ async function hit_daily_post_limit(context) {
 
     if (!context.current_user) return true
 
-    var posts_today = await get_var('select count(*) as c from posts where post_author=? and post_date >= curdate()',
-        [context.current_user.user_id], context.db)
+    var posts_today = await get_var('select count(*) as c from posts where post_author=? and post_date >= curdate()', [context.current_user.user_id], context.db)
 
-    var whole_weeks_registered = await get_var('select floor(datediff(curdate(), user_registered)/7) from users where user_id=?',
-        [context.current_user.user_id], context.db)
-
-    return (posts_today >= CONF.max_posts || posts_today > whole_weeks_registered) ? true : false
+    return (posts_today >= CONF.max_posts) ? true : false
 }
 
 async function like_comment(user_id, user_name, context) {
